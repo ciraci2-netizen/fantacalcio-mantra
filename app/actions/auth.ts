@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/app/lib/prisma";
+import { db } from "@/app/lib/db";
 import { createSession, deleteSession } from "@/app/lib/session";
 
 export async function login(prevState: string | null, formData: FormData) {
@@ -11,17 +11,22 @@ export async function login(prevState: string | null, formData: FormData) {
 
   if (!username || !password) return "Inserisci username e password.";
 
-  const user = await prisma.user.findFirst({ where: { username } });
-  if (!user) return "Credenziali non valide.";
+  const result = await db.execute({
+    sql: `SELECT id, username, password, teamName, isAdmin FROM "User" WHERE username = ?`,
+    args: [username],
+  });
 
-  const valid = await bcrypt.compare(password, user.password);
+  const row = result.rows[0];
+  if (!row) return "Credenziali non valide.";
+
+  const valid = await bcrypt.compare(password, row.password as string);
   if (!valid) return "Credenziali non valide.";
 
   await createSession({
-    userId: user.id,
-    username: user.username,
-    teamName: user.teamName,
-    isAdmin: user.isAdmin,
+    userId: row.id as number,
+    username: row.username as string,
+    teamName: row.teamName as string,
+    isAdmin: Boolean(row.isAdmin),
   });
 
   redirect("/dashboard");
