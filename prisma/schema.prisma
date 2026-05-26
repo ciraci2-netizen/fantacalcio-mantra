@@ -1,0 +1,131 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  username    String   @unique
+  password    String
+  teamName    String
+  isAdmin     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  roster      Roster[]
+  lineups     Lineup[]
+  homeMatches Match[]  @relation("HomeUser")
+  awayMatches Match[]  @relation("AwayUser")
+}
+
+model Player {
+  id            Int          @id @default(autoincrement())
+  name          String
+  realTeam      String
+  mantraRole    String
+  fantapiu3Name String?
+  createdAt     DateTime     @default(now())
+  roster        Roster[]
+  votes         PlayerVote[]
+  lineupSlots   LineupSlot[]
+}
+
+model Roster {
+  id            Int    @id @default(autoincrement())
+  userId        Int
+  playerId      Int
+  purchasePrice Int    @default(0)
+  user          User   @relation(fields: [userId], references: [id])
+  player        Player @relation(fields: [playerId], references: [id])
+
+  @@unique([userId, playerId])
+}
+
+model Season {
+  id              Int        @id @default(autoincrement())
+  name            String     @unique
+  currentMatchday Int        @default(1)
+  isActive        Boolean    @default(true)
+  matchdays       Matchday[]
+}
+
+model Matchday {
+  id            Int          @id @default(autoincrement())
+  seasonId      Int
+  number        Int
+  isLocked      Boolean      @default(false)
+  votesImported Boolean      @default(false)
+  season        Season       @relation(fields: [seasonId], references: [id])
+  playerVotes   PlayerVote[]
+  lineups       Lineup[]
+  matches       Match[]
+
+  @@unique([seasonId, number])
+}
+
+model PlayerVote {
+  id         Int      @id @default(autoincrement())
+  playerId   Int
+  matchdayId Int
+  vote       Float?
+  fantavoto  Float?
+  gfGs       Int      @default(0)
+  gsr        Int      @default(0)
+  amm        Int      @default(0)
+  esp        Int      @default(0)
+  rpRs       Int      @default(0)
+  aut        Int      @default(0)
+  ass        Int      @default(0)
+  adf        Int      @default(0)
+  player     Player   @relation(fields: [playerId], references: [id])
+  matchday   Matchday @relation(fields: [matchdayId], references: [id])
+
+  @@unique([playerId, matchdayId])
+}
+
+model Lineup {
+  id          Int          @id @default(autoincrement())
+  userId      Int
+  matchdayId  Int
+  formation   String       @default("4-4-2")
+  isSubmitted Boolean      @default(false)
+  totalScore  Float?
+  user        User         @relation(fields: [userId], references: [id])
+  matchday    Matchday     @relation(fields: [matchdayId], references: [id])
+  slots       LineupSlot[]
+
+  @@unique([userId, matchdayId])
+}
+
+model LineupSlot {
+  id        Int     @id @default(autoincrement())
+  lineupId  Int
+  playerId  Int
+  position  Int
+  isStarter Boolean @default(true)
+  lineup    Lineup  @relation(fields: [lineupId], references: [id])
+  player    Player  @relation(fields: [playerId], references: [id])
+}
+
+model Match {
+  id         Int      @id @default(autoincrement())
+  matchdayId Int
+  homeUserId Int
+  awayUserId Int
+  homeScore  Float?
+  awayScore  Float?
+  homePoints Int?
+  awayPoints Int?
+  matchday   Matchday @relation(fields: [matchdayId], references: [id])
+  homeUser   User     @relation("HomeUser", fields: [homeUserId], references: [id])
+  awayUser   User     @relation("AwayUser", fields: [awayUserId], references: [id])
+
+  @@unique([matchdayId, homeUserId])
+}
