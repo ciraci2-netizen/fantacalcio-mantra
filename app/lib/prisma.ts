@@ -4,21 +4,20 @@ import { PrismaLibSql } from "@prisma/adapter-libsql";
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 
 function createPrismaClient() {
-  const url = process.env.DATABASE_URL || "file:./dev.db";
+  const authToken = process.env.DATABASE_AUTH_TOKEN;
+  const url = process.env.DATABASE_URL;
 
-  // Usa Turso/libSQL in produzione
-  if (url.startsWith("libsql://") || url.startsWith("https://")) {
-    const adapter = new PrismaLibSql({
-      url,
-      authToken: process.env.DATABASE_AUTH_TOKEN,
-    });
+  // Usa Turso/libSQL se è presente il token di autenticazione (produzione)
+  if (authToken && url) {
+    const adapter = new PrismaLibSql({ url, authToken });
     return new PrismaClient({ adapter });
   }
 
-  // SQLite locale in sviluppo — caricato dinamicamente per non crashare su Linux/Vercel
+  // SQLite locale in sviluppo
+  const localUrl = url || "file:./dev.db";
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
-  const adapter = new PrismaBetterSqlite3({ url });
+  const adapter = new PrismaBetterSqlite3({ url: localUrl });
   return new PrismaClient({ adapter });
 }
 
