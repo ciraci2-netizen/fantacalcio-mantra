@@ -11,7 +11,7 @@ export async function login(prevState: string | null, formData: FormData) {
 
   if (!username || !password) return "Inserisci username e password.";
 
-  const user = await prisma.user.findUnique({ where: { username } });
+  const user = await prisma.user.findFirst({ where: { username } });
   if (!user) return "Credenziali non valide.";
 
   const valid = await bcrypt.compare(password, user.password);
