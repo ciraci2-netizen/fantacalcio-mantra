@@ -8,23 +8,27 @@ const SECRET = new TextEncoder().encode(
 const PUBLIC_PATHS = ["/login"];
 
 export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
-  }
-
-  const token = request.cookies.get("session")?.value;
-
-  if (!token) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
-
   try {
-    await jwtVerify(token, SECRET);
-    return NextResponse.next();
+    const { pathname } = request.nextUrl;
+
+    if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+      return NextResponse.next();
+    }
+
+    const token = request.cookies.get("session")?.value;
+
+    if (!token) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    try {
+      await jwtVerify(token, SECRET);
+      return NextResponse.next();
+    } catch {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
   } catch {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.next();
   }
 }
 
