@@ -18,7 +18,7 @@ export async function createUser(prevState: string | null, formData: FormData) {
   const count = await prisma.user.count({ where: { isAdmin: false } });
   if (count >= 12) return "Hai già 12 partecipanti.";
 
-  const existing = await prisma.user.findUnique({ where: { username } });
+  const existing = await prisma.user.findFirst({ where: { username } });
   if (existing) return "Username già in uso.";
 
   const hashed = await bcrypt.hash(password, 10);

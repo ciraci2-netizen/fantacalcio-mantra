@@ -44,8 +44,8 @@ export async function saveLineup(prevState: string | null, formData: FormData) {
   if (matchday?.isLocked) return "La giornata è bloccata, non puoi modificare la formazione.";
 
   // Crea o aggiorna il lineup
-  const existing = await prisma.lineup.findUnique({
-    where: { userId_matchdayId: { userId: session.userId, matchdayId } },
+  const existing = await prisma.lineup.findFirst({
+    where: { userId: session.userId, matchdayId },
   });
 
   let lineupId: number;

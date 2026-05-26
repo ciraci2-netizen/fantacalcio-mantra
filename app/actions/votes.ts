@@ -163,11 +163,11 @@ export async function calculateAllScores(prevState: string | null, formData: For
   // Aggiorna i risultati delle partite
   const matches = await prisma.match.findMany({ where: { matchdayId } });
   for (const match of matches) {
-    const homeLineup = await prisma.lineup.findUnique({
-      where: { userId_matchdayId: { userId: match.homeUserId, matchdayId } },
+    const homeLineup = await prisma.lineup.findFirst({
+      where: { userId: match.homeUserId, matchdayId },
     });
-    const awayLineup = await prisma.lineup.findUnique({
-      where: { userId_matchdayId: { userId: match.awayUserId, matchdayId } },
+    const awayLineup = await prisma.lineup.findFirst({
+      where: { userId: match.awayUserId, matchdayId },
     });
 
     const homeScore = homeLineup?.totalScore ?? 0;

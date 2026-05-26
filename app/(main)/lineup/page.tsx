@@ -29,8 +29,8 @@ export default async function LineupPage() {
     orderBy: [{ player: { mantraRole: "asc" } }, { player: { name: "asc" } }],
   });
 
-  const existingLineup = await prisma.lineup.findUnique({
-    where: { userId_matchdayId: { userId: session.userId, matchdayId: matchday.id } },
+  const existingLineup = await prisma.lineup.findFirst({
+    where: { userId: session.userId, matchdayId: matchday.id },
     include: { slots: { include: { player: true }, orderBy: { position: "asc" } } },
   });
 
