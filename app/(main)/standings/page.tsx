@@ -4,9 +4,10 @@ import TeamLogo from "@/app/components/TeamLogo";
 
 async function getStandings(seasonId: number) {
   const db = getDb();
+
   const res = await db.execute({
     sql: `SELECT
-            u.id, u.teamName, u.username, u.logoUrl,
+            u.id, u.teamName, u.username,
             COALESCE(SUM(CASE WHEN m.homeUserId = u.id THEN m.homePoints ELSE m.awayPoints END), 0) as points,
             COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 3) OR (m.awayUserId = u.id AND m.awayPoints = 3) THEN 1 ELSE 0 END), 0) as wins,
             COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 1) OR (m.awayUserId = u.id AND m.awayPoints = 1) THEN 1 ELSE 0 END), 0) as draws,
@@ -26,11 +27,20 @@ async function getStandings(seasonId: number) {
     args: [seasonId],
   });
 
+  // Fetch logoUrl separately (column may not exist yet)
+  const logoMap: Record<number, string | null> = {};
+  try {
+    const logoRes = await db.execute(`SELECT id, logoUrl FROM "User" WHERE isAdmin = 0`);
+    for (const row of logoRes.rows) {
+      logoMap[row.id as number] = (row.logoUrl as string | null) ?? null;
+    }
+  } catch { /* column not yet migrated */ }
+
   return res.rows.map((r) => ({
     userId: r.id as number,
     teamName: r.teamName as string,
     username: r.username as string,
-    logoUrl: r.logoUrl as string | null,
+    logoUrl: logoMap[r.id as number] ?? null,
     points: r.points as number,
     wins: r.wins as number,
     draws: r.draws as number,

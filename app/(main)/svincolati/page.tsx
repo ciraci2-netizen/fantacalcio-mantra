@@ -1,5 +1,3 @@
-"use server";
-
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { MANTRA_ROLES } from "@/app/lib/scoring";

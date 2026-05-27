@@ -7,12 +7,18 @@ export default async function MainLayout({ children }: { children: React.ReactNo
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const db = getDb();
-  const logoRes = await db.execute({
-    sql: `SELECT logoUrl FROM "User" WHERE id = ?`,
-    args: [session.userId],
-  });
-  const logoUrl = (logoRes.rows[0]?.logoUrl as string | null) ?? null;
+  // logoUrl potrebbe non esistere ancora (migrazione non eseguita) — fail-safe
+  let logoUrl: string | null = null;
+  try {
+    const db = getDb();
+    const logoRes = await db.execute({
+      sql: `SELECT logoUrl FROM "User" WHERE id = ?`,
+      args: [session.userId],
+    });
+    logoUrl = (logoRes.rows[0]?.logoUrl as string | null) ?? null;
+  } catch {
+    // colonna non ancora presente nel DB — ignora
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
