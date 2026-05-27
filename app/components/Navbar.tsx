@@ -9,6 +9,7 @@ interface NavbarProps {
   username: string;
   teamName: string;
   isAdmin: boolean;
+  logoUrl?: string | null;
 }
 
 const BASE_LINKS = [
@@ -20,11 +21,12 @@ const BASE_LINKS = [
   { href: "/squadre",     label: "Squadre",     icon: "🔍" },
   { href: "/stats",       label: "Statistiche", icon: "📊" },
   { href: "/coppe",       label: "Coppe",       icon: "🏅" },
+  { href: "/svincolati",  label: "Svincolati",  icon: "🆓" },
   { href: "/mercato",     label: "Mercato",     icon: "🔄" },
   { href: "/regolamento", label: "Regolamento", icon: "📖" },
 ];
 
-export default function Navbar({ username, teamName, isAdmin }: NavbarProps) {
+export default function Navbar({ username, teamName, isAdmin, logoUrl }: NavbarProps) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -33,6 +35,21 @@ export default function Navbar({ username, teamName, isAdmin }: NavbarProps) {
     : BASE_LINKS;
 
   const initials = teamName.slice(0, 2).toUpperCase();
+
+  const Avatar = ({ size = "sm" }: { size?: "sm" | "md" }) => {
+    const cls = size === "md" ? "w-9 h-9 text-sm" : "w-8 h-8 text-xs";
+    if (logoUrl) {
+      return (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logoUrl} alt={teamName} className={`${cls} rounded-full object-cover border-2 border-green-400 shrink-0`} />
+      );
+    }
+    return (
+      <div className={`${cls} rounded-full bg-green-500 border-2 border-green-400 flex items-center justify-center font-bold shrink-0`}>
+        {initials}
+      </div>
+    );
+  };
 
   return (
     <nav className="bg-green-700 text-white shadow-md relative z-50">
@@ -62,9 +79,7 @@ export default function Navbar({ username, teamName, isAdmin }: NavbarProps) {
 
         {/* Right: avatar + user info + logout (desktop) + hamburger (mobile) */}
         <div className="flex items-center gap-2 shrink-0">
-          <div className="w-8 h-8 rounded-full bg-green-500 border-2 border-green-400 flex items-center justify-center text-xs font-bold shrink-0">
-            {initials}
-          </div>
+          <Avatar size="sm" />
           <div className="hidden sm:flex flex-col leading-tight">
             <span className="text-sm font-semibold leading-tight">{teamName}</span>
             <Link
@@ -126,9 +141,7 @@ export default function Navbar({ username, teamName, isAdmin }: NavbarProps) {
           </div>
           <div className="px-4 py-3 border-t border-green-600 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-full bg-green-500 border-2 border-green-400 flex items-center justify-center text-sm font-bold">
-                {initials}
-              </div>
+              <Avatar size="md" />
               <div>
                 <p className="text-sm font-semibold">{teamName}</p>
                 <p className="text-green-300 text-xs">{username}</p>

@@ -38,6 +38,8 @@ export default async function AdminPage() {
     { href: "/admin/mercato", icon: "🔄", title: "Gestisci Mercato", desc: "Apri mercati e approva trasferimenti", color: "teal" },
     { href: "/admin/regolamento", icon: "📋", title: "Modifica Regolamento", desc: "Bonus/malus e sezioni di testo", color: "indigo" },
     { href: "/admin/settings", icon: "⚙️", title: "Impostazioni Lega", desc: "Crediti, soglie gol, sostituzioni", color: "slate" },
+    { href: "/admin/roster", icon: "📋", title: "Gestione Rose", desc: "Assegna/rimuovi giocatori per squadra", color: "cyan" },
+    { href: "/admin/logos", icon: "🖼️", title: "Loghi Squadre", desc: "Carica il logo per ogni team", color: "pink" },
   ];
 
   const colorMap: Record<string, string> = {
@@ -49,6 +51,8 @@ export default async function AdminPage() {
     teal: "bg-teal-50 border-teal-200 hover:bg-teal-100",
     indigo: "bg-indigo-50 border-indigo-200 hover:bg-indigo-100",
     slate: "bg-slate-50 border-slate-200 hover:bg-slate-100",
+    cyan: "bg-cyan-50 border-cyan-200 hover:bg-cyan-100",
+    pink: "bg-pink-50 border-pink-200 hover:bg-pink-100",
   };
 
   return (

@@ -131,6 +131,9 @@ export async function runMigrations() {
     UNIQUE(playerId, matchdayId)
   )`);
 
+  // Colonna logoUrl su User
+  try { await db.execute(`ALTER TABLE "User" ADD COLUMN "logoUrl" TEXT`); } catch { /* già presente */ }
+
   // Tabella LeagueSettings (una riga per stagione)
   await db.execute(`CREATE TABLE IF NOT EXISTS "LeagueSettings" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

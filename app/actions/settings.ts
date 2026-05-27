@@ -65,6 +65,33 @@ export async function setUserCredits(prevState: string | null, formData: FormDat
   return null;
 }
 
+// ─── Logo squadra ───────────────────────────────────────────────────────────
+
+export async function setTeamLogo(prevState: string | null, formData: FormData) {
+  const session = await getSession();
+  if (!session?.isAdmin) return "Non autorizzato.";
+
+  const userId = parseInt(formData.get("userId") as string);
+  const logoData = (formData.get("logoData") as string)?.trim();
+
+  if (!logoData) {
+    // Rimuovi logo
+    await getDb().execute({ sql: `UPDATE "User" SET logoUrl = NULL WHERE id = ?`, args: [userId] });
+  } else {
+    // Accetta solo data URL (base64)
+    if (!logoData.startsWith("data:image/")) return "Formato immagine non valido.";
+    if (logoData.length > 500_000) return "Immagine troppo grande (max ~375KB).";
+    await getDb().execute({ sql: `UPDATE "User" SET logoUrl = ? WHERE id = ?`, args: [logoData, userId] });
+  }
+
+  revalidatePath("/admin/roster");
+  revalidatePath("/admin/users");
+  revalidatePath("/standings");
+  revalidatePath("/team");
+  revalidatePath("/squadre");
+  return null;
+}
+
 // ─── PlayerStatus (disponibilità) ───────────────────────────────────────────
 
 export async function setPlayerStatus(prevState: string | null, formData: FormData) {

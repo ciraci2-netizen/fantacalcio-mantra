@@ -1,11 +1,12 @@
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
+import TeamLogo from "@/app/components/TeamLogo";
 
 async function getStandings(seasonId: number) {
   const db = getDb();
   const res = await db.execute({
     sql: `SELECT
-            u.id, u.teamName, u.username,
+            u.id, u.teamName, u.username, u.logoUrl,
             COALESCE(SUM(CASE WHEN m.homeUserId = u.id THEN m.homePoints ELSE m.awayPoints END), 0) as points,
             COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 3) OR (m.awayUserId = u.id AND m.awayPoints = 3) THEN 1 ELSE 0 END), 0) as wins,
             COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 1) OR (m.awayUserId = u.id AND m.awayPoints = 1) THEN 1 ELSE 0 END), 0) as draws,
@@ -29,6 +30,7 @@ async function getStandings(seasonId: number) {
     userId: r.id as number,
     teamName: r.teamName as string,
     username: r.username as string,
+    logoUrl: r.logoUrl as string | null,
     points: r.points as number,
     wins: r.wins as number,
     draws: r.draws as number,
@@ -91,8 +93,13 @@ export default async function StandingsPage() {
                     </span>
                   </td>
                   <td className="px-3 py-2">
-                    <p className="font-semibold">{s.teamName}</p>
-                    <p className="text-gray-400 text-xs">{s.username}</p>
+                    <div className="flex items-center gap-2">
+                      <TeamLogo logoUrl={s.logoUrl} teamName={s.teamName} size="sm" />
+                      <div>
+                        <p className="font-semibold">{s.teamName}</p>
+                        <p className="text-gray-400 text-xs">{s.username}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-center text-gray-600">{s.played}</td>
                   <td className="px-3 py-2 text-center text-green-600 font-medium">{s.wins}</td>
