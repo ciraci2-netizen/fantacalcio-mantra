@@ -1,44 +1,61 @@
 import { getSession } from "@/app/lib/session";
-import { prisma } from "@/app/lib/prisma";
+import { getDb } from "@/app/lib/db";
 import Link from "next/link";
 
 export default async function DashboardPage() {
   const session = await getSession();
   if (!session) return null;
 
-  const season = await prisma.season.findFirst({
-    where: { isActive: true },
-    include: {
-      matchdays: {
-        where: { number: { gt: 0 } },
-        orderBy: { number: "asc" },
-      },
-    },
-  });
+  const db = getDb();
 
-  const currentMatchday = season
-    ? season.matchdays.find((m) => m.number === season.currentMatchday)
+  const seasonRes = await db.execute(
+    `SELECT id, name, currentMatchday FROM "Season" WHERE isActive = 1 LIMIT 1`
+  );
+  const season = seasonRes.rows[0] ?? null;
+
+  const currentMatchdayRow = season
+    ? (
+        await db.execute({
+          sql: `SELECT id, number, isLocked FROM "Matchday" WHERE seasonId = ? AND number = ? LIMIT 1`,
+          args: [season.id, season.currentMatchday],
+        })
+      ).rows[0] ?? null
     : null;
 
-  const standings = await getStandings(season?.id);
+  const standings = await getStandings(season?.id as number | undefined);
 
-  const nextMatch = currentMatchday
-    ? await prisma.match.findFirst({
-        where: {
-          matchdayId: currentMatchday.id,
-          OR: [{ homeUserId: session.userId }, { awayUserId: session.userId }],
-        },
-        include: { homeUser: true, awayUser: true },
-      })
+  const nextMatch = currentMatchdayRow
+    ? (
+        await db.execute({
+          sql: `SELECT m.id, m.homeScore, m.awayScore, m.homePoints,
+                       hu.teamName as homeTeamName, hu.username as homeUsername,
+                       au.teamName as awayTeamName, au.username as awayUsername
+                FROM "Match" m
+                JOIN "User" hu ON hu.id = m.homeUserId
+                JOIN "User" au ON au.id = m.awayUserId
+                WHERE m.matchdayId = ? AND (m.homeUserId = ? OR m.awayUserId = ?)
+                LIMIT 1`,
+          args: [currentMatchdayRow.id, session.userId, session.userId],
+        })
+      ).rows[0] ?? null
     : null;
 
-  const lastLineup = await prisma.lineup.findFirst({
-    where: { userId: session.userId, totalScore: { not: null } },
-    orderBy: { matchdayId: "desc" },
-    include: { matchday: true },
+  const lastLineupRes = await db.execute({
+    sql: `SELECT l.totalScore, md.number as matchdayNumber
+          FROM "Lineup" l
+          JOIN "Matchday" md ON md.id = l.matchdayId
+          WHERE l.userId = ? AND l.totalScore IS NOT NULL
+          ORDER BY l.matchdayId DESC
+          LIMIT 1`,
+    args: [session.userId],
   });
+  const lastLineup = lastLineupRes.rows[0] ?? null;
 
-  const rosterCount = await prisma.roster.count({ where: { userId: session.userId } });
+  const rosterCountRes = await db.execute({
+    sql: `SELECT COUNT(*) as c FROM "Roster" WHERE userId = ?`,
+    args: [session.userId],
+  });
+  const rosterCount = rosterCountRes.rows[0].c as number;
 
   return (
     <div className="space-y-6">
@@ -48,8 +65,8 @@ export default async function DashboardPage() {
         </h1>
         {season ? (
           <p className="text-gray-500 mt-1">
-            Stagione <strong>{season.name}</strong> — Giornata corrente:{" "}
-            <strong>{season.currentMatchday}</strong>
+            Stagione <strong>{season.name as string}</strong> — Giornata corrente:{" "}
+            <strong>{season.currentMatchday as number}</strong>
           </p>
         ) : (
           <p className="text-amber-600 mt-1">
@@ -69,15 +86,15 @@ export default async function DashboardPage() {
         <StatCard
           icon="📋"
           label="Formazione"
-          value={currentMatchday?.isLocked ? "Bloccata" : "Invia entro la giornata"}
+          value={currentMatchdayRow?.isLocked ? "Bloccata" : "Invia entro la giornata"}
           color="blue"
           href="/lineup"
         />
         {lastLineup && (
           <StatCard
             icon="⭐"
-            label={`Punteggio G${lastLineup.matchday.number}`}
-            value={lastLineup.totalScore?.toFixed(1) ?? "-"}
+            label={`Punteggio G${lastLineup.matchdayNumber as number}`}
+            value={(lastLineup.totalScore as number)?.toFixed(1) ?? "-"}
             color="purple"
             href="/calendar"
           />
@@ -95,22 +112,22 @@ export default async function DashboardPage() {
         {nextMatch && (
           <div className="bg-white rounded-xl shadow-sm border p-5">
             <h2 className="font-semibold text-gray-700 mb-3">
-              Prossima partita — Giornata {season?.currentMatchday}
+              Prossima partita — Giornata {season?.currentMatchday as number}
             </h2>
             <div className="flex items-center justify-between">
               <div className="text-center flex-1">
-                <p className="font-bold text-lg">{nextMatch.homeUser.teamName}</p>
-                <p className="text-gray-400 text-sm">{nextMatch.homeUser.username}</p>
+                <p className="font-bold text-lg">{nextMatch.homeTeamName as string}</p>
+                <p className="text-gray-400 text-sm">{nextMatch.homeUsername as string}</p>
               </div>
               <div className="text-2xl font-bold text-gray-300 px-4">VS</div>
               <div className="text-center flex-1">
-                <p className="font-bold text-lg">{nextMatch.awayUser.teamName}</p>
-                <p className="text-gray-400 text-sm">{nextMatch.awayUser.username}</p>
+                <p className="font-bold text-lg">{nextMatch.awayTeamName as string}</p>
+                <p className="text-gray-400 text-sm">{nextMatch.awayUsername as string}</p>
               </div>
             </div>
             {nextMatch.homeScore !== null && (
               <div className="text-center mt-3 text-2xl font-bold text-green-700">
-                {nextMatch.homeScore?.toFixed(1)} — {nextMatch.awayScore?.toFixed(1)}
+                {(nextMatch.homeScore as number)?.toFixed(1)} — {(nextMatch.awayScore as number)?.toFixed(1)}
               </div>
             )}
           </div>
@@ -185,32 +202,34 @@ function StatCard({
 
 async function getStandings(seasonId?: number) {
   if (!seasonId) return [];
-  const users = await prisma.user.findMany({ where: { isAdmin: false } });
-  const results: { userId: number; teamName: string; points: number; gf: number; ga: number }[] =
-    [];
+  const db = getDb();
 
-  for (const user of users) {
-    const matches = await prisma.match.findMany({
-      where: {
-        matchday: { seasonId },
-        homePoints: { not: null },
-        OR: [{ homeUserId: user.id }, { awayUserId: user.id }],
-      },
+  const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isAdmin = 0`);
+  const results: { userId: number; teamName: string; points: number; gf: number; ga: number }[] = [];
+
+  for (const user of usersRes.rows) {
+    const matchesRes = await db.execute({
+      sql: `SELECT m.homeUserId, m.awayUserId, m.homePoints, m.awayPoints, m.homeScore, m.awayScore
+            FROM "Match" m
+            JOIN "Matchday" md ON md.id = m.matchdayId
+            WHERE md.seasonId = ? AND m.homePoints IS NOT NULL
+            AND (m.homeUserId = ? OR m.awayUserId = ?)`,
+      args: [seasonId, user.id, user.id],
     });
 
     let points = 0, gf = 0, ga = 0;
-    for (const m of matches) {
+    for (const m of matchesRes.rows) {
       if (m.homeUserId === user.id) {
-        points += m.homePoints ?? 0;
-        gf += m.homeScore ?? 0;
-        ga += m.awayScore ?? 0;
+        points += (m.homePoints as number) ?? 0;
+        gf += (m.homeScore as number) ?? 0;
+        ga += (m.awayScore as number) ?? 0;
       } else {
-        points += m.awayPoints ?? 0;
-        gf += m.awayScore ?? 0;
-        ga += m.homeScore ?? 0;
+        points += (m.awayPoints as number) ?? 0;
+        gf += (m.awayScore as number) ?? 0;
+        ga += (m.homeScore as number) ?? 0;
       }
     }
-    results.push({ userId: user.id, teamName: user.teamName, points, gf, ga });
+    results.push({ userId: user.id as number, teamName: user.teamName as string, points, gf, ga });
   }
   return results.sort((a, b) => b.points - a.points || b.gf - a.gf);
 }

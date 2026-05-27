@@ -1,5 +1,5 @@
 import { getSession } from "@/app/lib/session";
-import { prisma } from "@/app/lib/prisma";
+import { getDb } from "@/app/lib/db";
 import { MANTRA_ROLES } from "@/app/lib/scoring";
 
 const ROLE_COLORS: Record<string, string> = {
@@ -15,17 +15,37 @@ const ROLE_COLORS: Record<string, string> = {
   Pc: "bg-red-100 text-red-800 border-red-300",
 };
 
+type RosterItem = {
+  id: number;
+  purchasePrice: number;
+  player: { mantraRole: string; name: string; realTeam: string };
+};
+
 export default async function TeamPage() {
   const session = await getSession();
   if (!session) return null;
 
-  const roster = await prisma.roster.findMany({
-    where: { userId: session.userId },
-    include: { player: true },
-    orderBy: [{ player: { mantraRole: "asc" } }, { player: { name: "asc" } }],
+  const db = getDb();
+  const rosterRes = await db.execute({
+    sql: `SELECT r.id, r.purchasePrice, p.name, p.realTeam, p.mantraRole
+          FROM "Roster" r
+          JOIN "Player" p ON p.id = r.playerId
+          WHERE r.userId = ?
+          ORDER BY p.mantraRole ASC, p.name ASC`,
+    args: [session.userId],
   });
 
-  const byRole: Record<string, typeof roster> = {};
+  const roster: RosterItem[] = rosterRes.rows.map((r) => ({
+    id: r.id as number,
+    purchasePrice: r.purchasePrice as number,
+    player: {
+      mantraRole: r.mantraRole as string,
+      name: r.name as string,
+      realTeam: r.realTeam as string,
+    },
+  }));
+
+  const byRole: Record<string, RosterItem[]> = {};
   for (const r of roster) {
     if (!byRole[r.player.mantraRole]) byRole[r.player.mantraRole] = [];
     byRole[r.player.mantraRole].push(r);

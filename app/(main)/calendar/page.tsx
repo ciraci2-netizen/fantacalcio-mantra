@@ -1,39 +1,71 @@
-import { prisma } from "@/app/lib/prisma";
+import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
+
+type MatchRow = {
+  id: number;
+  homeScore: number | null;
+  awayScore: number | null;
+  homePoints: number | null;
+  homeUser: { id: number; teamName: string };
+  awayUser: { id: number; teamName: string };
+};
 
 export default async function CalendarPage() {
   const session = await getSession();
   if (!session) return null;
 
-  const season = await prisma.season.findFirst({
-    where: { isActive: true },
-    include: {
-      matchdays: {
-        orderBy: { number: "asc" },
-        include: {
-          matches: {
-            include: { homeUser: true, awayUser: true },
-          },
-        },
-      },
-    },
-  });
+  const db = getDb();
+
+  const seasonRes = await db.execute(
+    `SELECT id, name FROM "Season" WHERE isActive = 1 LIMIT 1`
+  );
+  const season = seasonRes.rows[0] ?? null;
 
   if (!season) {
     return <div className="text-center py-12 text-gray-500">Nessuna stagione attiva.</div>;
   }
 
-  const playedMatchdays = season.matchdays.filter((md) =>
-    md.matches.some((m) => m.homeScore !== null)
-  );
-  const upcomingMatchdays = season.matchdays.filter((md) =>
-    md.matches.length > 0 && md.matches.every((m) => m.homeScore === null)
+  const matchesRes = await db.execute({
+    sql: `SELECT m.id, m.matchdayId, m.homeScore, m.awayScore, m.homePoints,
+                 m.homeUserId, m.awayUserId,
+                 hu.teamName as homeTeamName,
+                 au.teamName as awayTeamName,
+                 md.number as matchdayNumber
+          FROM "Match" m
+          JOIN "Matchday" md ON md.id = m.matchdayId
+          JOIN "User" hu ON hu.id = m.homeUserId
+          JOIN "User" au ON au.id = m.awayUserId
+          WHERE md.seasonId = ?
+          ORDER BY md.number ASC`,
+    args: [season.id],
+  });
+
+  const matchdayMap = new Map<number, { id: number; number: number; matches: MatchRow[] }>();
+  for (const row of matchesRes.rows) {
+    const mdId = row.matchdayId as number;
+    if (!matchdayMap.has(mdId)) {
+      matchdayMap.set(mdId, { id: mdId, number: row.matchdayNumber as number, matches: [] });
+    }
+    matchdayMap.get(mdId)!.matches.push({
+      id: row.id as number,
+      homeScore: row.homeScore as number | null,
+      awayScore: row.awayScore as number | null,
+      homePoints: row.homePoints as number | null,
+      homeUser: { id: row.homeUserId as number, teamName: row.homeTeamName as string },
+      awayUser: { id: row.awayUserId as number, teamName: row.awayTeamName as string },
+    });
+  }
+
+  const matchdays = [...matchdayMap.values()].sort((a, b) => a.number - b.number);
+  const playedMatchdays = matchdays.filter((md) => md.matches.some((m) => m.homeScore !== null));
+  const upcomingMatchdays = matchdays.filter(
+    (md) => md.matches.length > 0 && md.matches.every((m) => m.homeScore === null)
   );
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-800">
-        Calendario — <span className="text-green-700">{season.name}</span>
+        Calendario — <span className="text-green-700">{season.name as string}</span>
       </h1>
 
       {playedMatchdays.length > 0 && (
@@ -65,17 +97,7 @@ function MatchdayCard({
   md,
   currentUserId,
 }: {
-  md: {
-    number: number;
-    matches: Array<{
-      id: number;
-      homeScore: number | null;
-      awayScore: number | null;
-      homePoints: number | null;
-      homeUser: { id: number; teamName: string };
-      awayUser: { id: number; teamName: string };
-    }>;
-  };
+  md: { number: number; matches: MatchRow[] };
   currentUserId: number;
 }) {
   return (

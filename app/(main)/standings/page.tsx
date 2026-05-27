@@ -1,11 +1,16 @@
-import { prisma } from "@/app/lib/prisma";
+import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 
 export default async function StandingsPage() {
   const session = await getSession();
   if (!session) return null;
 
-  const season = await prisma.season.findFirst({ where: { isActive: true } });
+  const db = getDb();
+
+  const seasonRes = await db.execute(
+    `SELECT id, name FROM "Season" WHERE isActive = 1 LIMIT 1`
+  );
+  const season = seasonRes.rows[0] ?? null;
 
   if (!season) {
     return (
@@ -15,38 +20,41 @@ export default async function StandingsPage() {
     );
   }
 
-  const users = await prisma.user.findMany({ where: { isAdmin: false } });
+  const usersRes = await db.execute(
+    `SELECT id, teamName, username FROM "User" WHERE isAdmin = 0`
+  );
 
   const standings = await Promise.all(
-    users.map(async (user) => {
-      const matches = await prisma.match.findMany({
-        where: {
-          matchday: { seasonId: season.id },
-          homePoints: { not: null },
-          OR: [{ homeUserId: user.id }, { awayUserId: user.id }],
-        },
+    usersRes.rows.map(async (user) => {
+      const matchesRes = await db.execute({
+        sql: `SELECT m.homeUserId, m.awayUserId, m.homePoints, m.awayPoints, m.homeScore, m.awayScore
+              FROM "Match" m
+              JOIN "Matchday" md ON md.id = m.matchdayId
+              WHERE md.seasonId = ? AND m.homePoints IS NOT NULL
+              AND (m.homeUserId = ? OR m.awayUserId = ?)`,
+        args: [season.id, user.id, user.id],
       });
 
       let points = 0, wins = 0, draws = 0, losses = 0, gf = 0, ga = 0;
 
-      for (const m of matches) {
+      for (const m of matchesRes.rows) {
         const isHome = m.homeUserId === user.id;
-        const myPoints = isHome ? (m.homePoints ?? 0) : (m.awayPoints ?? 0);
-        const myGf = isHome ? (m.homeScore ?? 0) : (m.awayScore ?? 0);
-        const myGa = isHome ? (m.awayScore ?? 0) : (m.homeScore ?? 0);
+        const myPoints = isHome ? (m.homePoints as number) ?? 0 : (m.awayPoints as number) ?? 0;
+        const myGf = isHome ? (m.homeScore as number) ?? 0 : (m.awayScore as number) ?? 0;
+        const myGa = isHome ? (m.awayScore as number) ?? 0 : (m.homeScore as number) ?? 0;
 
         points += myPoints;
         gf += myGf;
         ga += myGa;
         if (myPoints === 3) wins++;
         else if (myPoints === 1) draws++;
-        else if (myPoints === 0 && m.homePoints !== null) losses++;
+        else if (myPoints === 0) losses++;
       }
 
       return {
-        userId: user.id,
-        teamName: user.teamName,
-        username: user.username,
+        userId: user.id as number,
+        teamName: user.teamName as string,
+        username: user.username as string,
         played: wins + draws + losses,
         wins,
         draws,
@@ -64,7 +72,7 @@ export default async function StandingsPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-800">
-        Classifica — <span className="text-green-700">{season.name}</span>
+        Classifica — <span className="text-green-700">{season.name as string}</span>
       </h1>
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">

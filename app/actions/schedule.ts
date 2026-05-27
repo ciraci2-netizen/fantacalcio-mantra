@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/app/lib/prisma";
+import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 
 export async function createSeason(prevState: string | null, formData: FormData) {
@@ -13,15 +13,19 @@ export async function createSeason(prevState: string | null, formData: FormData)
 
   if (!name) return "Inserisci il nome della stagione.";
 
-  // Disattiva stagioni precedenti
-  await prisma.season.updateMany({ data: { isActive: false } });
+  const db = getDb();
+  await db.execute(`UPDATE "Season" SET isActive = 0`);
 
-  const season = await prisma.season.create({ data: { name } });
+  const seasonResult = await db.execute({
+    sql: `INSERT INTO "Season" (name, isActive, currentMatchday) VALUES (?, 1, 1)`,
+    args: [name],
+  });
+  const seasonId = Number(seasonResult.lastInsertRowid);
 
-  // Crea le giornate
   for (let i = 1; i <= matchdayCount; i++) {
-    await prisma.matchday.create({
-      data: { seasonId: season.id, number: i },
+    await db.execute({
+      sql: `INSERT INTO "Matchday" (seasonId, number) VALUES (?, ?)`,
+      args: [seasonId, i],
     });
   }
 
@@ -34,66 +38,59 @@ export async function generateCalendar(prevState: string | null, formData: FormD
   if (!session?.isAdmin) return "Non autorizzato.";
 
   const seasonId = parseInt(formData.get("seasonId") as string);
+  const db = getDb();
 
-  const season = await prisma.season.findUnique({
-    where: { id: seasonId },
-    include: { matchdays: { orderBy: { number: "asc" } } },
+  const seasonRes = await db.execute({ sql: `SELECT id FROM "Season" WHERE id = ?`, args: [seasonId] });
+  if (seasonRes.rows.length === 0) return "Stagione non trovata.";
+
+  const matchdaysRes = await db.execute({
+    sql: `SELECT id, number FROM "Matchday" WHERE seasonId = ? ORDER BY number ASC`,
+    args: [seasonId],
   });
-  if (!season) return "Stagione non trovata.";
+  const matchdays = matchdaysRes.rows;
 
-  const users = await prisma.user.findMany({ where: { isAdmin: false } });
+  const usersRes = await db.execute(`SELECT id FROM "User" WHERE isAdmin = 0`);
+  const users = usersRes.rows;
   if (users.length !== 12) return `Servono esattamente 12 partecipanti (trovati: ${users.length}).`;
 
-  // Genera calendario round-robin (ogni squadra affronta tutte le altre)
-  // Con 12 squadre: 11 giornate per un girone completo
-  const matchdays = season.matchdays;
+  const schedule = generateRoundRobin(users.map((u) => u.id as number));
 
-  // Algoritmo round-robin per 12 squadre
-  const schedule = generateRoundRobin(users.map((u) => u.id));
-
-  // Ogni round = 6 partite (12/2)
-  // Con 38 giornate, facciamo circa 3 giri + resto
   let matchdayIdx = 0;
+
   for (const round of schedule) {
     if (matchdayIdx >= matchdays.length) break;
     const md = matchdays[matchdayIdx];
-
-    // Elimina partite esistenti per questa giornata
-    await prisma.match.deleteMany({ where: { matchdayId: md.id } });
-
+    await db.execute({ sql: `DELETE FROM "Match" WHERE matchdayId = ?`, args: [md.id] });
     for (const [homeId, awayId] of round) {
-      await prisma.match.create({
-        data: { matchdayId: md.id, homeUserId: homeId, awayUserId: awayId },
+      await db.execute({
+        sql: `INSERT INTO "Match" (matchdayId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
+        args: [md.id, homeId, awayId],
       });
     }
     matchdayIdx++;
   }
 
-  // Se ci sono più giornate, ripetiamo il calendario con home/away invertiti
   for (const round of schedule) {
     if (matchdayIdx >= matchdays.length) break;
     const md = matchdays[matchdayIdx];
-
-    await prisma.match.deleteMany({ where: { matchdayId: md.id } });
-
+    await db.execute({ sql: `DELETE FROM "Match" WHERE matchdayId = ?`, args: [md.id] });
     for (const [homeId, awayId] of round) {
-      await prisma.match.create({
-        data: { matchdayId: md.id, homeUserId: awayId, awayUserId: homeId },
+      await db.execute({
+        sql: `INSERT INTO "Match" (matchdayId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
+        args: [md.id, awayId, homeId],
       });
     }
     matchdayIdx++;
   }
 
-  // Terzo giro se servono altre giornate
   for (const round of schedule) {
     if (matchdayIdx >= matchdays.length) break;
     const md = matchdays[matchdayIdx];
-
-    await prisma.match.deleteMany({ where: { matchdayId: md.id } });
-
+    await db.execute({ sql: `DELETE FROM "Match" WHERE matchdayId = ?`, args: [md.id] });
     for (const [homeId, awayId] of round) {
-      await prisma.match.create({
-        data: { matchdayId: md.id, homeUserId: homeId, awayUserId: awayId },
+      await db.execute({
+        sql: `INSERT INTO "Match" (matchdayId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
+        args: [md.id, homeId, awayId],
       });
     }
     matchdayIdx++;
@@ -115,7 +112,6 @@ function generateRoundRobin(teams: number[]): [number, number][][] {
       matches.push([t[i], t[n - 1 - i]]);
     }
     rounds.push(matches);
-    // Ruota tutti tranne il primo
     const last = t.pop()!;
     t.splice(1, 0, last);
   }
@@ -130,9 +126,9 @@ export async function setCurrentMatchday(prevState: string | null, formData: For
   const seasonId = parseInt(formData.get("seasonId") as string);
   const matchday = parseInt(formData.get("matchday") as string);
 
-  await prisma.season.update({
-    where: { id: seasonId },
-    data: { currentMatchday: matchday },
+  await getDb().execute({
+    sql: `UPDATE "Season" SET currentMatchday = ? WHERE id = ?`,
+    args: [matchday, seasonId],
   });
 
   revalidatePath("/admin/schedule");

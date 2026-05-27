@@ -1,26 +1,37 @@
 import { getSession } from "@/app/lib/session";
 import { redirect } from "next/navigation";
-import { prisma } from "@/app/lib/prisma";
+import { getDb } from "@/app/lib/db";
 import Link from "next/link";
 
 export default async function AdminPage() {
   const session = await getSession();
   if (!session?.isAdmin) redirect("/");
 
-  const [playerCount, userCount, season] = await Promise.all([
-    prisma.player.count(),
-    prisma.user.count({ where: { isAdmin: false } }),
-    prisma.season.findFirst({ where: { isActive: true }, include: { matchdays: true } }),
+  const db = getDb();
+
+  const [playerCountRes, userCountRes, seasonRes] = await Promise.all([
+    db.execute(`SELECT COUNT(*) as c FROM "Player"`),
+    db.execute(`SELECT COUNT(*) as c FROM "User" WHERE isAdmin = 0`),
+    db.execute(`SELECT id, name FROM "Season" WHERE isActive = 1 LIMIT 1`),
   ]);
 
+  const playerCount = playerCountRes.rows[0].c as number;
+  const userCount = userCountRes.rows[0].c as number;
+  const season = seasonRes.rows[0] ?? null;
+
   const votesImported = season
-    ? await prisma.matchday.count({ where: { seasonId: season.id, votesImported: true } })
+    ? ((
+        await db.execute({
+          sql: `SELECT COUNT(*) as c FROM "Matchday" WHERE seasonId = ? AND votesImported = 1`,
+          args: [season.id],
+        })
+      ).rows[0].c as number)
     : 0;
 
   const cards = [
     { href: "/admin/players", icon: "👤", title: "Gestisci Giocatori", desc: `${playerCount} giocatori nel database`, color: "blue" },
     { href: "/admin/users", icon: "👥", title: "Gestisci Utenti", desc: `${userCount} / 12 partecipanti`, color: "purple" },
-    { href: "/admin/schedule", icon: "📅", title: "Stagione & Calendario", desc: season ? `Stagione: ${season.name}` : "Nessuna stagione attiva", color: "green" },
+    { href: "/admin/schedule", icon: "📅", title: "Stagione & Calendario", desc: season ? `Stagione: ${season.name as string}` : "Nessuna stagione attiva", color: "green" },
     { href: "/admin/votes", icon: "📊", title: "Importa Voti", desc: `${votesImported} giornate con voti importati`, color: "amber" },
   ];
 

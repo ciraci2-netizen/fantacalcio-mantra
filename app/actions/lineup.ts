@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/app/lib/prisma";
+import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 
 export async function saveLineup(prevState: string | null, formData: FormData) {
@@ -11,14 +11,12 @@ export async function saveLineup(prevState: string | null, formData: FormData) {
   const matchdayId = parseInt(formData.get("matchdayId") as string);
   const formation = formData.get("formation") as string;
 
-  // Leggi i titolari (11 slot, position 1-11)
   const starterIds: number[] = [];
   for (let i = 1; i <= 11; i++) {
     const id = formData.get(`starter_${i}`);
     if (id) starterIds.push(parseInt(id as string));
   }
 
-  // Leggi le riserve (fino a 7 slot, position 1-7)
   const reserveIds: number[] = [];
   for (let i = 1; i <= 7; i++) {
     const id = formData.get(`reserve_${i}`);
@@ -28,53 +26,57 @@ export async function saveLineup(prevState: string | null, formData: FormData) {
   if (starterIds.length !== 11) return "Devi schierare esattamente 11 titolari.";
   if (new Set(starterIds).size !== 11) return "Hai inserito giocatori duplicati tra i titolari.";
 
-  // Verifica che tutti i giocatori siano nella rosa dell'utente
-  const roster = await prisma.roster.findMany({
-    where: { userId: session.userId },
-    select: { playerId: true },
+  const db = getDb();
+
+  const rosterRes = await db.execute({
+    sql: `SELECT playerId FROM "Roster" WHERE userId = ?`,
+    args: [session.userId],
   });
-  const rosterIds = new Set(roster.map((r) => r.playerId));
+  const rosterIds = new Set(rosterRes.rows.map((r) => r.playerId as number));
 
   for (const id of [...starterIds, ...reserveIds]) {
     if (!rosterIds.has(id)) return "Stai schierando un giocatore non nella tua rosa.";
   }
 
-  // Verifica che la giornata non sia bloccata
-  const matchday = await prisma.matchday.findUnique({ where: { id: matchdayId } });
-  if (matchday?.isLocked) return "La giornata è bloccata, non puoi modificare la formazione.";
+  const matchdayRes = await db.execute({
+    sql: `SELECT isLocked FROM "Matchday" WHERE id = ?`,
+    args: [matchdayId],
+  });
+  if (matchdayRes.rows[0]?.isLocked) return "La giornata è bloccata, non puoi modificare la formazione.";
 
-  // Crea o aggiorna il lineup
-  const existing = await prisma.lineup.findFirst({
-    where: { userId: session.userId, matchdayId },
+  const existingRes = await db.execute({
+    sql: `SELECT id FROM "Lineup" WHERE userId = ? AND matchdayId = ?`,
+    args: [session.userId, matchdayId],
   });
 
   let lineupId: number;
 
-  if (existing) {
-    await prisma.lineupSlot.deleteMany({ where: { lineupId: existing.id } });
-    await prisma.lineup.update({
-      where: { id: existing.id },
-      data: { formation, isSubmitted: true },
+  if (existingRes.rows.length > 0) {
+    lineupId = existingRes.rows[0].id as number;
+    await db.execute({ sql: `DELETE FROM "LineupSlot" WHERE lineupId = ?`, args: [lineupId] });
+    await db.execute({
+      sql: `UPDATE "Lineup" SET formation = ?, isSubmitted = 1 WHERE id = ?`,
+      args: [formation, lineupId],
     });
-    lineupId = existing.id;
   } else {
-    const lineup = await prisma.lineup.create({
-      data: { userId: session.userId, matchdayId, formation, isSubmitted: true },
+    const result = await db.execute({
+      sql: `INSERT INTO "Lineup" (userId, matchdayId, formation, isSubmitted) VALUES (?, ?, ?, 1)`,
+      args: [session.userId, matchdayId, formation],
     });
-    lineupId = lineup.id;
+    lineupId = Number(result.lastInsertRowid);
   }
 
-  // Crea i slot titolari
   for (let i = 0; i < starterIds.length; i++) {
-    await prisma.lineupSlot.create({
-      data: { lineupId, playerId: starterIds[i], position: i + 1, isStarter: true },
+    await db.execute({
+      sql: `INSERT INTO "LineupSlot" (lineupId, playerId, position, isStarter) VALUES (?, ?, ?, 1)`,
+      args: [lineupId, starterIds[i], i + 1],
     });
   }
 
-  // Crea i slot riserve
   for (let i = 0; i < reserveIds.length; i++) {
-    await prisma.lineupSlot.create({
-      data: { lineupId, playerId: reserveIds[i], position: i + 1, isStarter: false },
+    await db.execute({
+      sql: `INSERT INTO "LineupSlot" (lineupId, playerId, position, isStarter) VALUES (?, ?, ?, 0)`,
+      args: [lineupId, reserveIds[i], i + 1],
     });
   }
 

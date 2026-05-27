@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
-import { db } from "@/app/lib/db";
+import { getDb } from "@/app/lib/db";
 import { createSession, deleteSession } from "@/app/lib/session";
 
 export async function login(prevState: string | null, formData: FormData) {
@@ -11,7 +11,7 @@ export async function login(prevState: string | null, formData: FormData) {
 
   if (!username || !password) return "Inserisci username e password.";
 
-  const result = await db.execute({
+  const result = await getDb().execute({
     sql: `SELECT id, username, password, teamName, isAdmin FROM "User" WHERE username = ?`,
     args: [username],
   });

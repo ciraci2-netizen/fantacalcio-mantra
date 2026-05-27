@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/app/lib/prisma";
+import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 
 export async function addPlayerToRoster(prevState: string | null, formData: FormData) {
@@ -12,15 +12,18 @@ export async function addPlayerToRoster(prevState: string | null, formData: Form
   const playerId = parseInt(formData.get("playerId") as string);
   const purchasePrice = parseInt(formData.get("purchasePrice") as string) || 0;
 
-  // Controlla max 26 giocatori per squadra
-  const count = await prisma.roster.count({ where: { userId } });
-  if (count >= 26) return "La rosa è già completa (26 giocatori).";
+  const db = getDb();
 
-  // Controlla che il giocatore non sia già in un'altra rosa
-  const existing = await prisma.roster.findFirst({ where: { playerId } });
-  if (existing) return "Questo giocatore è già nella rosa di un altro utente.";
+  const countRes = await db.execute({ sql: `SELECT COUNT(*) as c FROM "Roster" WHERE userId = ?`, args: [userId] });
+  if ((countRes.rows[0].c as number) >= 26) return "La rosa è già completa (26 giocatori).";
 
-  await prisma.roster.create({ data: { userId, playerId, purchasePrice } });
+  const existing = await db.execute({ sql: `SELECT id FROM "Roster" WHERE playerId = ?`, args: [playerId] });
+  if (existing.rows.length > 0) return "Questo giocatore è già nella rosa di un altro utente.";
+
+  await db.execute({
+    sql: `INSERT INTO "Roster" (userId, playerId, purchasePrice) VALUES (?, ?, ?)`,
+    args: [userId, playerId, purchasePrice],
+  });
   revalidatePath("/admin/users");
   revalidatePath(`/admin/users/${userId}`);
   return null;
@@ -31,7 +34,7 @@ export async function removePlayerFromRoster(prevState: string | null, formData:
   if (!session?.isAdmin) return "Non autorizzato.";
 
   const rosterId = parseInt(formData.get("rosterId") as string);
-  await prisma.roster.delete({ where: { id: rosterId } });
+  await getDb().execute({ sql: `DELETE FROM "Roster" WHERE id = ?`, args: [rosterId] });
   revalidatePath("/admin/users");
   return null;
 }
@@ -43,7 +46,10 @@ export async function updatePurchasePrice(prevState: string | null, formData: Fo
   const rosterId = parseInt(formData.get("rosterId") as string);
   const purchasePrice = parseInt(formData.get("purchasePrice") as string) || 0;
 
-  await prisma.roster.update({ where: { id: rosterId }, data: { purchasePrice } });
+  await getDb().execute({
+    sql: `UPDATE "Roster" SET purchasePrice = ? WHERE id = ?`,
+    args: [purchasePrice, rosterId],
+  });
   revalidatePath("/admin/users");
   return null;
 }
