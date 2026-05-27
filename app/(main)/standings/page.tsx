@@ -27,7 +27,6 @@ async function getStandings(seasonId: number) {
     args: [seasonId],
   });
 
-  // Fetch logoUrl separately (column may not exist yet)
   const logoMap: Record<number, string | null> = {};
   try {
     const logoRes = await db.execute(`SELECT id, logoUrl FROM "User" WHERE isAdmin = 0`);
@@ -52,6 +51,12 @@ async function getStandings(seasonId: number) {
   }));
 }
 
+const POSITION_COLORS = [
+  "text-yellow-500",   // 1°
+  "text-slate-400",    // 2°
+  "text-amber-600",    // 3°
+];
+
 export default async function StandingsPage() {
   const session = await getSession();
   if (!session) return null;
@@ -67,62 +72,107 @@ export default async function StandingsPage() {
   const standings = await getStandings(season.id as number);
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-800">
-        Classifica — <span className="text-green-700">{season.name as string}</span>
+    <div className="space-y-4">
+      <h1 className="text-xl font-bold text-gray-800">
+        Classifica —{" "}
+        <span className="text-green-700">{season.name as string}</span>
       </h1>
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-green-700 text-white">
-              <tr>
-                <th className="px-3 py-3 text-left w-8">#</th>
-                <th className="px-3 py-3 text-left">Squadra</th>
-                <th className="px-3 py-3 text-center">G</th>
-                <th className="px-3 py-3 text-center">V</th>
-                <th className="px-3 py-3 text-center">P</th>
-                <th className="px-3 py-3 text-center">S</th>
-                <th className="px-3 py-3 text-center">Pf</th>
-                <th className="px-3 py-3 text-center">Ps</th>
-                <th className="px-3 py-3 text-center">Diff</th>
-                <th className="px-3 py-3 text-center font-bold">Pt</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {standings.map((s, i) => (
-                <tr
-                  key={s.userId}
-                  className={`${s.userId === session.userId ? "bg-green-50" : "hover:bg-gray-50"} transition-colors`}
-                >
-                  <td className="px-3 py-2 text-center">
-                    <span className={`inline-flex w-6 h-6 rounded-full items-center justify-center text-xs font-bold ${
-                      i === 0 ? "bg-yellow-400" : i === 1 ? "bg-gray-300" : i === 2 ? "bg-amber-600 text-white" : "text-gray-500"
-                    }`}>
-                      {i + 1}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <TeamLogo logoUrl={s.logoUrl} teamName={s.teamName} size="sm" />
-                      <div>
-                        <p className="font-semibold">{s.teamName}</p>
-                        <p className="text-gray-400 text-xs">{s.username}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-center text-gray-600">{s.played}</td>
-                  <td className="px-3 py-2 text-center text-green-600 font-medium">{s.wins}</td>
-                  <td className="px-3 py-2 text-center text-gray-500">{s.draws}</td>
-                  <td className="px-3 py-2 text-center text-red-500">{s.losses}</td>
-                  <td className="px-3 py-2 text-center">{s.gf}</td>
-                  <td className="px-3 py-2 text-center">{s.ga}</td>
-                  <td className="px-3 py-2 text-center">{s.gd > 0 ? `+${s.gd}` : s.gd}</td>
-                  <td className="px-3 py-2 text-center font-bold text-green-700 text-base">{s.points}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* Column headers */}
+        <div className="hidden sm:grid grid-cols-[3rem_1fr_repeat(9,3.5rem)] px-4 py-2 border-b bg-gray-50 text-xs font-medium text-gray-400 uppercase tracking-wide">
+          <div />
+          <div />
+          <div className="text-center">g</div>
+          <div className="text-center">v</div>
+          <div className="text-center">n</div>
+          <div className="text-center">p</div>
+          <div className="text-center">g+</div>
+          <div className="text-center">g-</div>
+          <div className="text-center">dr</div>
+          <div className="text-center font-semibold text-gray-600">pt</div>
+          <div className="text-center">pt tot</div>
+        </div>
+
+        <div className="divide-y">
+          {standings.map((s, i) => {
+            const isMe = s.userId === session.userId;
+            return (
+              <div
+                key={s.userId}
+                className={`flex sm:grid sm:grid-cols-[3rem_1fr_repeat(9,3.5rem)] items-center gap-2 sm:gap-0 px-4 py-3 transition-colors ${
+                  isMe
+                    ? "border-l-4 border-blue-500 bg-blue-50/40"
+                    : "border-l-4 border-transparent hover:bg-gray-50"
+                }`}
+              >
+                {/* Position */}
+                <div className="flex items-center justify-center w-8 sm:w-auto">
+                  <span
+                    className={`text-lg font-bold leading-none ${
+                      POSITION_COLORS[i] ?? "text-gray-400"
+                    }`}
+                  >
+                    {i + 1}
+                  </span>
+                </div>
+
+                {/* Team */}
+                <div className="flex items-center gap-3 min-w-0 flex-1 sm:flex-none">
+                  <TeamLogo logoUrl={s.logoUrl} teamName={s.teamName} size="sm" />
+                  <div className="min-w-0">
+                    <p
+                      className={`font-semibold text-sm leading-tight truncate ${
+                        isMe ? "text-blue-700" : "text-blue-600"
+                      }`}
+                    >
+                      {s.teamName}
+                    </p>
+                    <p className="text-gray-400 text-xs leading-tight truncate hidden sm:block">
+                      {s.username}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Stats — hidden on mobile, shown as grid on sm+ */}
+                <div className="hidden sm:contents text-sm text-gray-600 text-center">
+                  <div className="flex items-center justify-center">{s.played}</div>
+                  <div className="flex items-center justify-center text-green-600 font-medium">{s.wins}</div>
+                  <div className="flex items-center justify-center">{s.draws}</div>
+                  <div className="flex items-center justify-center text-red-500">{s.losses}</div>
+                  <div className="flex items-center justify-center">{s.gf}</div>
+                  <div className="flex items-center justify-center">{s.ga}</div>
+                  <div className="flex items-center justify-center">
+                    {s.gd > 0 ? `+${s.gd}` : s.gd}
+                  </div>
+                  <div className="flex items-center justify-center font-bold text-blue-600 text-base">
+                    {s.points}
+                  </div>
+                  <div className="flex items-center justify-center text-gray-500 text-xs font-medium">
+                    {s.gf}
+                  </div>
+                </div>
+
+                {/* Mobile: show only pt */}
+                <div className="sm:hidden ml-auto font-bold text-blue-600 text-lg">
+                  {s.points}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Legend */}
+        <div className="px-4 py-2 border-t bg-gray-50 text-xs text-gray-400 flex flex-wrap gap-x-4 gap-y-1">
+          <span>g = giocate</span>
+          <span>v = vinte</span>
+          <span>n = nulle</span>
+          <span>p = perse</span>
+          <span>g+ = gol fatti</span>
+          <span>g- = gol subiti</span>
+          <span>dr = diff. reti</span>
+          <span className="font-semibold text-gray-500">pt = punti lega</span>
+          <span>pt tot = punti fantacalcio totali</span>
         </div>
       </div>
     </div>
