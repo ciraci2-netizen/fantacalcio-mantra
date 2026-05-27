@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/lock-matchday",
+      "schedule": "0 11 * * 6"
+    }
+  ]
+}

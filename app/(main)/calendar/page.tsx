@@ -1,5 +1,6 @@
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
+import Link from "next/link";
 
 type MatchRow = {
   id: number;
@@ -110,32 +111,33 @@ function MatchdayCard({
           const isMyMatch = m.homeUser.id === currentUserId || m.awayUser.id === currentUserId;
           const played = m.homeScore !== null;
           return (
-            <div
+            <Link
               key={m.id}
-              className={`px-4 py-3 flex items-center gap-2 ${isMyMatch ? "bg-green-50" : ""}`}
+              href={`/calendar/${m.id}`}
+              className={`px-4 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors ${isMyMatch ? "bg-green-50 hover:bg-green-100" : ""}`}
             >
-              <span className={`flex-1 text-right font-medium ${m.homeUser.id === currentUserId ? "text-green-700" : ""}`}>
+              <span className={`flex-1 text-right font-medium text-sm ${m.homeUser.id === currentUserId ? "text-green-700" : "text-gray-700"}`}>
                 {m.homeUser.teamName}
               </span>
 
               {played ? (
-                <div className="flex items-center gap-1 min-w-[80px] justify-center">
-                  <span className={`font-bold ${(m.homePoints ?? 0) === 3 ? "text-green-600" : (m.homePoints ?? 0) === 0 ? "text-red-500" : "text-gray-500"}`}>
+                <div className="flex items-center gap-1 min-w-[90px] justify-center">
+                  <span className={`font-bold text-sm ${(m.homePoints ?? 0) === 3 ? "text-green-600" : (m.homePoints ?? 0) === 0 ? "text-red-500" : "text-gray-500"}`}>
                     {m.homeScore?.toFixed(1)}
                   </span>
                   <span className="text-gray-300">—</span>
-                  <span className={`font-bold ${(m.homePoints ?? 0) === 0 ? "text-green-600" : (m.homePoints ?? 0) === 3 ? "text-red-500" : "text-gray-500"}`}>
+                  <span className={`font-bold text-sm ${(m.homePoints ?? 0) === 0 ? "text-green-600" : (m.homePoints ?? 0) === 3 ? "text-red-500" : "text-gray-500"}`}>
                     {m.awayScore?.toFixed(1)}
                   </span>
                 </div>
               ) : (
-                <span className="text-gray-300 min-w-[80px] text-center font-bold">VS</span>
+                <span className="text-gray-200 min-w-[90px] text-center font-bold text-sm">VS</span>
               )}
 
-              <span className={`flex-1 font-medium ${m.awayUser.id === currentUserId ? "text-green-700" : ""}`}>
+              <span className={`flex-1 font-medium text-sm ${m.awayUser.id === currentUserId ? "text-green-700" : "text-gray-700"}`}>
                 {m.awayUser.teamName}
               </span>
-            </div>
+            </Link>
           );
         })}
       </div>

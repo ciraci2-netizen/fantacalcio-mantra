@@ -1,6 +1,7 @@
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
 import LineupForm from "./LineupForm";
+import Link from "next/link";
 
 export default async function LineupPage() {
   const session = await getSession();
@@ -64,17 +65,24 @@ export default async function LineupPage() {
   }
 
   return (
-    <LineupForm
-      matchdayId={matchday.id as number}
-      matchdayNumber={matchday.number as number}
-      isLocked={Boolean(matchday.isLocked)}
-      roster={rosterRes.rows.map((r) => ({
-        id: r.id as number,
-        name: r.name as string,
-        realTeam: r.realTeam as string,
-        mantraRole: r.mantraRole as string,
-      }))}
-      existingLineup={existingLineupData}
-    />
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Link href="/lineup/history" className="text-green-600 text-sm hover:underline">
+          📋 Storico formazioni →
+        </Link>
+      </div>
+      <LineupForm
+        matchdayId={matchday.id as number}
+        matchdayNumber={matchday.number as number}
+        isLocked={Boolean(matchday.isLocked)}
+        roster={rosterRes.rows.map((r) => ({
+          id: r.id as number,
+          name: r.name as string,
+          realTeam: r.realTeam as string,
+          mantraRole: r.mantraRole as string,
+        }))}
+        existingLineup={existingLineupData}
+      />
+    </div>
   );
 }

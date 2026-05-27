@@ -307,47 +307,32 @@ function StatCard({
 async function getStandings(seasonId?: number) {
   if (!seasonId) return [];
   const db = getDb();
-
-  const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isAdmin = 0`);
-  const results: {
-    userId: number;
-    teamName: string;
-    points: number;
-    wins: number;
-    draws: number;
-    losses: number;
-    gf: number;
-  }[] = [];
-
-  for (const user of usersRes.rows) {
-    const matchesRes = await db.execute({
-      sql: `SELECT m.homeUserId, m.awayUserId, m.homePoints, m.awayPoints, m.homeScore, m.awayScore
-            FROM "Match" m
-            JOIN "Matchday" md ON md.id = m.matchdayId
-            WHERE md.seasonId = ? AND m.homePoints IS NOT NULL
-            AND (m.homeUserId = ? OR m.awayUserId = ?)`,
-      args: [seasonId, user.id, user.id],
-    });
-
-    let points = 0, wins = 0, draws = 0, losses = 0, gf = 0;
-    for (const m of matchesRes.rows) {
-      const isHome = m.homeUserId === user.id;
-      const myPts = ((isHome ? m.homePoints : m.awayPoints) as number) ?? 0;
-      gf += ((isHome ? m.homeScore : m.awayScore) as number) ?? 0;
-      points += myPts;
-      if (myPts === 3) wins++;
-      else if (myPts === 1) draws++;
-      else losses++;
-    }
-    results.push({
-      userId: user.id as number,
-      teamName: user.teamName as string,
-      points,
-      wins,
-      draws,
-      losses,
-      gf,
-    });
-  }
-  return results.sort((a, b) => b.points - a.points || b.gf - a.gf);
+  const res = await db.execute({
+    sql: `SELECT
+            u.id, u.teamName,
+            COALESCE(SUM(CASE WHEN m.homeUserId = u.id THEN m.homePoints ELSE m.awayPoints END), 0) as points,
+            COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 3) OR (m.awayUserId = u.id AND m.awayPoints = 3) THEN 1 ELSE 0 END), 0) as wins,
+            COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 1) OR (m.awayUserId = u.id AND m.awayPoints = 1) THEN 1 ELSE 0 END), 0) as draws,
+            COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 0) OR (m.awayUserId = u.id AND m.awayPoints = 0) THEN 1 ELSE 0 END), 0) as losses,
+            COALESCE(ROUND(SUM(CASE WHEN m.homeUserId = u.id THEN m.homeScore ELSE m.awayScore END), 1), 0) as gf
+          FROM "User" u
+          LEFT JOIN (
+            SELECT m2.* FROM "Match" m2
+            JOIN "Matchday" md ON md.id = m2.matchdayId
+            WHERE md.seasonId = ? AND m2.homePoints IS NOT NULL
+          ) m ON m.homeUserId = u.id OR m.awayUserId = u.id
+          WHERE u.isAdmin = 0
+          GROUP BY u.id
+          ORDER BY points DESC, gf DESC`,
+    args: [seasonId],
+  });
+  return res.rows.map((r) => ({
+    userId: r.id as number,
+    teamName: r.teamName as string,
+    points: r.points as number,
+    wins: r.wins as number,
+    draws: r.draws as number,
+    losses: r.losses as number,
+    gf: r.gf as number,
+  }));
 }

@@ -1,73 +1,58 @@
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 
+async function getStandings(seasonId: number) {
+  const db = getDb();
+  const res = await db.execute({
+    sql: `SELECT
+            u.id, u.teamName, u.username,
+            COALESCE(SUM(CASE WHEN m.homeUserId = u.id THEN m.homePoints ELSE m.awayPoints END), 0) as points,
+            COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 3) OR (m.awayUserId = u.id AND m.awayPoints = 3) THEN 1 ELSE 0 END), 0) as wins,
+            COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 1) OR (m.awayUserId = u.id AND m.awayPoints = 1) THEN 1 ELSE 0 END), 0) as draws,
+            COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 0) OR (m.awayUserId = u.id AND m.awayPoints = 0) THEN 1 ELSE 0 END), 0) as losses,
+            COALESCE(COUNT(m.id), 0) as played,
+            COALESCE(ROUND(SUM(CASE WHEN m.homeUserId = u.id THEN m.homeScore ELSE m.awayScore END), 1), 0) as gf,
+            COALESCE(ROUND(SUM(CASE WHEN m.homeUserId = u.id THEN m.awayScore ELSE m.homeScore END), 1), 0) as ga
+          FROM "User" u
+          LEFT JOIN (
+            SELECT m2.* FROM "Match" m2
+            JOIN "Matchday" md ON md.id = m2.matchdayId
+            WHERE md.seasonId = ? AND m2.homePoints IS NOT NULL
+          ) m ON m.homeUserId = u.id OR m.awayUserId = u.id
+          WHERE u.isAdmin = 0
+          GROUP BY u.id
+          ORDER BY points DESC, gf DESC`,
+    args: [seasonId],
+  });
+
+  return res.rows.map((r) => ({
+    userId: r.id as number,
+    teamName: r.teamName as string,
+    username: r.username as string,
+    points: r.points as number,
+    wins: r.wins as number,
+    draws: r.draws as number,
+    losses: r.losses as number,
+    played: r.played as number,
+    gf: r.gf as number,
+    ga: r.ga as number,
+    gd: Math.round(((r.gf as number) - (r.ga as number)) * 10) / 10,
+  }));
+}
+
 export default async function StandingsPage() {
   const session = await getSession();
   if (!session) return null;
 
   const db = getDb();
-
-  const seasonRes = await db.execute(
-    `SELECT id, name FROM "Season" WHERE isActive = 1 LIMIT 1`
-  );
+  const seasonRes = await db.execute(`SELECT id, name FROM "Season" WHERE isActive = 1 LIMIT 1`);
   const season = seasonRes.rows[0] ?? null;
 
   if (!season) {
-    return (
-      <div className="text-center py-12 text-gray-500">
-        Nessuna stagione attiva.
-      </div>
-    );
+    return <div className="text-center py-12 text-gray-500">Nessuna stagione attiva.</div>;
   }
 
-  const usersRes = await db.execute(
-    `SELECT id, teamName, username FROM "User" WHERE isAdmin = 0`
-  );
-
-  const standings = await Promise.all(
-    usersRes.rows.map(async (user) => {
-      const matchesRes = await db.execute({
-        sql: `SELECT m.homeUserId, m.awayUserId, m.homePoints, m.awayPoints, m.homeScore, m.awayScore
-              FROM "Match" m
-              JOIN "Matchday" md ON md.id = m.matchdayId
-              WHERE md.seasonId = ? AND m.homePoints IS NOT NULL
-              AND (m.homeUserId = ? OR m.awayUserId = ?)`,
-        args: [season.id, user.id, user.id],
-      });
-
-      let points = 0, wins = 0, draws = 0, losses = 0, gf = 0, ga = 0;
-
-      for (const m of matchesRes.rows) {
-        const isHome = m.homeUserId === user.id;
-        const myPoints = isHome ? (m.homePoints as number) ?? 0 : (m.awayPoints as number) ?? 0;
-        const myGf = isHome ? (m.homeScore as number) ?? 0 : (m.awayScore as number) ?? 0;
-        const myGa = isHome ? (m.awayScore as number) ?? 0 : (m.homeScore as number) ?? 0;
-
-        points += myPoints;
-        gf += myGf;
-        ga += myGa;
-        if (myPoints === 3) wins++;
-        else if (myPoints === 1) draws++;
-        else if (myPoints === 0) losses++;
-      }
-
-      return {
-        userId: user.id as number,
-        teamName: user.teamName as string,
-        username: user.username as string,
-        played: wins + draws + losses,
-        wins,
-        draws,
-        losses,
-        points,
-        gf: Math.round(gf * 10) / 10,
-        ga: Math.round(ga * 10) / 10,
-        gd: Math.round((gf - ga) * 10) / 10,
-      };
-    })
-  );
-
-  standings.sort((a, b) => b.points - a.points || b.gd - a.gd || b.gf - a.gf);
+  const standings = await getStandings(season.id as number);
 
   return (
     <div className="space-y-6">
@@ -99,7 +84,9 @@ export default async function StandingsPage() {
                   className={`${s.userId === session.userId ? "bg-green-50" : "hover:bg-gray-50"} transition-colors`}
                 >
                   <td className="px-3 py-2 text-center">
-                    <span className={`inline-flex w-6 h-6 rounded-full items-center justify-center text-xs font-bold ${i === 0 ? "bg-yellow-400" : i === 1 ? "bg-gray-300" : i === 2 ? "bg-amber-600 text-white" : "text-gray-500"}`}>
+                    <span className={`inline-flex w-6 h-6 rounded-full items-center justify-center text-xs font-bold ${
+                      i === 0 ? "bg-yellow-400" : i === 1 ? "bg-gray-300" : i === 2 ? "bg-amber-600 text-white" : "text-gray-500"
+                    }`}>
                       {i + 1}
                     </span>
                   </td>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { createPlayer, deletePlayer } from "@/app/actions/players";
+import { createPlayer, deletePlayer, importPlayersCSV } from "@/app/actions/players";
 import { MANTRA_ROLES } from "@/app/lib/scoring";
 
 interface Player {
@@ -29,9 +29,11 @@ const ROLE_COLORS: Record<string, string> = {
 export default function PlayersAdminClient({ players }: { players: Player[] }) {
   const [createError, createAction, createPending] = useActionState(createPlayer, null);
   const [deleteError, deleteAction] = useActionState(deletePlayer, null);
+  const [csvResult, csvAction, csvPending] = useActionState(importPlayersCSV, null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("tutti");
   const [showForm, setShowForm] = useState(false);
+  const [showCsv, setShowCsv] = useState(false);
 
   const filtered = players.filter(
     (p) =>
@@ -43,13 +45,19 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Gestisci Giocatori</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <span className="text-sm text-gray-500 self-center">{players.length} giocatori</span>
           <button
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => { setShowForm(!showForm); setShowCsv(false); }}
             className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
           >
-            {showForm ? "Chiudi" : "+ Aggiungi giocatore"}
+            {showForm ? "Chiudi" : "+ Aggiungi"}
+          </button>
+          <button
+            onClick={() => { setShowCsv(!showCsv); setShowForm(false); }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            {showCsv ? "Chiudi" : "📋 Import CSV"}
           </button>
         </div>
       </div>
@@ -94,6 +102,37 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
               Esempio: SALAH,LIVERPOOL,W,SALAH
             </p>
           </div>
+        </div>
+      )}
+
+      {showCsv && (
+        <div className="bg-white rounded-xl border shadow-sm p-5">
+          <h2 className="font-semibold text-gray-700 mb-3">Import CSV</h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Formato: <code className="bg-gray-100 px-1 rounded">NOME,SQUADRA,RUOLO,NOME_FANTAPIU3</code> — una riga per giocatore.<br />
+            Esempio: <code className="bg-gray-100 px-1 rounded">SALAH,LIVERPOOL,W,SALAH</code>
+          </p>
+          <form action={csvAction} className="space-y-3">
+            <textarea
+              name="csv"
+              required
+              rows={10}
+              placeholder={"SALAH,LIVERPOOL,W\nHAALAND,MANCITY,A,HAALAND"}
+              className="w-full border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {csvResult && (
+              <div className={`px-3 py-2 rounded text-sm ${csvResult.startsWith("Importati") ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>
+                {csvResult}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={csvPending}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            >
+              {csvPending ? "Importazione..." : "Importa giocatori"}
+            </button>
+          </form>
         </div>
       )}
 
