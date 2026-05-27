@@ -86,7 +86,7 @@ export default async function DashboardPage() {
       })
     : null;
 
-  const recentByMatchday = new Map<number, typeof recentMatchesRes.rows>();
+  const recentByMatchday = new Map<number, Record<string, unknown>[]>();
   if (recentMatchesRes) {
     for (const row of recentMatchesRes.rows) {
       const n = row.matchdayNumber as number;
@@ -175,7 +175,7 @@ export default async function DashboardPage() {
                 {nextMatch?.homeScore !== null ? "Risultato" : "Prossima partita"}
               </p>
               <h2 className="font-semibold text-gray-800 mt-0.5">
-                Giornata {season?.currentMatchday ?? "—"}
+                Giornata {season ? (season.currentMatchday as number) : "—"}
               </h2>
             </div>
             {nextMatch?.homeScore !== null ? (
