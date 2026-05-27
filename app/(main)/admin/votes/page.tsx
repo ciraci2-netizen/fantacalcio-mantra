@@ -36,42 +36,63 @@ export default async function AdminVotesPage() {
   let lineupSubmissions: { userId: number; teamName: string; submitted: boolean; score: number | null }[] = [];
 
   if (currentMd) {
-    const lineupsRes = await db.execute({
-      sql: `SELECT userId, totalScore, isAutomatic, substitutions FROM "Lineup" WHERE matchdayId = ? AND isSubmitted = 1`,
-      args: [currentMd.id],
-    });
-    const lineupMap = new Map(
-      lineupsRes.rows.map((l) => [l.userId as number, {
-        score: l.totalScore as number | null,
-        isAutomatic: Boolean(l.isAutomatic),
-        substitutions: l.substitutions as number,
-      }])
-    );
-    lineupSubmissions = usersRes.rows.map((u) => ({
-      userId: u.id as number,
-      teamName: u.teamName as string,
-      submitted: lineupMap.has(u.id as number),
-      score: lineupMap.get(u.id as number)?.score ?? null,
-      isAutomatic: lineupMap.get(u.id as number)?.isAutomatic ?? false,
-      substitutions: lineupMap.get(u.id as number)?.substitutions ?? 0,
-    }));
+    try {
+      const lineupsRes = await db.execute({
+        sql: `SELECT userId, totalScore, isAutomatic, substitutions FROM "Lineup" WHERE matchdayId = ? AND isSubmitted = 1`,
+        args: [currentMd.id],
+      });
+      const lineupMap = new Map(
+        lineupsRes.rows.map((l) => [l.userId as number, {
+          score: l.totalScore as number | null,
+          isAutomatic: Boolean(l.isAutomatic),
+          substitutions: (l.substitutions as number) ?? 0,
+        }])
+      );
+      lineupSubmissions = usersRes.rows.map((u) => ({
+        userId: u.id as number,
+        teamName: u.teamName as string,
+        submitted: lineupMap.has(u.id as number),
+        score: lineupMap.get(u.id as number)?.score ?? null,
+        isAutomatic: lineupMap.get(u.id as number)?.isAutomatic ?? false,
+        substitutions: lineupMap.get(u.id as number)?.substitutions ?? 0,
+      }));
+    } catch {
+      // isAutomatic/substitutions columns not yet migrated — fallback
+      const lineupsRes = await db.execute({
+        sql: `SELECT userId, totalScore FROM "Lineup" WHERE matchdayId = ? AND isSubmitted = 1`,
+        args: [currentMd.id],
+      });
+      const lineupMap = new Map(
+        lineupsRes.rows.map((l) => [l.userId as number, { score: l.totalScore as number | null }])
+      );
+      lineupSubmissions = usersRes.rows.map((u) => ({
+        userId: u.id as number,
+        teamName: u.teamName as string,
+        submitted: lineupMap.has(u.id as number),
+        score: lineupMap.get(u.id as number)?.score ?? null,
+        isAutomatic: false,
+        substitutions: 0,
+      }));
+    }
   }
 
-  // Giocatori con stato per la giornata corrente (infortuni/squalifiche)
+  // Giocatori con stato per la giornata corrente — PlayerStatus potrebbe non esistere
   let playerStatuses: { playerId: number; playerName: string; status: string }[] = [];
   if (currentMd) {
-    const statusRes = await db.execute({
-      sql: `SELECT ps.playerId, p.name as playerName, ps.status
-            FROM "PlayerStatus" ps
-            JOIN "Player" p ON p.id = ps.playerId
-            WHERE ps.matchdayId = ?`,
-      args: [currentMd.id],
-    });
-    playerStatuses = statusRes.rows.map((r) => ({
-      playerId: r.playerId as number,
-      playerName: r.playerName as string,
-      status: r.status as string,
-    }));
+    try {
+      const statusRes = await db.execute({
+        sql: `SELECT ps.playerId, p.name as playerName, ps.status
+              FROM "PlayerStatus" ps
+              JOIN "Player" p ON p.id = ps.playerId
+              WHERE ps.matchdayId = ?`,
+        args: [currentMd.id],
+      });
+      playerStatuses = statusRes.rows.map((r) => ({
+        playerId: r.playerId as number,
+        playerName: r.playerName as string,
+        status: r.status as string,
+      }));
+    } catch { /* tabella non ancora creata */ }
   }
 
   // Tutti i giocatori (per poter segnare disponibilità)

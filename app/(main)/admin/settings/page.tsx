@@ -15,42 +15,73 @@ export default async function AdminSettingsPage() {
   );
   const season = seasonRes.rows[0] ?? null;
 
-  const settingsRes = season
-    ? await db.execute({
+  // LeagueSettings may not exist yet (migration not run) — fail-safe
+  let settings = {
+    initialCredits: 500,
+    maxSubstitutions: 3,
+    goalThresholds: DEFAULT_GOAL_THRESHOLDS,
+  };
+  if (season) {
+    try {
+      const settingsRes = await db.execute({
         sql: `SELECT initialCredits, maxSubstitutions, goalThresholds FROM "LeagueSettings" WHERE seasonId = ?`,
         args: [season.id],
-      })
-    : null;
+      });
+      const raw = settingsRes.rows[0];
+      if (raw) {
+        settings = {
+          initialCredits: (raw.initialCredits as number) ?? 500,
+          maxSubstitutions: (raw.maxSubstitutions as number) ?? 3,
+          goalThresholds: raw.goalThresholds
+            ? (() => { try { return JSON.parse(raw.goalThresholds as string); } catch { return DEFAULT_GOAL_THRESHOLDS; } })()
+            : DEFAULT_GOAL_THRESHOLDS,
+        };
+      }
+    } catch { /* tabella non ancora creata */ }
+  }
 
-  const raw = settingsRes?.rows[0];
-  const settings = {
-    initialCredits: (raw?.initialCredits as number) ?? 500,
-    maxSubstitutions: (raw?.maxSubstitutions as number) ?? 3,
-    goalThresholds: raw?.goalThresholds
-      ? (() => { try { return JSON.parse(raw.goalThresholds as string); } catch { return DEFAULT_GOAL_THRESHOLDS; } })()
-      : DEFAULT_GOAL_THRESHOLDS,
-  };
-
-  // Utenti con crediti e spesa rosa
-  const usersRes = await db.execute(
-    `SELECT u.id, u.teamName, u.username, u.credits,
-            COALESCE(SUM(r.purchasePrice), 0) as spent,
-            COUNT(r.id) as rosterCount
-     FROM "User" u
-     LEFT JOIN "Roster" r ON r.userId = u.id
-     WHERE u.isAdmin = 0
-     GROUP BY u.id
-     ORDER BY u.teamName ASC`
-  );
-
-  const users = usersRes.rows.map((r) => ({
-    id: r.id as number,
-    teamName: r.teamName as string,
-    username: r.username as string,
-    credits: r.credits as number,
-    spent: r.spent as number,
-    rosterCount: r.rosterCount as number,
-  }));
+  // credits column may not exist yet — fail-safe
+  let users: { id: number; teamName: string; username: string; credits: number; spent: number; rosterCount: number }[] = [];
+  try {
+    const usersRes = await db.execute(
+      `SELECT u.id, u.teamName, u.username, u.credits,
+              COALESCE(SUM(r.purchasePrice), 0) as spent,
+              COUNT(r.id) as rosterCount
+       FROM "User" u
+       LEFT JOIN "Roster" r ON r.userId = u.id
+       WHERE u.isAdmin = 0
+       GROUP BY u.id
+       ORDER BY u.teamName ASC`
+    );
+    users = usersRes.rows.map((r) => ({
+      id: r.id as number,
+      teamName: r.teamName as string,
+      username: r.username as string,
+      credits: (r.credits as number) ?? 500,
+      spent: r.spent as number,
+      rosterCount: r.rosterCount as number,
+    }));
+  } catch {
+    // credits column not yet migrated — load users without it
+    const usersRes = await db.execute(
+      `SELECT u.id, u.teamName, u.username,
+              COALESCE(SUM(r.purchasePrice), 0) as spent,
+              COUNT(r.id) as rosterCount
+       FROM "User" u
+       LEFT JOIN "Roster" r ON r.userId = u.id
+       WHERE u.isAdmin = 0
+       GROUP BY u.id
+       ORDER BY u.teamName ASC`
+    );
+    users = usersRes.rows.map((r) => ({
+      id: r.id as number,
+      teamName: r.teamName as string,
+      username: r.username as string,
+      credits: 500,
+      spent: r.spent as number,
+      rosterCount: r.rosterCount as number,
+    }));
+  }
 
   return (
     <SettingsClient
