@@ -2,6 +2,7 @@ import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
 import LineupForm from "./LineupForm";
 import DeadlineTimer from "@/app/components/DeadlineTimer";
+import LiveScorePreview from "@/app/components/LiveScorePreview";
 import Link from "next/link";
 
 export default async function LineupPage() {
@@ -24,7 +25,7 @@ export default async function LineupPage() {
   }
 
   const matchdayRes = await db.execute({
-    sql: `SELECT id, number, isLocked, deadline FROM "Matchday" WHERE seasonId = ? AND number = ? LIMIT 1`,
+    sql: `SELECT id, number, isLocked, deadline, votesImported FROM "Matchday" WHERE seasonId = ? AND number = ? LIMIT 1`,
     args: [season.id, season.currentMatchday],
   });
   const matchday = matchdayRes.rows[0] ?? null;
@@ -130,6 +131,12 @@ export default async function LineupPage() {
 
       {/* Countdown timer */}
       <DeadlineTimer deadline={deadline} isLocked={isLocked} />
+
+      {/* Live score preview (shown when votes are available) */}
+      <LiveScorePreview
+        matchdayId={matchday.id as number}
+        votesImported={Boolean(matchday.votesImported)}
+      />
 
       {/* Competizioni di giornata */}
       <div className="bg-white rounded-xl border shadow-sm p-4">

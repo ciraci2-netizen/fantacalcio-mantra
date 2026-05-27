@@ -7,17 +7,32 @@ export default async function MainLayout({ children }: { children: React.ReactNo
   const session = await getSession();
   if (!session) redirect("/login");
 
-  // logoUrl potrebbe non esistere ancora (migrazione non eseguita) — fail-safe
+  const db = getDb();
+
+  // logoUrl — fail-safe (column might not exist yet)
   let logoUrl: string | null = null;
   try {
-    const db = getDb();
     const logoRes = await db.execute({
       sql: `SELECT logoUrl FROM "User" WHERE id = ?`,
       args: [session.userId],
     });
     logoUrl = (logoRes.rows[0]?.logoUrl as string | null) ?? null;
   } catch {
-    // colonna non ancora presente nel DB — ignora
+    // column not yet migrated — ignore
+  }
+
+  // Latest matchday with imported votes (Feature 10: notification badge)
+  let latestResultsMatchday = 0;
+  try {
+    const latestRes = await db.execute(
+      `SELECT MAX(number) as latest
+       FROM "Matchday"
+       WHERE votesImported = 1
+         AND seasonId = (SELECT id FROM "Season" WHERE isActive = 1 LIMIT 1)`
+    );
+    latestResultsMatchday = (latestRes.rows[0]?.latest as number) ?? 0;
+  } catch {
+    // ignore
   }
 
   return (
@@ -27,6 +42,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
         teamName={session.teamName}
         isAdmin={session.isAdmin}
         logoUrl={logoUrl}
+        latestResultsMatchday={latestResultsMatchday}
       />
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">{children}</main>
     </div>

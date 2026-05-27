@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/auto-lock",
+      "schedule": "5 * * * *"
+    },
+    {
       "path": "/api/cron/lock-matchday",
       "schedule": "0 11 * * 6"
     }

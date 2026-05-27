@@ -1,8 +1,23 @@
 @import "tailwindcss";
 
+/* ── Tailwind v4: class-based dark mode ─────────────────── */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f9fafb;
+  --foreground: #111827;
+  --card-bg: #ffffff;
+  --card-border: #e5e7eb;
+  --muted: #6b7280;
+}
+
+.dark {
+  --background: #111827;
+  --foreground: #f3f4f6;
+  --card-bg: #1f2937;
+  --card-border: #374151;
+  --muted: #9ca3af;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -12,15 +27,57 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ── Dark-mode structural overrides ─────────────────────── */
+/* Cards: bg-white → dark card bg */
+.dark .card {
+  background-color: var(--card-bg);
+  border-color: var(--card-border);
+}
+
+/* Auto-apply dark bg to bg-white / bg-gray-50 utility divs */
+.dark .bg-white {
+  background-color: #1f2937!important;
+}
+.dark .bg-gray-50 {
+  background-color: #111827!important;
+}
+.dark .bg-gray-100 {
+  background-color: #1f2937!important;
+}
+.dark .border-gray-200 {
+  border-color: #374151!important;
+}
+.dark .text-gray-800,
+.dark .text-gray-900 {
+  color: #f3f4f6!important;
+}
+.dark .text-gray-700 {
+  color: #d1d5db!important;
+}
+.dark .text-gray-500,
+.dark .text-gray-600 {
+  color: #9ca3af!important;
+}
+.dark .text-gray-400 {
+  color: #6b7280!important;
+}
+.dark .divide-gray-100 > * + *,
+.dark .divide-gray-200 > * + * {
+  border-color: #374151!important;
+}
+.dark .shadow-sm {
+  --tw-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+}
+/* Hover states in dark mode */
+.dark .hover\:bg-gray-50:hover {
+  background-color: #374151!important;
+}
+.dark .hover\:bg-gray-100:hover {
+  background-color: #374151!important;
 }

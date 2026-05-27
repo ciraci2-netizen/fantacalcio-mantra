@@ -3,32 +3,64 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/app/actions/auth";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import ThemeToggle from "./ThemeToggle";
 
 interface NavbarProps {
   username: string;
   teamName: string;
   isAdmin: boolean;
   logoUrl?: string | null;
+  latestResultsMatchday?: number;
 }
 
 const BASE_LINKS = [
   { href: "/dashboard",   label: "Dashboard",   icon: "🏠" },
   { href: "/team",        label: "Rosa",        icon: "👥" },
   { href: "/lineup",      label: "Formazione",  icon: "📋" },
-  { href: "/standings",   label: "Classifica",  icon: "🏆" },
+  { href: "/standings",   label: "Classifica",  icon: "🏆", badge: true },
   { href: "/calendar",    label: "Calendario",  icon: "📅" },
   { href: "/squadre",     label: "Squadre",     icon: "🔍" },
   { href: "/stats",       label: "Statistiche", icon: "📊" },
   { href: "/coppe",       label: "Coppe",       icon: "🏅" },
   { href: "/svincolati",  label: "Svincolati",  icon: "🆓" },
   { href: "/mercato",     label: "Mercato",     icon: "🔄" },
+  { href: "/bacheca",     label: "Bacheca",     icon: "💬" },
   { href: "/regolamento", label: "Regolamento", icon: "📖" },
 ];
 
-export default function Navbar({ username, teamName, isAdmin, logoUrl }: NavbarProps) {
+const SEEN_KEY = "ipa-last-seen-matchday";
+
+export default function Navbar({
+  username,
+  teamName,
+  isAdmin,
+  logoUrl,
+  latestResultsMatchday = 0,
+}: NavbarProps) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
+  const [hasNewResults, setHasNewResults] = useState(false);
+
+  // Notification badge logic
+  useEffect(() => {
+    try {
+      const lastSeen = Number(localStorage.getItem(SEEN_KEY) ?? "0");
+      if (latestResultsMatchday > lastSeen) {
+        setHasNewResults(true);
+      }
+    } catch {}
+  }, [latestResultsMatchday]);
+
+  // Mark as seen when visiting relevant pages
+  useEffect(() => {
+    if (path === "/standings" || path === "/dashboard" || path === "/calendar") {
+      try {
+        localStorage.setItem(SEEN_KEY, String(latestResultsMatchday));
+        setHasNewResults(false);
+      } catch {}
+    }
+  }, [path, latestResultsMatchday]);
 
   const links = isAdmin
     ? [...BASE_LINKS, { href: "/admin", label: "Admin", icon: "⚙️" }]
@@ -41,11 +73,17 @@ export default function Navbar({ username, teamName, isAdmin, logoUrl }: NavbarP
     if (logoUrl) {
       return (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={logoUrl} alt={teamName} className={`${cls} rounded-full object-cover border-2 border-green-400 shrink-0`} />
+        <img
+          src={logoUrl}
+          alt={teamName}
+          className={`${cls} rounded-full object-cover border-2 border-green-400 shrink-0`}
+        />
       );
     }
     return (
-      <div className={`${cls} rounded-full bg-green-500 border-2 border-green-400 flex items-center justify-center font-bold shrink-0`}>
+      <div
+        className={`${cls} rounded-full bg-green-500 border-2 border-green-400 flex items-center justify-center font-bold shrink-0`}
+      >
         {initials}
       </div>
     );
@@ -54,33 +92,40 @@ export default function Navbar({ username, teamName, isAdmin, logoUrl }: NavbarP
   return (
     <nav className="bg-green-700 text-white shadow-md relative z-50">
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
-        {/* Logo */}
+        {/* Logo — subtitle hidden at xl to save space */}
         <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
           <span className="text-xl font-bold">⚽ IPA</span>
-          <span className="text-green-200 text-xs hidden md:block">Fantasy Football PL</span>
+          <span className="text-green-200 text-xs hidden 2xl:block">Fantasy Football PL</span>
         </Link>
 
-        {/* Desktop links — visible at xl+ */}
-        <div className="hidden xl:flex items-center gap-0.5 flex-1 justify-center overflow-x-auto">
-          {links.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={`px-2 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap ${
-                path === l.href
-                  ? "bg-white text-green-700"
-                  : "hover:bg-green-600 text-white"
-              }`}
-            >
-              {l.label}
-            </Link>
-          ))}
+        {/* Desktop links — no overflow scrollbar */}
+        <div className="hidden xl:flex items-center gap-0 flex-1 justify-center overflow-hidden">
+          {links.map((l) => {
+            const showBadge = "badge" in l && l.badge && hasNewResults;
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={`relative px-1.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
+                  path === l.href
+                    ? "bg-white text-green-700"
+                    : "hover:bg-green-600 text-white"
+                }`}
+              >
+                {l.label}
+                {showBadge && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                )}
+              </Link>
+            );
+          })}
         </div>
 
-        {/* Right: avatar + user info + logout (desktop) + hamburger (mobile) */}
+        {/* Right: theme toggle + avatar + user info (hidden at xl, shown at 2xl) + logout */}
         <div className="flex items-center gap-2 shrink-0">
+          <ThemeToggle />
           <Avatar size="sm" />
-          <div className="hidden sm:flex flex-col leading-tight">
+          <div className="hidden 2xl:flex flex-col leading-tight">
             <span className="text-sm font-semibold leading-tight">{teamName}</span>
             <Link
               href="/profile"
@@ -92,7 +137,7 @@ export default function Navbar({ username, teamName, isAdmin, logoUrl }: NavbarP
           <form action={logout} className="hidden xl:block ml-1">
             <button
               type="submit"
-              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition-colors"
+              className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs font-medium transition-colors"
             >
               Esci
             </button>
@@ -111,21 +156,27 @@ export default function Navbar({ username, teamName, isAdmin, logoUrl }: NavbarP
       {open && (
         <div className="xl:hidden bg-green-800 border-t border-green-600">
           <div className="px-3 py-2 space-y-0.5">
-            {links.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                onClick={() => setOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  path === l.href
-                    ? "bg-white text-green-800"
-                    : "hover:bg-green-700 text-white"
-                }`}
-              >
-                <span className="text-base w-6 text-center">{l.icon}</span>
-                {l.label}
-              </Link>
-            ))}
+            {links.map((l) => {
+              const showBadge = "badge" in l && l.badge && hasNewResults;
+              return (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  onClick={() => setOpen(false)}
+                  className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    path === l.href
+                      ? "bg-white text-green-800"
+                      : "hover:bg-green-700 text-white"
+                  }`}
+                >
+                  <span className="text-base w-6 text-center">{l.icon}</span>
+                  {l.label}
+                  {showBadge && (
+                    <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                  )}
+                </Link>
+              );
+            })}
             <Link
               href="/profile"
               onClick={() => setOpen(false)}

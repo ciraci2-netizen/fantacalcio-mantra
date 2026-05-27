@@ -25,9 +25,13 @@ export const viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="it" className={`${geist.variable} h-full`}>
+    <html lang="it" className={`${geist.variable} h-full`} suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icon-192.png" />
+        {/* Inline script: apply saved theme before first paint (avoids flash) */}
+        <script dangerouslySetInnerHTML={{ __html: `
+try{var t=localStorage.getItem('ipa-theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}
+        `.trim() }} />
       </head>
       <body className="min-h-full bg-gray-50 text-gray-900 antialiased">{children}</body>
     </html>
