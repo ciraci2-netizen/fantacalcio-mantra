@@ -136,6 +136,82 @@ export async function setCurrentMatchday(prevState: string | null, formData: For
   return null;
 }
 
+export async function importCalendarCsv(prevState: string | null, formData: FormData) {
+  const session = await getSession();
+  if (!session?.isAdmin) return "Non autorizzato.";
+
+  const seasonId = parseInt(formData.get("seasonId") as string);
+  const csv = (formData.get("csv") as string)?.trim();
+  if (!csv) return "Incolla il CSV prima di importare.";
+
+  const db = getDb();
+
+  // Load all teams
+  const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isAdmin = 0`);
+  const teamByName = new Map<string, number>();
+  for (const u of usersRes.rows) {
+    teamByName.set((u.teamName as string).toLowerCase().trim(), u.id as number);
+  }
+
+  // Load matchdays for this season
+  const mdsRes = await db.execute({
+    sql: `SELECT id, number FROM "Matchday" WHERE seasonId = ? ORDER BY number ASC`,
+    args: [seasonId],
+  });
+  const matchdayById = new Map<number, number>(); // number → id
+  for (const md of mdsRes.rows) {
+    matchdayById.set(md.number as number, md.id as number);
+  }
+
+  // Parse CSV: skip header line if it starts with letters
+  const lines = csv.split("\n").map((l) => l.trim()).filter(Boolean);
+  const rows: { giornata: number; homeId: number; awayId: number }[] = [];
+  const errors: string[] = [];
+
+  for (const line of lines) {
+    const sep = line.includes(";") ? ";" : ",";
+    const parts = line.split(sep).map((p) => p.trim());
+    if (parts.length < 3) continue;
+    const giornata = parseInt(parts[0]);
+    if (isNaN(giornata)) continue; // header row
+
+    const homeKey = parts[1].toLowerCase();
+    const awayKey = parts[2].toLowerCase();
+    const homeId = teamByName.get(homeKey);
+    const awayId = teamByName.get(awayKey);
+
+    if (!homeId) { errors.push(`Squadra non trovata: "${parts[1]}"`); continue; }
+    if (!awayId) { errors.push(`Squadra non trovata: "${parts[2]}"`); continue; }
+    if (!matchdayById.has(giornata)) { errors.push(`Giornata ${giornata} non esiste nella stagione.`); continue; }
+    rows.push({ giornata, homeId, awayId });
+  }
+
+  if (errors.length > 0) return `Errori nel CSV:\n${errors.slice(0, 5).join("\n")}`;
+  if (rows.length === 0) return "Nessuna riga valida trovata nel CSV.";
+
+  // Group by matchday and insert
+  const byMatchday = new Map<number, typeof rows>();
+  for (const row of rows) {
+    if (!byMatchday.has(row.giornata)) byMatchday.set(row.giornata, []);
+    byMatchday.get(row.giornata)!.push(row);
+  }
+
+  for (const [giornata, matches] of byMatchday) {
+    const mdId = matchdayById.get(giornata)!;
+    await db.execute({ sql: `DELETE FROM "Match" WHERE matchdayId = ?`, args: [mdId] });
+    for (const m of matches) {
+      await db.execute({
+        sql: `INSERT INTO "Match" (matchdayId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
+        args: [mdId, m.homeId, m.awayId],
+      });
+    }
+  }
+
+  revalidatePath("/admin/schedule");
+  revalidatePath("/calendar");
+  return `✅ Importate ${rows.length} partite in ${byMatchday.size} giornate.`;
+}
+
 export async function lockAndAdvanceMatchday(prevState: string | null, formData: FormData) {
   const session = await getSession();
   if (!session?.isAdmin) return "Non autorizzato.";

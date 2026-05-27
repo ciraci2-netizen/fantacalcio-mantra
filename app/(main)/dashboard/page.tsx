@@ -69,6 +69,37 @@ export default async function DashboardPage() {
   });
   const rosterCount = rosterCountRes.rows[0].c as number;
 
+  // Recent activity: last 2 completed matchdays' results
+  const recentMatchesRes = season
+    ? await db.execute({
+        sql: `SELECT m.id, m.homeScore, m.awayScore, m.homePoints, m.awayPoints,
+                     hu.teamName as homeTeam, au.teamName as awayTeam,
+                     hu.id as homeUserId, au.id as awayUserId,
+                     md.number as matchdayNumber
+              FROM "Match" m
+              JOIN "Matchday" md ON md.id = m.matchdayId
+              JOIN "User" hu ON hu.id = m.homeUserId
+              JOIN "User" au ON au.id = m.awayUserId
+              WHERE md.seasonId = ? AND m.homeScore IS NOT NULL
+              ORDER BY md.number DESC, m.id DESC
+              LIMIT 20`,
+        args: [season.id],
+      })
+    : null;
+
+  // Group by matchday, take last 2 matchdays
+  const recentByMatchday = new Map<number, typeof recentMatchesRes.rows>();
+  if (recentMatchesRes) {
+    for (const row of recentMatchesRes.rows) {
+      const n = row.matchdayNumber as number;
+      if (!recentByMatchday.has(n)) recentByMatchday.set(n, []);
+      recentByMatchday.get(n)!.push(row);
+    }
+  }
+  const recentMatchdays = [...recentByMatchday.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .slice(0, 2);
+
   const isLocked = Boolean(currentMatchdayRow?.isLocked);
   const lineupLabel = !currentMatchdayRow
     ? "—"
@@ -234,35 +265,75 @@ export default async function DashboardPage() {
                 <li
                   key={s.userId}
                   className={`flex items-center gap-3 px-2 py-2 rounded-lg ${
-                    s.userId === session.userId ? "bg-green-50" : ""
+                    s.userId === session.userId ? "bg-blue-50 border-l-2 border-blue-400" : ""
                   }`}
                 >
                   <span
                     className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                      i === 0
-                        ? "bg-yellow-400 text-yellow-900"
-                        : i === 1
-                        ? "bg-gray-300 text-gray-700"
-                        : i === 2
-                        ? "bg-amber-600 text-white"
-                        : "bg-gray-100 text-gray-500"
+                      i === 0 ? "bg-yellow-400 text-yellow-900" :
+                      i === 1 ? "bg-gray-300 text-gray-700" :
+                      i === 2 ? "bg-amber-600 text-white" :
+                      "bg-gray-100 text-gray-500"
                     }`}
                   >
                     {i + 1}
                   </span>
-                  <span className="flex-1 font-medium text-sm truncate">{s.teamName}</span>
-                  <span className="text-xs text-gray-400 shrink-0">
-                    {s.wins}V {s.draws}P
-                  </span>
-                  <span className="text-green-700 font-bold text-sm shrink-0">
-                    {s.points} pt
-                  </span>
+                  <span className={`flex-1 font-medium text-sm truncate ${s.userId === session.userId ? "text-blue-700" : ""}`}>{s.teamName}</span>
+                  <span className="text-xs text-gray-400 shrink-0">{s.wins}V {s.draws}P</span>
+                  <span className="text-blue-600 font-bold text-sm shrink-0">{s.points} pt</span>
                 </li>
               ))}
             </ol>
           )}
         </div>
       </div>
+
+      {/* Recent activity feed */}
+      {recentMatchdays.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-gray-700">Risultati recenti</h2>
+            <Link href="/calendar" className="text-green-600 text-xs hover:underline">
+              Calendario completo →
+            </Link>
+          </div>
+          <div className="space-y-4">
+            {recentMatchdays.map(([mdNumber, matches]) => (
+              <div key={mdNumber}>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  Giornata {mdNumber}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {matches.map((m) => {
+                    const isMyMatch = (m.homeUserId as number) === session.userId || (m.awayUserId as number) === session.userId;
+                    const homeWins = (m.homePoints as number) === 3;
+                    const awayWins = (m.awayPoints as number) === 3;
+                    return (
+                      <Link
+                        key={m.id as number}
+                        href={`/calendar/${m.id as number}`}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs hover:bg-gray-50 transition-colors border ${
+                          isMyMatch ? "border-blue-200 bg-blue-50/40" : "border-gray-100"
+                        }`}
+                      >
+                        <span className={`flex-1 text-right truncate font-medium ${homeWins ? "text-gray-800" : "text-gray-400"}`}>
+                          {m.homeTeam as string}
+                        </span>
+                        <span className="shrink-0 font-bold text-gray-600 tabular-nums">
+                          {(m.homeScore as number).toFixed(1)}–{(m.awayScore as number).toFixed(1)}
+                        </span>
+                        <span className={`flex-1 truncate font-medium ${awayWins ? "text-gray-800" : "text-gray-400"}`}>
+                          {m.awayTeam as string}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

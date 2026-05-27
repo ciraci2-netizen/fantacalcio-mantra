@@ -2,6 +2,7 @@ import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import TeamLogo from "@/app/components/TeamLogo";
 
 const ROLE_COLORS: Record<string, string> = {
   Por: "bg-yellow-100 text-yellow-800",
@@ -53,6 +54,15 @@ export default async function MatchDetailPage({
           LIMIT 1`,
     args: [id],
   });
+
+  // Load logos
+  const logoMap: Record<number, string | null> = {};
+  try {
+    const logoRes = await db.execute(`SELECT id, logoUrl FROM "User" WHERE isAdmin = 0`);
+    for (const row of logoRes.rows) {
+      logoMap[row.id as number] = (row.logoUrl as string | null) ?? null;
+    }
+  } catch { /* not yet migrated */ }
 
   if (matchRes.rows.length === 0) notFound();
   const match = matchRes.rows[0];
@@ -107,59 +117,54 @@ export default async function MatchDetailPage({
       </div>
 
       {/* Match scoreboard */}
-      <div className="bg-white rounded-xl shadow-sm border p-6">
-        <p className="text-xs text-center text-gray-400 uppercase tracking-widest mb-4">
-          Giornata {match.matchdayNumber as number}
-        </p>
-        <div className="flex items-center justify-between gap-4">
-          {/* Home team */}
-          <div className="flex-1 text-center min-w-0">
-            <p
-              className={`text-xl font-bold truncate ${
-                homeUserId === session.userId ? "text-green-700" : "text-gray-800"
-              }`}
-            >
-              {match.homeTeamName as string}
-              {homeWon && <span className="ml-2 text-base">🏆</span>}
-            </p>
-            <p className="text-gray-400 text-xs mt-0.5">{match.homeUsername as string}</p>
-          </div>
-
-          {/* Score */}
-          <div className="shrink-0 text-center px-4">
-            {played ? (
-              <div className="text-3xl font-bold text-gray-800">
-                <span className={homeWon ? "text-green-600" : awayWon ? "text-red-500" : "text-gray-500"}>
-                  {(match.homeScore as number).toFixed(1)}
-                </span>
-                <span className="text-gray-300 mx-2">–</span>
-                <span className={awayWon ? "text-green-600" : homeWon ? "text-red-500" : "text-gray-500"}>
-                  {(match.awayScore as number).toFixed(1)}
-                </span>
-              </div>
-            ) : (
-              <span className="text-3xl font-bold text-gray-200">VS</span>
-            )}
-            {played ? (
-              <p className="text-xs text-gray-400 mt-1">
-                {homeWon ? "Vittoria casa" : awayWon ? "Vittoria ospiti" : "Pareggio"}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className={`px-6 py-5 ${played ? (homeWon || awayWon ? "bg-blue-600" : "bg-slate-600") : "bg-gray-700"}`}>
+          <p className="text-xs text-center text-blue-200 uppercase tracking-widest mb-4 font-medium">
+            Giornata {match.matchdayNumber as number}
+          </p>
+          <div className="flex items-center justify-between gap-2">
+            {/* Home team */}
+            <div className="flex-1 flex flex-col items-center gap-2 min-w-0">
+              <TeamLogo logoUrl={logoMap[homeUserId] ?? null} teamName={match.homeTeamName as string} size="lg" />
+              <p className={`text-base font-bold text-center truncate w-full ${homeUserId === session.userId ? "text-yellow-300" : "text-white"}`}>
+                {match.homeTeamName as string}
               </p>
-            ) : (
-              <p className="text-xs text-gray-400 mt-1">In programma</p>
-            )}
-          </div>
+              <p className="text-blue-200 text-xs">{match.homeUsername as string}</p>
+            </div>
 
-          {/* Away team */}
-          <div className="flex-1 text-center min-w-0">
-            <p
-              className={`text-xl font-bold truncate ${
-                awayUserId === session.userId ? "text-green-700" : "text-gray-800"
-              }`}
-            >
-              {awayWon && <span className="mr-2 text-base">🏆</span>}
-              {match.awayTeamName as string}
-            </p>
-            <p className="text-gray-400 text-xs mt-0.5">{match.awayUsername as string}</p>
+            {/* Score */}
+            <div className="shrink-0 text-center px-2 sm:px-6">
+              {played ? (
+                <>
+                  <div className="text-4xl font-bold text-white tracking-tight">
+                    <span className={homeWon ? "text-white" : "text-blue-300"}>
+                      {(match.homeScore as number).toFixed(1)}
+                    </span>
+                    <span className="text-blue-300 mx-2 text-2xl">–</span>
+                    <span className={awayWon ? "text-white" : "text-blue-300"}>
+                      {(match.awayScore as number).toFixed(1)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-200 mt-1.5">
+                    {homeWon ? "Vittoria casa" : awayWon ? "Vittoria ospiti" : "Pareggio"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <span className="text-4xl font-bold text-blue-300">VS</span>
+                  <p className="text-xs text-blue-200 mt-1.5">In programma</p>
+                </>
+              )}
+            </div>
+
+            {/* Away team */}
+            <div className="flex-1 flex flex-col items-center gap-2 min-w-0">
+              <TeamLogo logoUrl={logoMap[awayUserId] ?? null} teamName={match.awayTeamName as string} size="lg" />
+              <p className={`text-base font-bold text-center truncate w-full ${awayUserId === session.userId ? "text-yellow-300" : "text-white"}`}>
+                {match.awayTeamName as string}
+              </p>
+              <p className="text-blue-200 text-xs">{match.awayUsername as string}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -263,27 +268,29 @@ function LineupCard({
 
 function SlotRow({ slot }: { slot: PlayerSlot }) {
   const fv = slot.fantavoto;
-  const scoreColor =
-    fv === null
-      ? "text-gray-400"
-      : fv >= 7
-      ? "text-green-600 font-bold"
-      : fv >= 6
-      ? "text-gray-700"
-      : "text-red-500";
+  const fvColor =
+    fv === null ? "text-gray-400" :
+    fv >= 8 ? "text-green-600 font-bold" :
+    fv >= 6 ? "text-blue-600 font-semibold" :
+    "text-red-500";
 
   return (
-    <div className="flex items-center gap-2 py-1">
+    <div className="flex items-center gap-2 py-1.5">
       <span
-        className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 ${
+        className={`text-xs px-1.5 py-0.5 rounded font-bold shrink-0 ${
           ROLE_COLORS[slot.mantraRole] ?? "bg-gray-100 text-gray-700"
         }`}
       >
         {slot.mantraRole}
       </span>
-      <span className="text-sm flex-1 truncate">{slot.name}</span>
-      <span className={`text-sm shrink-0 tabular-nums ${scoreColor}`}>
-        {fv !== null ? fv.toFixed(1) : "sv"}
+      <Link
+        href={`/giocatore/${slot.playerId}`}
+        className="text-sm flex-1 truncate text-gray-700 hover:text-blue-600 hover:underline transition-colors"
+      >
+        {slot.name}
+      </Link>
+      <span className={`text-sm shrink-0 tabular-nums ${fvColor}`}>
+        {fv !== null ? fv.toFixed(1) : <span className="text-gray-300 text-xs">sv</span>}
       </span>
     </div>
   );

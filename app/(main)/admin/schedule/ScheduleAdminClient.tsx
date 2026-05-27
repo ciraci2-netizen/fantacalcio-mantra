@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { createSeason, generateCalendar, setCurrentMatchday } from "@/app/actions/schedule";
+import { createSeason, generateCalendar, setCurrentMatchday, importCalendarCsv } from "@/app/actions/schedule";
 
 interface Matchday {
   id: number;
@@ -29,6 +29,7 @@ export default function ScheduleAdminClient({
   const [createError, createAction, createPending] = useActionState(createSeason, null);
   const [calError, calAction, calPending] = useActionState(generateCalendar, null);
   const [, matchdayAction] = useActionState(setCurrentMatchday, null);
+  const [csvResult, csvAction, csvPending] = useActionState(importCalendarCsv, null);
 
   const activeSeason = seasons.find((s) => s.id === activeSeasonId);
 
@@ -69,7 +70,7 @@ export default function ScheduleAdminClient({
               <form action={calAction} className="flex gap-3 items-center">
                 <input type="hidden" name="seasonId" value={activeSeason.id} />
                 <button type="submit" disabled={calPending} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                  {calPending ? "Generazione..." : "Genera calendario"}
+                  {calPending ? "Generazione..." : "🔀 Genera calendario automatico"}
                 </button>
               </form>
 
@@ -90,6 +91,44 @@ export default function ScheduleAdminClient({
               </form>
             </div>
             {calError && <p className="text-red-600 text-sm mt-2">{calError}</p>}
+          </div>
+
+          {/* ── Import calendario da CSV ─────────────────── */}
+          <div className="bg-white rounded-xl border shadow-sm p-5">
+            <h2 className="font-semibold text-gray-700 mb-1">📥 Importa calendario da CSV</h2>
+            <p className="text-xs text-gray-400 mb-3">
+              Formato: una riga per partita —{" "}
+              <code className="bg-gray-100 px-1 rounded">giornata,squadra_casa,squadra_ospite</code>
+              {" "}(separatore virgola o punto e virgola). I nomi squadra devono corrispondere esattamente.
+            </p>
+
+            <form action={csvAction} className="space-y-3">
+              <input type="hidden" name="seasonId" value={activeSeason.id} />
+              <textarea
+                name="csv"
+                rows={10}
+                placeholder={"1,Godo Glimt,Deportivo la Carogna\n1,Ciofenaghen FC,Schalke 104\n2,Deportivo la Carogna,Ciofenaghen FC\n..."}
+                className="w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-green-500 resize-y"
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={csvPending}
+                  className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                >
+                  {csvPending ? "Importazione..." : "Importa"}
+                </button>
+                {csvResult && (
+                  <p className={`text-sm ${csvResult.startsWith("✅") ? "text-green-600" : "text-red-600"}`}>
+                    {csvResult}
+                  </p>
+                )}
+              </div>
+            </form>
+
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+              <strong>Suggerimento:</strong> puoi copiare la tabella del calendario da Excel o Google Sheet e incollarla qui — assicurati che le colonne siano nell&apos;ordine corretto e che i nomi delle squadre corrispondano esattamente.
+            </div>
           </div>
 
           <div className="bg-white rounded-xl border shadow-sm p-5">
