@@ -11,8 +11,8 @@ export default function LoginPage() {
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm">
         <div className="text-center mb-6">
           <div className="text-5xl mb-2">⚽</div>
-          <h1 className="text-2xl font-bold text-gray-800">Fantacalcio Mantra</h1>
-          <p className="text-gray-500 text-sm mt-1">Premier League</p>
+          <h1 className="text-2xl font-bold text-gray-800">IPA</h1>
+          <p className="text-gray-500 text-sm mt-1">Fantasy Football Premier League</p>
         </div>
 
         <form action={action} className="flex flex-col gap-4">

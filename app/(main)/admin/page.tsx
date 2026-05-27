@@ -2,6 +2,7 @@ import { getSession } from "@/app/lib/session";
 import { redirect } from "next/navigation";
 import { getDb } from "@/app/lib/db";
 import Link from "next/link";
+import MigrateButton from "./MigrateButton";
 
 export default async function AdminPage() {
   const session = await getSession();
@@ -33,6 +34,8 @@ export default async function AdminPage() {
     { href: "/admin/users", icon: "👥", title: "Gestisci Utenti", desc: `${userCount} / 12 partecipanti`, color: "purple" },
     { href: "/admin/schedule", icon: "📅", title: "Stagione & Calendario", desc: season ? `Stagione: ${season.name as string}` : "Nessuna stagione attiva", color: "green" },
     { href: "/admin/votes", icon: "📊", title: "Importa Voti", desc: `${votesImported} giornate con voti importati`, color: "amber" },
+    { href: "/admin/coppe", icon: "🏆", title: "Gestisci Coppe", desc: "Configura coppe e turni eliminatori", color: "yellow" },
+    { href: "/admin/mercato", icon: "🔄", title: "Gestisci Mercato", desc: "Apri mercati e approva trasferimenti", color: "teal" },
   ];
 
   const colorMap: Record<string, string> = {
@@ -40,6 +43,8 @@ export default async function AdminPage() {
     purple: "bg-purple-50 border-purple-200 hover:bg-purple-100",
     green: "bg-green-50 border-green-200 hover:bg-green-100",
     amber: "bg-amber-50 border-amber-200 hover:bg-amber-100",
+    yellow: "bg-yellow-50 border-yellow-200 hover:bg-yellow-100",
+    teal: "bg-teal-50 border-teal-200 hover:bg-teal-100",
   };
 
   return (
@@ -59,6 +64,8 @@ export default async function AdminPage() {
           </Link>
         ))}
       </div>
+
+      <MigrateButton />
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
         <strong>Guida rapida:</strong>

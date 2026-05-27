@@ -5,8 +5,8 @@ import "./globals.css";
 const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Fantacalcio Mantra",
-  description: "Premier League Fantacalcio con regole Mantra",
+  title: "IPA",
+  description: "IPA Fantasy Football - Premier League con regole Mantra",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

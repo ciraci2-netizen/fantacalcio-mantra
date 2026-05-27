@@ -15,10 +15,13 @@ export default function Navbar({ username, teamName, isAdmin }: NavbarProps) {
 
   const links = [
     { href: "/dashboard", label: "Dashboard" },
-    { href: "/team", label: "La mia rosa" },
+    { href: "/team", label: "Rosa" },
     { href: "/lineup", label: "Formazione" },
     { href: "/standings", label: "Classifica" },
     { href: "/calendar", label: "Calendario" },
+    { href: "/coppe", label: "Coppe" },
+    { href: "/mercato", label: "Mercato" },
+    { href: "/regolamento", label: "Regolamento" },
   ];
 
   if (isAdmin) {
@@ -29,8 +32,8 @@ export default function Navbar({ username, teamName, isAdmin }: NavbarProps) {
     <nav className="bg-green-700 text-white shadow-md">
       <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-xl font-bold">⚽ Fantacalcio</span>
-          <span className="text-green-200 text-sm hidden sm:block">Mantra PL</span>
+          <span className="text-xl font-bold">⚽ IPA</span>
+          <span className="text-green-200 text-sm hidden sm:block">Fantasy Football PL</span>
         </div>
 
         <div className="flex flex-wrap gap-1">
