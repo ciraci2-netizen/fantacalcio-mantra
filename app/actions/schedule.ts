@@ -135,3 +135,24 @@ export async function setCurrentMatchday(prevState: string | null, formData: For
   revalidatePath("/");
   return null;
 }
+
+export async function lockAndAdvanceMatchday(prevState: string | null, formData: FormData) {
+  const session = await getSession();
+  if (!session?.isAdmin) return "Non autorizzato.";
+
+  const seasonId = parseInt(formData.get("seasonId") as string);
+  const matchdayId = parseInt(formData.get("matchdayId") as string);
+  const nextNumber = parseInt(formData.get("nextNumber") as string);
+
+  const db = getDb();
+  await db.execute({ sql: `UPDATE "Matchday" SET isLocked = 1 WHERE id = ?`, args: [matchdayId] });
+  await db.execute({ sql: `UPDATE "Season" SET currentMatchday = ? WHERE id = ?`, args: [nextNumber, seasonId] });
+
+  revalidatePath("/admin/votes");
+  revalidatePath("/admin/schedule");
+  revalidatePath("/dashboard");
+  revalidatePath("/lineup");
+  revalidatePath("/standings");
+  revalidatePath("/calendar");
+  return null;
+}
