@@ -48,6 +48,13 @@ export default async function TeamPage() {
     args: [session.userId],
   });
 
+  // Crediti: leggi dalla tabella User + spesa totale
+  const creditsRes = await db.execute({
+    sql: `SELECT credits FROM "User" WHERE id = ?`,
+    args: [session.userId],
+  });
+  const totalCredits = (creditsRes.rows[0]?.credits as number) ?? 500;
+
   const roster: RosterItem[] = rosterRes.rows.map((r) => ({
     id: r.id as number,
     purchasePrice: r.purchasePrice as number,
@@ -74,18 +81,23 @@ export default async function TeamPage() {
             Rosa: <span className="text-green-700">{session.teamName}</span>
           </h1>
           {totalValue > 0 && (
-            <p className="text-gray-400 text-sm mt-0.5">Valore totale: {totalValue}M</p>
+            <p className="text-gray-400 text-sm mt-0.5">Valore acquisti: {totalValue}M</p>
           )}
         </div>
-        <span
-          className={`px-3 py-1.5 rounded-full text-sm font-semibold ${
-            roster.length === 26
-              ? "bg-green-100 text-green-700"
-              : "bg-amber-100 text-amber-700"
-          }`}
-        >
-          {roster.length} / 26 giocatori
-        </span>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${totalCredits - totalValue >= 0 ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700"}`}>
+            💰 {totalCredits - totalValue} crediti rimanenti
+          </span>
+          <span
+            className={`px-3 py-1.5 rounded-full text-sm font-semibold ${
+              roster.length === 26
+                ? "bg-green-100 text-green-700"
+                : "bg-amber-100 text-amber-700"
+            }`}
+          >
+            {roster.length} / 26 giocatori
+          </span>
+        </div>
       </div>
 
       {roster.length === 0 ? (

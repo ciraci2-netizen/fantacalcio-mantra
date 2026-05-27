@@ -102,43 +102,81 @@ export function calculateFantavoto(
   return Math.round(score * 100) / 100;
 }
 
+export type GoalThreshold = { m: number; b: number }; // minGoals → bonus
+
+export const DEFAULT_GOAL_THRESHOLDS: GoalThreshold[] = [
+  { m: 0, b: -6 },
+  { m: 1, b: -4 },
+  { m: 2, b: -2 },
+  { m: 3, b: 0 },
+  { m: 4, b: 3 },
+  { m: 5, b: 5 },
+  { m: 6, b: 9 },
+];
+
+/** Calcola il bonus soglie gol per una formazione */
+export function calculateGoalBonus(
+  goals: number,
+  thresholds: GoalThreshold[] = DEFAULT_GOAL_THRESHOLDS
+): number {
+  // Ordina per minGoals desc, prende il primo che soddisfa la soglia
+  const sorted = [...thresholds].sort((a, b) => b.m - a.m);
+  const match = sorted.find((t) => goals >= t.m);
+  return match?.b ?? 0;
+}
+
 // Calcola il punteggio totale di una formazione
-// slots: array di { playerId, mantraRole, playerRole, fantavoto, isStarter, position }
 export function calculateLineupScore(
   starters: Array<{
     playerRole: MantraRole;
     playedAs: MantraRole;
     fantavoto: number | null;
+    goals?: number; // gol segnati (gfGs positivo)
   }>,
   reserves: Array<{
     playerRole: MantraRole;
     fantavoto: number | null;
-    position: number; // ordine di entrata (1=prima riserva, ecc.)
-  }>
-): number {
-  let total = 0;
+    position: number;
+  }>,
+  options?: {
+    maxSubstitutions?: number;         // default: illimitato
+    goalThresholds?: GoalThreshold[];   // default: DEFAULT_GOAL_THRESHOLDS
+    applyGoalBonus?: boolean;           // default: true
+  }
+): { total: number; goalBonus: number; substitutions: number } {
+  const maxSubs = options?.maxSubstitutions ?? 99;
+  const thresholds = options?.goalThresholds ?? DEFAULT_GOAL_THRESHOLDS;
+  const applyBonus = options?.applyGoalBonus !== false;
+
+  let base = 0;
+  let subsUsed = 0;
+  let totalGoals = 0;
   const missingStarters: number[] = [];
 
   starters.forEach((s, idx) => {
+    if (s.goals && s.goals > 0) totalGoals += s.goals;
     if (s.fantavoto === null) {
       missingStarters.push(idx);
     } else {
       const modifier = ROLE_MODIFIERS[s.playerRole]?.[s.playedAs] ?? -3;
-      total += s.fantavoto + modifier;
+      base += s.fantavoto + modifier;
     }
   });
 
-  // Sostituzione automatica riserve
+  // Sostituzione automatica riserve (entro il limite)
   const sortedReserves = [...reserves].sort((a, b) => a.position - b.position);
-  for (const missing of missingStarters) {
-    const replacement = sortedReserves.find(
-      (r) => r.fantavoto !== null
-    );
-    if (replacement) {
-      total += replacement.fantavoto!;
-      sortedReserves.splice(sortedReserves.indexOf(replacement), 1);
+  for (const _missing of missingStarters) {
+    if (subsUsed >= maxSubs) break;
+    const idx = sortedReserves.findIndex((r) => r.fantavoto !== null);
+    if (idx !== -1) {
+      base += sortedReserves[idx].fantavoto!;
+      sortedReserves.splice(idx, 1);
+      subsUsed++;
     }
   }
 
-  return Math.round(total * 100) / 100;
+  const goalBonus = applyBonus ? calculateGoalBonus(totalGoals, thresholds) : 0;
+  const total = Math.round((base + goalBonus) * 100) / 100;
+
+  return { total, goalBonus, substitutions: subsUsed };
 }

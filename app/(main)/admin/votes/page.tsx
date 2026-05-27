@@ -37,19 +37,47 @@ export default async function AdminVotesPage() {
 
   if (currentMd) {
     const lineupsRes = await db.execute({
-      sql: `SELECT userId, totalScore FROM "Lineup" WHERE matchdayId = ? AND isSubmitted = 1`,
+      sql: `SELECT userId, totalScore, isAutomatic, substitutions FROM "Lineup" WHERE matchdayId = ? AND isSubmitted = 1`,
       args: [currentMd.id],
     });
     const lineupMap = new Map(
-      lineupsRes.rows.map((l) => [l.userId as number, l.totalScore as number | null])
+      lineupsRes.rows.map((l) => [l.userId as number, {
+        score: l.totalScore as number | null,
+        isAutomatic: Boolean(l.isAutomatic),
+        substitutions: l.substitutions as number,
+      }])
     );
     lineupSubmissions = usersRes.rows.map((u) => ({
       userId: u.id as number,
       teamName: u.teamName as string,
       submitted: lineupMap.has(u.id as number),
-      score: lineupMap.get(u.id as number) ?? null,
+      score: lineupMap.get(u.id as number)?.score ?? null,
+      isAutomatic: lineupMap.get(u.id as number)?.isAutomatic ?? false,
+      substitutions: lineupMap.get(u.id as number)?.substitutions ?? 0,
     }));
   }
+
+  // Giocatori con stato per la giornata corrente (infortuni/squalifiche)
+  let playerStatuses: { playerId: number; playerName: string; status: string }[] = [];
+  if (currentMd) {
+    const statusRes = await db.execute({
+      sql: `SELECT ps.playerId, p.name as playerName, ps.status
+            FROM "PlayerStatus" ps
+            JOIN "Player" p ON p.id = ps.playerId
+            WHERE ps.matchdayId = ?`,
+      args: [currentMd.id],
+    });
+    playerStatuses = statusRes.rows.map((r) => ({
+      playerId: r.playerId as number,
+      playerName: r.playerName as string,
+      status: r.status as string,
+    }));
+  }
+
+  // Tutti i giocatori (per poter segnare disponibilità)
+  const allPlayersRes = await db.execute(
+    `SELECT id, name, realTeam, mantraRole FROM "Player" ORDER BY mantraRole ASC, name ASC`
+  );
 
   return (
     <VotesAdminClient
@@ -65,6 +93,13 @@ export default async function AdminVotesPage() {
         isLocked: Boolean(m.isLocked),
       }))}
       lineupSubmissions={lineupSubmissions}
+      playerStatuses={playerStatuses}
+      allPlayers={allPlayersRes.rows.map((p) => ({
+        id: p.id as number,
+        name: p.name as string,
+        realTeam: p.realTeam as string,
+        mantraRole: p.mantraRole as string,
+      }))}
     />
   );
 }

@@ -108,5 +108,38 @@ export async function runMigrations() {
     }
   }
 
+  // === Nuove tabelle e colonne (batch 2) ===
+
+  // Colonna credits su User (SQLite ignora se già esiste tramite try/catch)
+  try {
+    await db.execute(`ALTER TABLE "User" ADD COLUMN "credits" INTEGER NOT NULL DEFAULT 500`);
+  } catch { /* colonna già presente */ }
+
+  // Colonne su Lineup per auto-lineup, goalBonus, sostituzioni
+  try { await db.execute(`ALTER TABLE "Lineup" ADD COLUMN "isAutomatic" INTEGER NOT NULL DEFAULT 0`); } catch { /* già presente */ }
+  try { await db.execute(`ALTER TABLE "Lineup" ADD COLUMN "goalBonus" REAL`); } catch { /* già presente */ }
+  try { await db.execute(`ALTER TABLE "Lineup" ADD COLUMN "substitutions" INTEGER NOT NULL DEFAULT 0`); } catch { /* già presente */ }
+
+  // Tabella PlayerStatus
+  await db.execute(`CREATE TABLE IF NOT EXISTS "PlayerStatus" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playerId INTEGER NOT NULL,
+    matchdayId INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ok',
+    FOREIGN KEY (playerId) REFERENCES "Player"(id),
+    FOREIGN KEY (matchdayId) REFERENCES "Matchday"(id),
+    UNIQUE(playerId, matchdayId)
+  )`);
+
+  // Tabella LeagueSettings (una riga per stagione)
+  await db.execute(`CREATE TABLE IF NOT EXISTS "LeagueSettings" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    seasonId INTEGER NOT NULL UNIQUE,
+    initialCredits INTEGER NOT NULL DEFAULT 500,
+    maxSubstitutions INTEGER NOT NULL DEFAULT 3,
+    goalThresholds TEXT NOT NULL DEFAULT '[{"m":0,"b":-6},{"m":1,"b":-4},{"m":2,"b":-2},{"m":3,"b":0},{"m":4,"b":3},{"m":5,"b":5},{"m":6,"b":9}]',
+    FOREIGN KEY (seasonId) REFERENCES "Season"(id)
+  )`);
+
   return { success: true };
 }

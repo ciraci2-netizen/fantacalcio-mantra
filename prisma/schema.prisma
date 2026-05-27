@@ -18,6 +18,7 @@ model User {
   password    String
   teamName    String
   isAdmin     Boolean  @default(false)
+  credits     Int      @default(500)
   createdAt   DateTime @default(now())
   roster      Roster[]
   lineups     Lineup[]
@@ -26,15 +27,16 @@ model User {
 }
 
 model Player {
-  id            Int          @id @default(autoincrement())
+  id            Int            @id @default(autoincrement())
   name          String
   realTeam      String
   mantraRole    String
   fantapiu3Name String?
-  createdAt     DateTime     @default(now())
+  createdAt     DateTime       @default(now())
   roster        Roster[]
   votes         PlayerVote[]
   lineupSlots   LineupSlot[]
+  statuses      PlayerStatus[]
 }
 
 model Roster {
@@ -49,23 +51,37 @@ model Roster {
 }
 
 model Season {
-  id              Int        @id @default(autoincrement())
-  name            String     @unique
-  currentMatchday Int        @default(1)
-  isActive        Boolean    @default(true)
+  id              Int             @id @default(autoincrement())
+  name            String          @unique
+  currentMatchday Int             @default(1)
+  isActive        Boolean         @default(true)
   matchdays       Matchday[]
+  settings        LeagueSettings?
+}
+
+/// Impostazioni per stagione: crediti iniziali, soglie gol, max sostituzioni
+model LeagueSettings {
+  id                Int    @id @default(autoincrement())
+  seasonId          Int    @unique
+  initialCredits    Int    @default(500)
+  maxSubstitutions  Int    @default(3)
+  /// JSON array of {minGoals, bonus} sorted by minGoals asc
+  /// Default: [{"m":0,"b":-6},{"m":1,"b":-4},{"m":2,"b":-2},{"m":3,"b":0},{"m":4,"b":3},{"m":5,"b":5},{"m":6,"b":9}]
+  goalThresholds    String @default("[{\"m\":0,\"b\":-6},{\"m\":1,\"b\":-4},{\"m\":2,\"b\":-2},{\"m\":3,\"b\":0},{\"m\":4,\"b\":3},{\"m\":5,\"b\":5},{\"m\":6,\"b\":9}]")
+  season            Season @relation(fields: [seasonId], references: [id])
 }
 
 model Matchday {
-  id            Int          @id @default(autoincrement())
+  id            Int            @id @default(autoincrement())
   seasonId      Int
   number        Int
-  isLocked      Boolean      @default(false)
-  votesImported Boolean      @default(false)
-  season        Season       @relation(fields: [seasonId], references: [id])
+  isLocked      Boolean        @default(false)
+  votesImported Boolean        @default(false)
+  season        Season         @relation(fields: [seasonId], references: [id])
   playerVotes   PlayerVote[]
   lineups       Lineup[]
   matches       Match[]
+  playerStatuses PlayerStatus[]
 
   @@unique([seasonId, number])
 }
@@ -91,17 +107,32 @@ model PlayerVote {
 }
 
 model Lineup {
-  id          Int          @id @default(autoincrement())
-  userId      Int
-  matchdayId  Int
-  formation   String       @default("4-4-2")
-  isSubmitted Boolean      @default(false)
-  totalScore  Float?
-  user        User         @relation(fields: [userId], references: [id])
-  matchday    Matchday     @relation(fields: [matchdayId], references: [id])
-  slots       LineupSlot[]
+  id              Int          @id @default(autoincrement())
+  userId          Int
+  matchdayId      Int
+  formation       String       @default("4-4-2")
+  isSubmitted     Boolean      @default(false)
+  isAutomatic     Boolean      @default(false)
+  totalScore      Float?
+  goalBonus       Float?
+  substitutions   Int          @default(0)
+  user            User         @relation(fields: [userId], references: [id])
+  matchday        Matchday     @relation(fields: [matchdayId], references: [id])
+  slots           LineupSlot[]
 
   @@unique([userId, matchdayId])
+}
+
+/// Disponibilità giocatore per giornata (infortuno/squalifica)
+model PlayerStatus {
+  id         Int      @id @default(autoincrement())
+  playerId   Int
+  matchdayId Int
+  status     String   @default("ok")   // "ok" | "inj" | "sus"
+  player     Player   @relation(fields: [playerId], references: [id])
+  matchday   Matchday @relation(fields: [matchdayId], references: [id])
+
+  @@unique([playerId, matchdayId])
 }
 
 model LineupSlot {

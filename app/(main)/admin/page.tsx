@@ -37,6 +37,7 @@ export default async function AdminPage() {
     { href: "/admin/coppe", icon: "🏆", title: "Gestisci Coppe", desc: "Configura coppe e turni eliminatori", color: "yellow" },
     { href: "/admin/mercato", icon: "🔄", title: "Gestisci Mercato", desc: "Apri mercati e approva trasferimenti", color: "teal" },
     { href: "/admin/regolamento", icon: "📋", title: "Modifica Regolamento", desc: "Bonus/malus e sezioni di testo", color: "indigo" },
+    { href: "/admin/settings", icon: "⚙️", title: "Impostazioni Lega", desc: "Crediti, soglie gol, sostituzioni", color: "slate" },
   ];
 
   const colorMap: Record<string, string> = {
@@ -47,6 +48,7 @@ export default async function AdminPage() {
     yellow: "bg-yellow-50 border-yellow-200 hover:bg-yellow-100",
     teal: "bg-teal-50 border-teal-200 hover:bg-teal-100",
     indigo: "bg-indigo-50 border-indigo-200 hover:bg-indigo-100",
+    slate: "bg-slate-50 border-slate-200 hover:bg-slate-100",
   };
 
   return (

@@ -33,12 +33,14 @@ export default async function LineupPage() {
   }
 
   const rosterRes = await db.execute({
-    sql: `SELECT p.id, p.name, p.realTeam, p.mantraRole
+    sql: `SELECT p.id, p.name, p.realTeam, p.mantraRole,
+                 COALESCE(ps.status, 'ok') as availability
           FROM "Roster" r
           JOIN "Player" p ON p.id = r.playerId
+          LEFT JOIN "PlayerStatus" ps ON ps.playerId = p.id AND ps.matchdayId = ?
           WHERE r.userId = ?
           ORDER BY p.mantraRole ASC, p.name ASC`,
-    args: [session.userId],
+    args: [matchday.id, session.userId],
   });
 
   const existingLineupRes = await db.execute({
@@ -80,6 +82,7 @@ export default async function LineupPage() {
           name: r.name as string,
           realTeam: r.realTeam as string,
           mantraRole: r.mantraRole as string,
+          availability: r.availability as string,
         }))}
         existingLineup={existingLineupData}
       />

@@ -9,6 +9,7 @@ interface Player {
   name: string;
   realTeam: string;
   mantraRole: string;
+  availability?: string; // "ok" | "inj" | "sus"
 }
 
 interface Props {
@@ -230,44 +231,56 @@ export default function LineupForm({ matchdayId, matchdayNumber, isLocked, roste
           </div>
 
           <div className="space-y-1 max-h-[500px] overflow-y-auto">
-            {availablePlayers.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 border border-transparent hover:border-gray-200"
-              >
-                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${ROLE_COLORS[p.mantraRole] ?? "bg-gray-100"}`}>
-                  {p.mantraRole}
-                </span>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{p.name}</p>
-                  <p className="text-xs text-gray-400">{p.realTeam}</p>
+            {availablePlayers.map((p) => {
+              const av = p.availability ?? "ok";
+              const isUnavailable = av !== "ok";
+              return (
+                <div
+                  key={p.id}
+                  className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ${
+                    isUnavailable
+                      ? "bg-red-50 border-red-100 opacity-75"
+                      : "hover:bg-gray-50 border-transparent hover:border-gray-200"
+                  }`}
+                >
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${ROLE_COLORS[p.mantraRole] ?? "bg-gray-100"}`}>
+                    {p.mantraRole}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate flex items-center gap-1">
+                      {p.name}
+                      {av === "inj" && <span title="Infortunato" className="text-red-500">🤕</span>}
+                      {av === "sus" && <span title="Squalificato" className="text-amber-500">🟨</span>}
+                    </p>
+                    <p className="text-xs text-gray-400">{p.realTeam}</p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const emptySlot = starters.findIndex((s) => s === null);
+                        if (emptySlot !== -1) selectStarter(emptySlot, p.id);
+                      }}
+                      className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
+                      title="Aggiungi ai titolari"
+                    >
+                      T
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const emptySlot = reserves.findIndex((s) => s === null);
+                        if (emptySlot !== -1) selectReserve(emptySlot, p.id);
+                      }}
+                      className="text-xs bg-gray-400 text-white px-2 py-1 rounded hover:bg-gray-500"
+                      title="Aggiungi alle riserve"
+                    >
+                      R
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const emptySlot = starters.findIndex((s) => s === null);
-                      if (emptySlot !== -1) selectStarter(emptySlot, p.id);
-                    }}
-                    className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
-                    title="Aggiungi ai titolari"
-                  >
-                    T
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const emptySlot = reserves.findIndex((s) => s === null);
-                      if (emptySlot !== -1) selectReserve(emptySlot, p.id);
-                    }}
-                    className="text-xs bg-gray-400 text-white px-2 py-1 rounded hover:bg-gray-500"
-                    title="Aggiungi alle riserve"
-                  >
-                    R
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {availablePlayers.length === 0 && (
               <p className="text-gray-400 text-sm text-center py-4">
                 Nessun giocatore disponibile per questo filtro.
