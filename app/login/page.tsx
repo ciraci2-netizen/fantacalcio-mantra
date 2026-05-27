@@ -7,17 +7,22 @@ export default function LoginPage() {
   const [error, action, pending] = useActionState(login, null);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-800 to-green-600">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-900 via-green-700 to-emerald-600 px-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm">
-        <div className="text-center mb-6">
-          <div className="text-5xl mb-2">⚽</div>
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-3 text-4xl">
+            ⚽
+          </div>
           <h1 className="text-2xl font-bold text-gray-800">IPA</h1>
-          <p className="text-gray-500 text-sm mt-1">Fantasy Football Premier League</p>
+          <p className="text-gray-400 text-sm mt-1">Fantasy Football Premier League</p>
         </div>
 
         <form action={action} className="flex flex-col gap-4">
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              htmlFor="username"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
               Username
             </label>
             <input
@@ -26,13 +31,16 @@ export default function LoginPage() {
               type="text"
               autoComplete="username"
               required
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-shadow"
               placeholder="il_tuo_username"
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
               Password
             </label>
             <input
@@ -41,7 +49,7 @@ export default function LoginPage() {
               type="password"
               autoComplete="current-password"
               required
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-shadow"
               placeholder="••••••••"
             />
           </div>
@@ -55,9 +63,9 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={pending}
-            className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-semibold py-2 rounded-lg transition-colors"
+            className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg transition-colors mt-1"
           >
-            {pending ? "Accesso in corso..." : "Accedi"}
+            {pending ? "Accesso in corso…" : "Accedi"}
           </button>
         </form>
       </div>

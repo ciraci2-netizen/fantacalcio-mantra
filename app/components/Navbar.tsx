@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/app/actions/auth";
+import { useState } from "react";
 
 interface NavbarProps {
   username: string;
@@ -10,38 +11,43 @@ interface NavbarProps {
   isAdmin: boolean;
 }
 
+const BASE_LINKS = [
+  { href: "/dashboard", label: "Dashboard", icon: "🏠" },
+  { href: "/team", label: "Rosa", icon: "👥" },
+  { href: "/lineup", label: "Formazione", icon: "📋" },
+  { href: "/standings", label: "Classifica", icon: "🏆" },
+  { href: "/calendar", label: "Calendario", icon: "📅" },
+  { href: "/coppe", label: "Coppe", icon: "🏅" },
+  { href: "/mercato", label: "Mercato", icon: "🔄" },
+  { href: "/regolamento", label: "Regolamento", icon: "📖" },
+];
+
 export default function Navbar({ username, teamName, isAdmin }: NavbarProps) {
   const path = usePathname();
+  const [open, setOpen] = useState(false);
 
-  const links = [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/team", label: "Rosa" },
-    { href: "/lineup", label: "Formazione" },
-    { href: "/standings", label: "Classifica" },
-    { href: "/calendar", label: "Calendario" },
-    { href: "/coppe", label: "Coppe" },
-    { href: "/mercato", label: "Mercato" },
-    { href: "/regolamento", label: "Regolamento" },
-  ];
+  const links = isAdmin
+    ? [...BASE_LINKS, { href: "/admin", label: "Admin", icon: "⚙️" }]
+    : BASE_LINKS;
 
-  if (isAdmin) {
-    links.push({ href: "/admin", label: "Admin" });
-  }
+  const initials = teamName.slice(0, 2).toUpperCase();
 
   return (
-    <nav className="bg-green-700 text-white shadow-md">
-      <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+    <nav className="bg-green-700 text-white shadow-md relative z-50">
+      <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+        {/* Logo */}
+        <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
           <span className="text-xl font-bold">⚽ IPA</span>
-          <span className="text-green-200 text-sm hidden sm:block">Fantasy Football PL</span>
-        </div>
+          <span className="text-green-200 text-xs hidden md:block">Fantasy Football PL</span>
+        </Link>
 
-        <div className="flex flex-wrap gap-1">
+        {/* Desktop links */}
+        <div className="hidden lg:flex items-center gap-0.5 flex-1 justify-center">
           {links.map((l) => (
             <Link
               key={l.href}
               href={l.href}
-              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              className={`px-2.5 py-1.5 rounded text-sm font-medium transition-colors ${
                 path === l.href
                   ? "bg-white text-green-700"
                   : "hover:bg-green-600 text-white"
@@ -52,21 +58,74 @@ export default function Navbar({ username, teamName, isAdmin }: NavbarProps) {
           ))}
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-green-200">
-            <span className="font-medium text-white">{teamName}</span>
-            <span className="hidden sm:inline"> ({username})</span>
-          </span>
-          <form action={logout}>
+        {/* Right: avatar + user + logout (desktop) + hamburger (mobile) */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="w-8 h-8 rounded-full bg-green-500 border-2 border-green-400 flex items-center justify-center text-xs font-bold shrink-0">
+            {initials}
+          </div>
+          <div className="hidden sm:flex flex-col leading-tight">
+            <span className="text-sm font-semibold leading-tight">{teamName}</span>
+            <span className="text-green-300 text-xs leading-tight">{username}</span>
+          </div>
+          <form action={logout} className="hidden lg:block ml-1">
             <button
               type="submit"
-              className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm font-medium"
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition-colors"
             >
               Esci
             </button>
           </form>
+          <button
+            className="lg:hidden p-2 rounded hover:bg-green-600 transition-colors"
+            onClick={() => setOpen((v) => !v)}
+            aria-label={open ? "Chiudi menu" : "Apri menu"}
+          >
+            <span className="text-lg leading-none select-none">{open ? "✕" : "☰"}</span>
+          </button>
         </div>
       </div>
+
+      {/* Mobile drawer */}
+      {open && (
+        <div className="lg:hidden bg-green-800 border-t border-green-600">
+          <div className="px-3 py-2 space-y-0.5">
+            {links.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                onClick={() => setOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  path === l.href
+                    ? "bg-white text-green-800"
+                    : "hover:bg-green-700 text-white"
+                }`}
+              >
+                <span className="text-base w-6 text-center">{l.icon}</span>
+                {l.label}
+              </Link>
+            ))}
+          </div>
+          <div className="px-4 py-3 border-t border-green-600 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-full bg-green-500 border-2 border-green-400 flex items-center justify-center text-sm font-bold">
+                {initials}
+              </div>
+              <div>
+                <p className="text-sm font-semibold">{teamName}</p>
+                <p className="text-green-300 text-xs">{username}</p>
+              </div>
+            </div>
+            <form action={logout}>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition-colors"
+              >
+                Esci
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }
