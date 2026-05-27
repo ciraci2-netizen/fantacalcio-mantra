@@ -23,7 +23,7 @@ export default async function AdminVotesPage() {
   }
 
   const matchdaysRes = await db.execute({
-    sql: `SELECT id, number, votesImported, isLocked FROM "Matchday" WHERE seasonId = ? ORDER BY number ASC`,
+    sql: `SELECT id, number, votesImported, isLocked, deadline FROM "Matchday" WHERE seasonId = ? ORDER BY number ASC`,
     args: [season.id],
   });
 
@@ -107,11 +107,13 @@ export default async function AdminVotesPage() {
       currentMatchday={season.currentMatchday as number}
       currentMatchdayId={currentMd ? (currentMd.id as number) : null}
       currentMatchdayTotal={matchdaysRes.rows.length}
+      currentMatchdayDeadline={(currentMd?.deadline as string | null) ?? null}
       matchdays={matchdaysRes.rows.map((m) => ({
         id: m.id as number,
         number: m.number as number,
         votesImported: Boolean(m.votesImported),
         isLocked: Boolean(m.isLocked),
+        deadline: (m.deadline as string | null) ?? null,
       }))}
       lineupSubmissions={lineupSubmissions}
       playerStatuses={playerStatuses}

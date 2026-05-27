@@ -2,14 +2,16 @@
 
 import { useActionState, useState } from "react";
 import { importVotes, calculateAllScores } from "@/app/actions/votes";
-import { lockAndAdvanceMatchday } from "@/app/actions/schedule";
+import { lockAndAdvanceMatchday, setMatchdayDeadline } from "@/app/actions/schedule";
 import { setPlayerStatus } from "@/app/actions/settings";
+import DeadlineTimer from "@/app/components/DeadlineTimer";
 
 interface Matchday {
   id: number;
   number: number;
   votesImported: boolean;
   isLocked: boolean;
+  deadline: string | null;
 }
 
 interface LineupSubmission {
@@ -46,6 +48,7 @@ export default function VotesAdminClient({
   currentMatchday,
   currentMatchdayId,
   currentMatchdayTotal,
+  currentMatchdayDeadline,
   matchdays,
   lineupSubmissions,
   playerStatuses,
@@ -56,6 +59,7 @@ export default function VotesAdminClient({
   currentMatchday: number;
   currentMatchdayId: number | null;
   currentMatchdayTotal: number;
+  currentMatchdayDeadline: string | null;
   matchdays: Matchday[];
   lineupSubmissions: LineupSubmission[];
   playerStatuses: PlayerStatus[];
@@ -65,6 +69,7 @@ export default function VotesAdminClient({
   const [calcResult, calcAction, calcPending] = useActionState(calculateAllScores, null);
   const [advanceResult, advanceAction, advancePending] = useActionState(lockAndAdvanceMatchday, null);
   const [, statusAction] = useActionState(setPlayerStatus, null);
+  const [deadlineResult, deadlineAction, deadlinePending] = useActionState(setMatchdayDeadline, null);
 
   const [selectedMatchday, setSelectedMatchday] = useState(
     matchdays.find((m) => m.number === currentMatchday) ?? matchdays[0]
@@ -150,6 +155,53 @@ export default function VotesAdminClient({
           ✓ = inviata manualmente &nbsp;·&nbsp; 🤖 = generata automaticamente &nbsp;·&nbsp; ↔N = N sostituzioni
         </p>
       </div>
+
+      {/* ── Scadenza consegna formazioni ─────────────────── */}
+      {currentMatchdayId && (
+        <div className="bg-white rounded-xl border shadow-sm p-5 space-y-4">
+          <h2 className="font-semibold text-gray-700">⏰ Scadenza consegna G{currentMatchday}</h2>
+
+          {/* Preview timer come lo vedono i giocatori */}
+          <DeadlineTimer deadline={currentMatchdayDeadline} isLocked={false} />
+
+          {/* Form set deadline */}
+          <form action={deadlineAction} className="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="matchdayId" value={currentMatchdayId} />
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Imposta scadenza (data e ora locale)
+              </label>
+              <input
+                type="datetime-local"
+                name="deadline"
+                defaultValue={currentMatchdayDeadline ?? ""}
+                className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={deadlinePending}
+              className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            >
+              {deadlinePending ? "Salvataggio..." : "Imposta scadenza"}
+            </button>
+            {currentMatchdayDeadline && (
+              <button
+                type="submit"
+                name="deadline"
+                value=""
+                disabled={deadlinePending}
+                className="text-xs text-red-500 hover:underline"
+              >
+                Rimuovi scadenza
+              </button>
+            )}
+          </form>
+          {deadlineResult && (
+            <p className="text-red-600 text-sm">{deadlineResult}</p>
+          )}
+        </div>
+      )}
 
       {/* ── Disponibilità giocatori ────────────────────────── */}
       {currentMatchdayId && (

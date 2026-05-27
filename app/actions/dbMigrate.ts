@@ -144,5 +144,8 @@ export async function runMigrations() {
     FOREIGN KEY (seasonId) REFERENCES "Season"(id)
   )`);
 
+  // Colonna deadline su Matchday (ISO datetime string, es. "2025-11-15T10:30")
+  try { await db.execute(`ALTER TABLE "Matchday" ADD COLUMN "deadline" TEXT`); } catch { /* già presente */ }
+
   return { success: true };
 }

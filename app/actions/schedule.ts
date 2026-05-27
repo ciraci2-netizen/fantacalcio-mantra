@@ -136,6 +136,28 @@ export async function setCurrentMatchday(prevState: string | null, formData: For
   return null;
 }
 
+export async function setMatchdayDeadline(prevState: string | null, formData: FormData) {
+  const session = await getSession();
+  if (!session?.isAdmin) return "Non autorizzato.";
+
+  const matchdayId = parseInt(formData.get("matchdayId") as string);
+  const raw = (formData.get("deadline") as string)?.trim();
+  const deadline = raw || null; // empty string → null (rimuove scadenza)
+
+  try {
+    await getDb().execute({
+      sql: `UPDATE "Matchday" SET deadline = ? WHERE id = ?`,
+      args: [deadline, matchdayId],
+    });
+  } catch {
+    return "Errore: esegui prima la migrazione DB per aggiungere la colonna deadline.";
+  }
+
+  revalidatePath("/admin/votes");
+  revalidatePath("/lineup");
+  return null;
+}
+
 export async function importCalendarCsv(prevState: string | null, formData: FormData) {
   const session = await getSession();
   if (!session?.isAdmin) return "Non autorizzato.";
