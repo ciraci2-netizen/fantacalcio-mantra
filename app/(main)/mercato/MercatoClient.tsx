@@ -111,8 +111,14 @@ export default function MercatoClient({
 
       {markets.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border p-12 text-center">
-          <div className="text-4xl mb-3">🔄</div>
-          <p className="text-gray-500">Nessun mercato configurato per questa stagione.</p>
+          <svg className="w-24 h-24 mx-auto mb-4 text-gray-200" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="60" cy="60" r="56" fill="#f3f4f6" />
+            <path d="M38 76 L60 44 L82 76 Z" fill="#e5e7eb" stroke="#d1d5db" strokeWidth="2" />
+            <circle cx="60" cy="62" r="6" fill="#16a34a" />
+            <path d="M60 56 L60 44" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" />
+            <path d="M44 80 L76 80" stroke="#d1d5db" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          <p className="text-gray-600 font-semibold">Nessun mercato aperto.</p>
           <p className="text-gray-400 text-sm mt-1">L&apos;admin aprirà il mercato quando necessario.</p>
         </div>
       ) : (

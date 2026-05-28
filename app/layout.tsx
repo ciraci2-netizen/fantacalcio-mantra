@@ -32,6 +32,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: `
 try{var t=localStorage.getItem('ipa-theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}
         `.trim() }} />
+        {/* Register PWA service worker */}
+        <script dangerouslySetInnerHTML={{ __html: `
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}
+        `.trim() }} />
       </head>
       <body className="min-h-full bg-gray-50 text-gray-900 antialiased">{children}</body>
     </html>

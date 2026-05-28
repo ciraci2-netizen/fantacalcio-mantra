@@ -81,3 +81,31 @@ body {
 .dark .hover\:bg-gray-100:hover {
   background-color: #374151!important;
 }
+
+/* ── Custom animations ───────────────────────────────────── */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes score-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+.animate-score-pop {
+  animation: score-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Dark mode: BottomNav */
+.dark nav.fixed.bottom-0 {
+  background-color: #1f2937;
+  border-color: #374151;
+}

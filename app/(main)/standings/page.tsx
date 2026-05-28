@@ -1,8 +1,25 @@
+import { unstable_cache } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import TeamLogo from "@/app/components/TeamLogo";
 
-async function getStandings(seasonId: number) {
+type StandingRow = {
+  userId: number;
+  teamName: string;
+  username: string;
+  logoUrl: string | null;
+  points: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  played: number;
+  gf: number;
+  ga: number;
+  gd: number;
+  form: ("W" | "D" | "L")[];
+};
+
+async function getStandings(seasonId: number): Promise<StandingRow[]> {
   const db = getDb();
 
   const res = await db.execute({
@@ -35,6 +52,37 @@ async function getStandings(seasonId: number) {
     }
   } catch { /* column not yet migrated */ }
 
+  // ── Forma recente: last 5 results per user ─────────────────────────
+  const formMap: Record<number, ("W" | "D" | "L")[]> = {};
+  try {
+    const formRes = await db.execute({
+      sql: `SELECT userId, result, matchdayNumber FROM (
+              SELECT m.homeUserId as userId,
+                CASE WHEN m.homePoints = 3 THEN 'W' WHEN m.homePoints = 1 THEN 'D' ELSE 'L' END as result,
+                md.number as matchdayNumber
+              FROM "Match" m
+              JOIN "Matchday" md ON md.id = m.matchdayId
+              WHERE md.seasonId = ? AND m.homePoints IS NOT NULL
+              UNION ALL
+              SELECT m.awayUserId as userId,
+                CASE WHEN m.awayPoints = 3 THEN 'W' WHEN m.awayPoints = 1 THEN 'D' ELSE 'L' END as result,
+                md.number as matchdayNumber
+              FROM "Match" m
+              JOIN "Matchday" md ON md.id = m.matchdayId
+              WHERE md.seasonId = ? AND m.awayPoints IS NOT NULL
+            ) ORDER BY userId ASC, matchdayNumber DESC`,
+      args: [seasonId, seasonId],
+    });
+
+    for (const row of formRes.rows) {
+      const uid = row.userId as number;
+      if (!formMap[uid]) formMap[uid] = [];
+      if (formMap[uid].length < 5) {
+        formMap[uid].push(row.result as "W" | "D" | "L");
+      }
+    }
+  } catch { /* matches might not exist */ }
+
   return res.rows.map((r) => ({
     userId: r.id as number,
     teamName: r.teamName as string,
@@ -48,14 +96,21 @@ async function getStandings(seasonId: number) {
     gf: r.gf as number,
     ga: r.ga as number,
     gd: Math.round(((r.gf as number) - (r.ga as number)) * 10) / 10,
+    form: formMap[r.id as number] ?? [],
   }));
 }
 
 const POSITION_COLORS = [
-  "text-yellow-500",   // 1°
-  "text-slate-400",    // 2°
-  "text-amber-600",    // 3°
+  "text-yellow-500",  // 1°
+  "text-slate-400",   // 2°
+  "text-amber-600",   // 3°
 ];
+
+const FORM_STYLES: Record<"W" | "D" | "L", string> = {
+  W: "bg-green-100 text-green-700 font-bold",
+  D: "bg-gray-100 text-gray-600 font-semibold",
+  L: "bg-red-100 text-red-600 font-semibold",
+};
 
 export default async function StandingsPage() {
   const session = await getSession();
@@ -69,7 +124,16 @@ export default async function StandingsPage() {
     return <div className="text-center py-12 text-gray-500">Nessuna stagione attiva.</div>;
   }
 
-  const standings = await getStandings(season.id as number);
+  const seasonId = season.id as number;
+
+  // Cache standings for 60 seconds (revalidated on demand via revalidatePath)
+  const getCachedStandings = unstable_cache(
+    () => getStandings(seasonId),
+    [`standings-${seasonId}`],
+    { revalidate: 60, tags: [`standings-${seasonId}`] }
+  );
+
+  const standings = await getCachedStandings();
 
   return (
     <div className="space-y-4">
@@ -80,9 +144,10 @@ export default async function StandingsPage() {
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
         {/* Column headers */}
-        <div className="hidden sm:grid grid-cols-[3rem_1fr_repeat(9,3.5rem)] px-4 py-2 border-b bg-gray-50 text-xs font-medium text-gray-400 uppercase tracking-wide">
+        <div className="hidden sm:grid grid-cols-[3rem_1fr_5rem_repeat(9,3.5rem)] px-4 py-2 border-b bg-gray-50 text-xs font-medium text-gray-400 uppercase tracking-wide">
           <div />
           <div />
+          <div className="text-center">forma</div>
           <div className="text-center">g</div>
           <div className="text-center">v</div>
           <div className="text-center">n</div>
@@ -100,7 +165,7 @@ export default async function StandingsPage() {
             return (
               <div
                 key={s.userId}
-                className={`flex sm:grid sm:grid-cols-[3rem_1fr_repeat(9,3.5rem)] items-center gap-2 sm:gap-0 px-4 py-3 transition-colors ${
+                className={`flex sm:grid sm:grid-cols-[3rem_1fr_5rem_repeat(9,3.5rem)] items-center gap-2 sm:gap-0 px-4 py-3 transition-colors ${
                   isMe
                     ? "border-l-4 border-blue-500 bg-blue-50/40"
                     : "border-l-4 border-transparent hover:bg-gray-50"
@@ -134,7 +199,23 @@ export default async function StandingsPage() {
                   </div>
                 </div>
 
-                {/* Stats — hidden on mobile, shown as grid on sm+ */}
+                {/* Forma recente chips (last 5 results) */}
+                <div className="hidden sm:flex items-center justify-center gap-0.5">
+                  {s.form.length === 0 ? (
+                    <span className="text-gray-300 text-xs">—</span>
+                  ) : (
+                    s.form.map((r, idx) => (
+                      <span
+                        key={idx}
+                        className={`w-5 h-5 rounded text-[10px] flex items-center justify-center ${FORM_STYLES[r]}`}
+                      >
+                        {r}
+                      </span>
+                    ))
+                  )}
+                </div>
+
+                {/* Stats */}
                 <div className="hidden sm:contents text-sm text-gray-600 text-center">
                   <div className="flex items-center justify-center">{s.played}</div>
                   <div className="flex items-center justify-center text-green-600 font-medium">{s.wins}</div>
@@ -153,9 +234,19 @@ export default async function StandingsPage() {
                   </div>
                 </div>
 
-                {/* Mobile: show only pt */}
-                <div className="sm:hidden ml-auto font-bold text-blue-600 text-lg">
-                  {s.points}
+                {/* Mobile: show form chips + pt */}
+                <div className="sm:hidden ml-auto flex items-center gap-2">
+                  <div className="flex gap-0.5">
+                    {s.form.slice(0, 3).map((r, idx) => (
+                      <span
+                        key={idx}
+                        className={`w-4 h-4 rounded text-[9px] flex items-center justify-center ${FORM_STYLES[r]}`}
+                      >
+                        {r}
+                      </span>
+                    ))}
+                  </div>
+                  <span className="font-bold text-blue-600 text-lg">{s.points}</span>
                 </div>
               </div>
             );
@@ -168,9 +259,9 @@ export default async function StandingsPage() {
           <span>v = vinte</span>
           <span>n = nulle</span>
           <span>p = perse</span>
-          <span>g+ = gol fatti</span>
-          <span>g- = gol subiti</span>
-          <span>dr = diff. reti</span>
+          <span>g+ = punti fatti</span>
+          <span>g- = punti subiti</span>
+          <span>dr = diff. punti</span>
           <span className="font-semibold text-gray-500">pt = punti lega</span>
           <span>pt tot = punti fantacalcio totali</span>
         </div>

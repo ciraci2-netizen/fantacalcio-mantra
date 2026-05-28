@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 interface PreviewData {
   estimated: number | null;
@@ -23,33 +23,47 @@ export default function LiveScorePreview({
   const [data, setData] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [animating, setAnimating] = useState(false);
+  const prevScoreRef = useRef<number | null>(null);
 
-  const fetch_ = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
       const res = await fetch(`/api/score-preview?matchdayId=${matchdayId}`);
       if (!res.ok) return;
-      const json = await res.json();
+      const json: PreviewData = await res.json();
+
+      // Trigger pop animation when score changes
+      if (
+        json.estimated !== null &&
+        prevScoreRef.current !== null &&
+        json.estimated !== prevScoreRef.current
+      ) {
+        setAnimating(true);
+        setTimeout(() => setAnimating(false), 450);
+      }
+      prevScoreRef.current = json.estimated;
+
       setData(json);
       setLastUpdated(new Date());
     } catch {
-      // network error — silently ignore, keep showing last value
+      // network error — silently ignore
     } finally {
       setLoading(false);
     }
   }, [matchdayId]);
 
   useEffect(() => {
-    // Only poll when votes have been imported
     if (!votesImported) {
       setLoading(false);
       return;
     }
-    fetch_();
-    const id = setInterval(fetch_, POLL_INTERVAL_MS);
+    fetchData();
+    const id = setInterval(fetchData, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [fetch_, votesImported]);
+  }, [fetchData, votesImported]);
 
   if (!votesImported) return null;
+
   if (loading) {
     return (
       <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-3 animate-pulse">
@@ -61,9 +75,10 @@ export default function LiveScorePreview({
 
   if (!data || data.estimated === null) return null;
 
-  const pct = data.totalStarters > 0
-    ? Math.round((data.votedStarters / data.totalStarters) * 100)
-    : 0;
+  const pct =
+    data.totalStarters > 0
+      ? Math.round((data.votedStarters / data.totalStarters) * 100)
+      : 0;
 
   const scoreColor =
     data.estimated >= 70
@@ -81,10 +96,16 @@ export default function LiveScorePreview({
             Punteggio stimato
           </span>
           {!data.isComplete && (
-            <span className="text-xs text-blue-500 animate-pulse">• aggiornamento live</span>
+            <span className="text-xs text-blue-500 animate-pulse">
+              • live
+            </span>
           )}
         </div>
-        <span className={`text-2xl font-bold ${scoreColor}`}>
+        <span
+          className={`text-2xl font-bold ${scoreColor} inline-block ${
+            animating ? "animate-score-pop" : ""
+          }`}
+        >
           {data.estimated.toFixed(1)} pt
         </span>
       </div>
@@ -100,7 +121,7 @@ export default function LiveScorePreview({
         </div>
         <div className="w-full h-1.5 bg-blue-200 rounded-full overflow-hidden">
           <div
-            className="h-full bg-blue-500 rounded-full transition-all duration-500"
+            className="h-full bg-blue-500 rounded-full transition-all duration-700"
             style={{ width: `${pct}%` }}
           />
         </div>

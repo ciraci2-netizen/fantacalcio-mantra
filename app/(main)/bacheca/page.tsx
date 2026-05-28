@@ -2,9 +2,19 @@ import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
 import BachecaClient from "./BachecaClient";
 
-export default async function BachecaPage() {
+const PAGE_SIZE = 20;
+
+export default async function BachecaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const session = await getSession();
   if (!session) return null;
+
+  const { page: pageParam } = await searchParams;
+  const page = Math.max(1, parseInt(pageParam ?? "1") || 1);
+  const offset = (page - 1) * PAGE_SIZE;
 
   const db = getDb();
 
@@ -22,6 +32,8 @@ export default async function BachecaPage() {
     createdAt: string;
   }[] = [];
 
+  let hasMore = false;
+
   if (season) {
     try {
       const msgsRes = await db.execute({
@@ -32,10 +44,15 @@ export default async function BachecaPage() {
               JOIN "User" u ON u.id = lm.userId
               WHERE lm.seasonId = ?
               ORDER BY lm.createdAt DESC
-              LIMIT 100`,
-        args: [season.id],
+              LIMIT ? OFFSET ?`,
+        args: [season.id, PAGE_SIZE + 1, offset],
       });
-      messages = msgsRes.rows.map((r) => ({
+
+      const rows = msgsRes.rows;
+      hasMore = rows.length > PAGE_SIZE;
+      const displayRows = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
+
+      messages = displayRows.map((r) => ({
         id: r.id as number,
         userId: r.userId as number,
         teamName: r.teamName as string,
@@ -54,6 +71,8 @@ export default async function BachecaPage() {
       currentUserId={session.userId}
       isAdmin={session.isAdmin}
       seasonName={season ? (season.name as string) : ""}
+      page={page}
+      hasMore={hasMore}
     />
   );
 }

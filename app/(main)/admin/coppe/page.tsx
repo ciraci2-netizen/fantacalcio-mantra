@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import AdminCoppeClient from "./AdminCoppeClient";

@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
 import Link from "next/link";

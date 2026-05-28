@@ -3,6 +3,7 @@ import { getSession } from "@/app/lib/session";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import TeamLogo from "@/app/components/TeamLogo";
+import Confetti from "@/app/components/Confetti";
 
 const ROLE_COLORS: Record<string, string> = {
   Por: "bg-yellow-100 text-yellow-800",
@@ -105,8 +106,15 @@ export default async function MatchDetailPage({
   const homeWon = (match.homePoints as number) === 3;
   const awayWon = (match.awayPoints as number) === 3;
 
+  // Confetti if current user won
+  const iWon =
+    played &&
+    ((homeUserId === session.userId && homeWon) ||
+      (awayUserId === session.userId && awayWon));
+
   return (
     <div className="space-y-6">
+      {iWon && <Confetti />}
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link href="/calendar" className="text-green-600 hover:underline text-sm">

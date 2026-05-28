@@ -1,9 +1,15 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
+import { autoMigrate } from "@/app/lib/autoMigrate";
 import Navbar from "@/app/components/Navbar";
+import BottomNav from "@/app/components/BottomNav";
+import { ToastProvider } from "@/app/components/ToastProvider";
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
+  // Run schema migrations idempotently on every cold start (fail-safe — won't break build)
+  try { await autoMigrate(); } catch { /* DB not configured at build time — OK */ }
+
   const session = await getSession();
   if (!session) redirect("/login");
 
@@ -21,7 +27,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
     // column not yet migrated — ignore
   }
 
-  // Latest matchday with imported votes (Feature 10: notification badge)
+  // Latest matchday with imported votes (notification badge)
   let latestResultsMatchday = 0;
   try {
     const latestRes = await db.execute(
@@ -36,15 +42,21 @@ export default async function MainLayout({ children }: { children: React.ReactNo
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar
-        username={session.username}
-        teamName={session.teamName}
-        isAdmin={session.isAdmin}
-        logoUrl={logoUrl}
-        latestResultsMatchday={latestResultsMatchday}
-      />
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">{children}</main>
-    </div>
+    <ToastProvider>
+      <div className="min-h-screen flex flex-col">
+        <Navbar
+          username={session.username}
+          teamName={session.teamName}
+          isAdmin={session.isAdmin}
+          logoUrl={logoUrl}
+          latestResultsMatchday={latestResultsMatchday}
+        />
+        {/* pb-16 on mobile to account for BottomNav height */}
+        <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6 pb-20 xl:pb-6">
+          {children}
+        </main>
+        <BottomNav />
+      </div>
+    </ToastProvider>
   );
 }
