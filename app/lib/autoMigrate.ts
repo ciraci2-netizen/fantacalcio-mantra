@@ -86,6 +86,17 @@ export async function autoMigrate(): Promise<void> {
       auth      TEXT    NOT NULL,
       createdAt TEXT    NOT NULL DEFAULT (datetime('now'))
     )`,
+    `CREATE TABLE IF NOT EXISTS "TradeOffer" (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      seasonId          INTEGER NOT NULL,
+      fromUserId        INTEGER NOT NULL,
+      toUserId          INTEGER NOT NULL,
+      offeredPlayerId   INTEGER NOT NULL,
+      requestedPlayerId INTEGER NOT NULL,
+      note              TEXT    NOT NULL DEFAULT '',
+      status            TEXT    NOT NULL DEFAULT 'pending',
+      createdAt         TEXT    NOT NULL DEFAULT (datetime('now'))
+    )`,
   ];
 
   for (const sql of migrations) {
