@@ -7,6 +7,14 @@ import { revalidatePath } from "next/cache";
 // Minimum number of scraped players to consider data complete
 const MIN_PLAYERS = 100;
 
+/** Structured JSON logger for Vercel logs */
+function log(level: "info" | "warn" | "error", msg: string, data?: Record<string, unknown>) {
+  const entry = JSON.stringify({ ts: new Date().toISOString(), level, cron: "auto-import", msg, ...data });
+  if (level === "error") console.error(entry);
+  else if (level === "warn") console.warn(entry);
+  else console.log(entry);
+}
+
 export async function GET(req: NextRequest) {
   // Verify CRON_SECRET (same as other cron endpoints)
   const auth = req.headers.get("authorization");
@@ -21,6 +29,7 @@ export async function GET(req: NextRequest) {
     `SELECT id, currentMatchday FROM "Season" WHERE isActive = 1 LIMIT 1`
   );
   if (!seasonRes.rows[0]) {
+    log("warn", "No active season found — skipping");
     return NextResponse.json({ skipped: "No active season" });
   }
   const season = seasonRes.rows[0];
@@ -34,16 +43,19 @@ export async function GET(req: NextRequest) {
   });
 
   if (!matchdayRes.rows[0]) {
+    log("info", "No pending matchday to import");
     return NextResponse.json({ skipped: "No pending matchday to import" });
   }
 
   const matchday = matchdayRes.rows[0];
   const matchdayId = matchday.id as number;
   const matchdayNumber = matchday.number as number;
+  log("info", "Starting vote import", { matchdayId, matchdayNumber });
 
   try {
     // 3. Import votes (scrape)
     const result = await importVotesCore(matchdayId, matchdayNumber);
+    log("info", "Scrape complete", { matched: result.matched, unmatched: result.unmatched });
 
     if (result.matched < MIN_PLAYERS) {
       // Data probably not yet complete — undo votesImported flag and retry next time
@@ -51,6 +63,7 @@ export async function GET(req: NextRequest) {
         sql: `UPDATE "Matchday" SET votesImported = 0 WHERE id = ?`,
         args: [matchdayId],
       });
+      log("warn", "Too few players matched — retrying later", { matched: result.matched, threshold: MIN_PLAYERS });
       return NextResponse.json({
         skipped: `Only ${result.matched} players matched (< ${MIN_PLAYERS}) — data not yet complete`,
       });
@@ -58,6 +71,7 @@ export async function GET(req: NextRequest) {
 
     // 4. Calculate all scores
     await calculateScoresCore(matchdayId);
+    log("info", "Scores calculated");
 
     // 5. Revalidate key pages
     revalidatePath("/standings");
@@ -66,22 +80,25 @@ export async function GET(req: NextRequest) {
     revalidatePath("/lineup");
 
     // 6. Send push notifications to all subscribers
-    const { sent } = await sendPushToAll(
+    const { sent, failed } = await sendPushToAll(
       `⚽ Voti G${matchdayNumber} importati!`,
       `${result.matched} giocatori aggiornati. Controlla il tuo punteggio!`,
       "/standings"
     );
+    log("info", "Push notifications sent", { sent, failed });
 
-    return NextResponse.json({
+    const response = {
       success: true,
       matchday: matchdayNumber,
       matched: result.matched,
       unmatched: result.unmatched,
       pushSent: sent,
-    });
+    };
+    log("info", "Auto-import completed", response);
+    return NextResponse.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("[auto-import]", message);
+    log("error", "Auto-import failed", { error: message });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

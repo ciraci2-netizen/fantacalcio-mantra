@@ -5,11 +5,33 @@ import bcrypt from "bcryptjs";
 import { getDb } from "@/app/lib/db";
 import { createSession, deleteSession, getSession } from "@/app/lib/session";
 
+// ── Brute-force protection: max 10 attempts per IP/username per 15 min ──────
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_ATTEMPTS = 10;
+const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+function checkLoginRateLimit(key: string): boolean {
+  const now = Date.now();
+  const entry = loginAttempts.get(key);
+  if (!entry || now > entry.resetAt) {
+    loginAttempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
+    return true; // allowed
+  }
+  entry.count++;
+  if (entry.count > MAX_ATTEMPTS) return false; // blocked
+  return true;
+}
+
 export async function login(prevState: string | null, formData: FormData) {
-  const username = formData.get("username") as string;
+  const username = (formData.get("username") as string)?.toLowerCase().trim();
   const password = formData.get("password") as string;
 
   if (!username || !password) return "Inserisci username e password.";
+
+  // Rate limit by username
+  if (!checkLoginRateLimit(username)) {
+    return "Troppi tentativi. Riprova tra 15 minuti.";
+  }
 
   const result = await getDb().execute({
     sql: `SELECT id, username, password, teamName, isAdmin FROM "User" WHERE username = ?`,

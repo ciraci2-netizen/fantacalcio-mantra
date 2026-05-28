@@ -2,6 +2,7 @@ import { unstable_cache } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import TeamLogo from "@/app/components/TeamLogo";
+import { teamColor, teamInitials } from "@/app/lib/teamColor";
 
 type StandingRow = {
   userId: number;
@@ -100,6 +101,55 @@ async function getStandings(seasonId: number): Promise<StandingRow[]> {
   }));
 }
 
+/* ── Podium component ────────────────────────────────────────────────────── */
+function Podium({ standings, myUserId }: { standings: StandingRow[]; myUserId: number }) {
+  const [first, second, third] = standings;
+  const podiumOrder = [second, first, third]; // visual: 2nd left, 1st center, 3rd right
+  const heights = ["h-20", "h-28", "h-14"];
+  const medals = ["🥈", "🥇", "🥉"];
+  const positions = [2, 1, 3];
+
+  return (
+    <div className="bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl p-6 shadow-xl">
+      <div className="flex items-end justify-center gap-3">
+        {podiumOrder.map((s, vi) => {
+          if (!s) return null;
+          const isMe = s.userId === myUserId;
+          const { bg } = teamColor(s.teamName);
+          const initials = teamInitials(s.teamName);
+          return (
+            <div key={s.userId} className="flex flex-col items-center gap-2 flex-1 max-w-[120px]">
+              {/* Avatar */}
+              <div className={`relative`}>
+                {s.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={s.logoUrl} alt={s.teamName}
+                    className={`w-14 h-14 rounded-full object-cover border-4 ${isMe ? "border-yellow-400" : "border-white/20"} shadow-lg`} />
+                ) : (
+                  <div className={`w-14 h-14 rounded-full ${bg} flex items-center justify-center font-bold text-white text-lg border-4 ${isMe ? "border-yellow-400" : "border-white/20"} shadow-lg`}>
+                    {initials}
+                  </div>
+                )}
+                <span className="absolute -top-2 -right-2 text-xl">{medals[vi]}</span>
+              </div>
+              {/* Name */}
+              <div className="text-center">
+                <p className="text-white font-semibold text-xs leading-tight truncate max-w-[100px]">{s.teamName}</p>
+                <p className="text-slate-400 text-xs">{s.points} pt</p>
+              </div>
+              {/* Bar */}
+              <div className={`w-full ${heights[vi]} rounded-t-xl flex items-center justify-center text-white font-bold text-xl
+                ${positions[vi] === 1 ? "bg-yellow-500" : positions[vi] === 2 ? "bg-slate-400" : "bg-amber-700"}`}>
+                {positions[vi]}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const POSITION_COLORS = [
   "text-yellow-500",  // 1°
   "text-slate-400",   // 2°
@@ -141,6 +191,11 @@ export default async function StandingsPage() {
         Classifica —{" "}
         <span className="text-green-700">{season.name as string}</span>
       </h1>
+
+      {/* ── PODIO ── */}
+      {standings.length >= 3 && (
+        <Podium standings={standings} myUserId={session.userId} />
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
         {/* Column headers */}

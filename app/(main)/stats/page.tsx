@@ -1,5 +1,45 @@
+import { unstable_cache } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
+import { teamHex } from "@/app/lib/teamColor";
+
+/* ── Bar chart component ─────────────────────────────────────────────────── */
+function TeamBarChart({ teams }: { teams: { teamName: string; avgScore: number; played: number }[] }) {
+  const maxScore = Math.max(...teams.map(t => t.avgScore), 1);
+  return (
+    <div className="space-y-2.5">
+      {teams.map((t) => {
+        const pct = Math.round((t.avgScore / maxScore) * 100);
+        const hex = teamHex(t.teamName);
+        const initials = t.teamName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+        return (
+          <div key={t.teamName} className="flex items-center gap-3">
+            {/* Avatar */}
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+              style={{ background: hex }}
+            >
+              {initials}
+            </div>
+            {/* Name */}
+            <span className="w-32 text-sm font-medium text-gray-700 truncate shrink-0">{t.teamName}</span>
+            {/* Bar */}
+            <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+              <div
+                className="h-full rounded-full flex items-center justify-end pr-2 transition-all duration-700"
+                style={{ width: `${Math.max(pct, 8)}%`, background: hex }}
+              >
+                <span className="text-white text-xs font-bold">{t.avgScore.toFixed(1)}</span>
+              </div>
+            </div>
+            {/* Played */}
+            <span className="text-xs text-gray-400 shrink-0 w-12 text-right">{t.played} part.</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const ROLE_BG: Record<string, string> = {
   Por: "bg-yellow-100 text-yellow-800",
@@ -26,9 +66,12 @@ export default async function StatsPage() {
     );
   }
 
-  // Top players by average fantavoto (min 3 appearances)
-  const topPlayersRes = await db.execute({
-    sql: `SELECT p.id, p.name, p.mantraRole, p.realTeam,
+  // Cache expensive stats queries for 5 minutes
+  const getStatsData = unstable_cache(
+    async (sid: number) => {
+      const db2 = getDb();
+      const [tp, tl, ts, ta] = await Promise.all([
+        db2.execute({ sql: `SELECT p.id, p.name, p.mantraRole, p.realTeam,
                  COUNT(pv.id) as appearances,
                  ROUND(AVG(pv.fantavoto), 2) as avgScore,
                  MAX(pv.fantavoto) as maxScore,
@@ -38,45 +81,27 @@ export default async function StatsPage() {
           JOIN "Player" p ON p.id = pv.playerId
           JOIN "Matchday" md ON md.id = pv.matchdayId
           WHERE md.seasonId = ? AND pv.fantavoto IS NOT NULL
-          GROUP BY p.id
-          HAVING appearances >= 3
-          ORDER BY avgScore DESC
-          LIMIT 20`,
-    args: [season.id],
-  });
+          GROUP BY p.id HAVING appearances >= 3 ORDER BY avgScore DESC LIMIT 20`, args: [sid] }),
+        db2.execute({ sql: `SELECT l.totalScore, l.userId, md.number as matchdayNumber, u.teamName
+          FROM "Lineup" l JOIN "Matchday" md ON md.id = l.matchdayId JOIN "User" u ON u.id = l.userId
+          WHERE md.seasonId = ? AND l.totalScore IS NOT NULL ORDER BY l.totalScore DESC LIMIT 10`, args: [sid] }),
+        db2.execute({ sql: `SELECT p.id, p.name, p.mantraRole, p.realTeam,
+                 SUM(CASE WHEN pv.gfGs > 0 THEN pv.gfGs ELSE 0 END) as goals, COUNT(pv.id) as appearances
+          FROM "PlayerVote" pv JOIN "Player" p ON p.id = pv.playerId JOIN "Matchday" md ON md.id = pv.matchdayId
+          WHERE md.seasonId = ? GROUP BY p.id HAVING goals > 0 ORDER BY goals DESC LIMIT 10`, args: [sid] }),
+        db2.execute({ sql: `SELECT u.teamName, ROUND(AVG(l.totalScore), 1) as avgScore, COUNT(l.id) as played
+          FROM "Lineup" l JOIN "User" u ON u.id = l.userId JOIN "Matchday" md ON md.id = l.matchdayId
+          WHERE md.seasonId = ? AND l.totalScore IS NOT NULL GROUP BY u.id ORDER BY avgScore DESC`, args: [sid] }),
+      ]);
+      return { topPlayers: tp.rows, topLineups: tl.rows, topScorers: ts.rows, teamAvg: ta.rows };
+    },
+    [`stats-${season.id}`],
+    { revalidate: 300, tags: [`stats-${season.id}`] }
+  );
 
-  // Top scoring matchday lineups
-  const topLineupsRes = await db.execute({
-    sql: `SELECT l.totalScore, l.userId, md.number as matchdayNumber,
-                 u.teamName
-          FROM "Lineup" l
-          JOIN "Matchday" md ON md.id = l.matchdayId
-          JOIN "User" u ON u.id = l.userId
-          WHERE md.seasonId = ? AND l.totalScore IS NOT NULL
-          ORDER BY l.totalScore DESC
-          LIMIT 10`,
-    args: [season.id],
-  });
+  const statsData = await getStatsData(season.id as number);
 
-  // Top scorers (goals only)
-  const topScorersRes = await db.execute({
-    sql: `SELECT p.id, p.name, p.mantraRole, p.realTeam,
-                 SUM(CASE WHEN pv.gfGs > 0 THEN pv.gfGs ELSE 0 END) as goals,
-                 COUNT(pv.id) as appearances
-          FROM "PlayerVote" pv
-          JOIN "Player" p ON p.id = pv.playerId
-          JOIN "Matchday" md ON md.id = pv.matchdayId
-          WHERE md.seasonId = ?
-          GROUP BY p.id
-          HAVING goals > 0
-          ORDER BY goals DESC
-          LIMIT 10`,
-    args: [season.id],
-  });
-
-  const topPlayers = topPlayersRes.rows;
-  const topLineups = topLineupsRes.rows;
-  const topScorers = topScorersRes.rows;
+  const { topPlayers, topLineups, topScorers, teamAvg } = statsData;
 
   const noData = topPlayers.length === 0 && topLineups.length === 0;
 
@@ -85,6 +110,19 @@ export default async function StatsPage() {
       <h1 className="text-2xl font-bold text-gray-800">
         Statistiche — <span className="text-green-700">{season.name as string}</span>
       </h1>
+
+      {/* ── Bar chart: media punteggi per squadra ── */}
+      {teamAvg.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border p-5">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Stagione</p>
+          <h2 className="font-semibold text-gray-800 mb-4">Media punteggi per squadra</h2>
+          <TeamBarChart teams={teamAvg.map(r => ({
+            teamName: r.teamName as string,
+            avgScore: r.avgScore as number,
+            played: r.played as number,
+          }))} />
+        </div>
+      )}
 
       {noData && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center text-amber-700">
