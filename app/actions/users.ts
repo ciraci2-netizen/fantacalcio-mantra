@@ -41,7 +41,7 @@ export async function updateUserPassword(prevState: string | null, formData: For
   await getDb().execute({ sql: `UPDATE "User" SET password = ? WHERE id = ?`, args: [hashed, userId] });
 
   revalidatePath("/admin/users");
-  return null;
+  return "ok";
 }
 
 export async function deleteUser(prevState: string | null, formData: FormData) {

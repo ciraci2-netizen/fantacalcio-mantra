@@ -48,7 +48,6 @@ export default function UsersAdminClient({
   availablePlayers: AvailablePlayer[];
 }) {
   const [createError, createAction, createPending] = useActionState(createUser, null);
-  const [, passwordAction] = useActionState(updateUserPassword, null);
   const [, deleteAction] = useActionState(deleteUser, null);
   const [, addPlayerAction] = useActionState(addPlayerToRoster, null);
   const [, removePlayerAction] = useActionState(removePlayerFromRoster, null);
@@ -124,13 +123,7 @@ export default function UsersAdminClient({
             {expandedUser === user.id && (
               <div className="border-t px-5 py-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
-                  <form action={passwordAction} className="flex gap-2">
-                    <input type="hidden" name="userId" value={user.id} />
-                    <input name="password" type="password" placeholder="Nuova password" className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-                    <button type="submit" className="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg text-sm">
-                      Cambia pwd
-                    </button>
-                  </form>
+                  <PasswordResetForm userId={user.id} />
                   <form action={deleteAction}>
                     <input type="hidden" name="userId" value={user.id} />
                     <button
@@ -204,5 +197,40 @@ export default function UsersAdminClient({
         ))}
       </div>
     </div>
+  );
+}
+
+/* ── Per-user password reset form with feedback ──────────────────────────── */
+function PasswordResetForm({ userId }: { userId: number }) {
+  const [state, action, pending] = useActionState(updateUserPassword, null);
+  const success = state === "ok";
+  const error = state && state !== "ok" ? state : null;
+
+  return (
+    <form action={action} className="flex flex-col gap-1">
+      <div className="flex gap-2">
+        <input type="hidden" name="userId" value={userId} />
+        <input
+          key={success ? "reset" : "input"}
+          name="password"
+          type="password"
+          placeholder="Nuova password"
+          className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 w-44"
+        />
+        <button
+          type="submit"
+          disabled={pending}
+          className="bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm whitespace-nowrap"
+        >
+          {pending ? "..." : "Cambia pwd"}
+        </button>
+      </div>
+      {success && (
+        <p className="text-xs text-green-600 font-medium">✓ Password aggiornata</p>
+      )}
+      {error && (
+        <p className="text-xs text-red-500">{error}</p>
+      )}
+    </form>
   );
 }
