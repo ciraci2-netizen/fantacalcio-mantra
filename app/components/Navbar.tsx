@@ -90,16 +90,16 @@ export default function Navbar({
   };
 
   return (
-    <nav className="bg-green-700 text-white shadow-md relative z-50">
-      <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+    <nav className="bg-green-700 text-white shadow-md relative z-50 overflow-x-hidden">
+      <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
         {/* Logo — subtitle hidden at xl to save space */}
         <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
           <span className="text-xl font-bold">⚽ IPA</span>
           <span className="text-green-200 text-xs hidden 2xl:block">Fantasy Football PL</span>
         </Link>
 
-        {/* Desktop links — no overflow scrollbar */}
-        <div className="hidden xl:flex items-center gap-0 flex-1 justify-center overflow-hidden">
+        {/* Desktop links — min-w-0 + overflow-hidden prevents any scrollbar */}
+        <div className="hidden xl:flex items-center gap-0 flex-1 min-w-0 justify-center overflow-hidden">
           {links.map((l) => {
             const showBadge = "badge" in l && l.badge && hasNewResults;
             return (
