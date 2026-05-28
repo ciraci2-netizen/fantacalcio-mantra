@@ -78,6 +78,14 @@ export async function autoMigrate(): Promise<void> {
       seasonId INTEGER NOT NULL UNIQUE,
       settings TEXT    NOT NULL DEFAULT '{}'
     )`,
+    `CREATE TABLE IF NOT EXISTS "PushSubscription" (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      userId    INTEGER NOT NULL,
+      endpoint  TEXT    NOT NULL UNIQUE,
+      p256dh    TEXT    NOT NULL,
+      auth      TEXT    NOT NULL,
+      createdAt TEXT    NOT NULL DEFAULT (datetime('now'))
+    )`,
   ];
 
   for (const sql of migrations) {
