@@ -25,7 +25,7 @@ export const viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="it" className={`${geist.variable} h-full`} suppressHydrationWarning>
+    <html lang="it" className={`${geist.variable} h-full overflow-x-hidden`} suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icon-192.png" />
         {/* Inline script: apply saved theme before first paint (avoids flash) */}

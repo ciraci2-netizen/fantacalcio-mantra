@@ -43,7 +43,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
 
   return (
     <ToastProvider>
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-screen flex flex-col overflow-x-hidden">
         <Navbar
           username={session.username}
           teamName={session.teamName}
