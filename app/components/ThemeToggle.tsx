@@ -8,7 +8,18 @@ export default function ThemeToggle({ className = "" }: { className?: string }) 
 
   useEffect(() => {
     setMounted(true);
-    setDark(document.documentElement.classList.contains("dark"));
+    const saved = localStorage.getItem("ipa-theme");
+    if (saved) {
+      // Usa preferenza salvata
+      const isDark = saved === "dark";
+      setDark(isDark);
+      document.documentElement.classList.toggle("dark", isDark);
+    } else {
+      // Prima visita: rispetta impostazione OS
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      setDark(prefersDark);
+      document.documentElement.classList.toggle("dark", prefersDark);
+    }
   }, []);
 
   const toggle = () => {

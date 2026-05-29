@@ -5,6 +5,7 @@ import { autoMigrate } from "@/app/lib/autoMigrate";
 import Navbar from "@/app/components/Navbar";
 import BottomNav from "@/app/components/BottomNav";
 import { ToastProvider } from "@/app/components/ToastProvider";
+import PwaInstallPrompt from "@/app/components/PwaInstallPrompt";
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
   // Run schema migrations idempotently on every cold start (fail-safe — won't break build)
@@ -56,6 +57,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
           {children}
         </main>
         <BottomNav />
+        <PwaInstallPrompt />
       </div>
     </ToastProvider>
   );

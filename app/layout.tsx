@@ -33,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/icon-192.png" />
         {/* Inline script: apply saved theme before first paint (avoids flash) */}
         <script dangerouslySetInnerHTML={{ __html: `
-try{var t=localStorage.getItem('ipa-theme');if(t==='dark')document.documentElement.classList.add('dark');}catch(e){}
+try{var t=localStorage.getItem('ipa-theme');if(t==='dark')document.documentElement.classList.add('dark');else if(!t&&window.matchMedia('(prefers-color-scheme:dark)').matches)document.documentElement.classList.add('dark');}catch(e){}
         `.trim() }} />
         {/* Register PWA service worker */}
         <script dangerouslySetInnerHTML={{ __html: `

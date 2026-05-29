@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/app/lib/db";
 import Link from "next/link";
 import MigrateButton from "./MigrateButton";
+import QuickImportButton from "./QuickImportButton";
 
 export const metadata: Metadata = { title: "Admin" };
 
@@ -193,10 +194,7 @@ export default async function AdminPage() {
         <div className="bg-white rounded-2xl border shadow-sm p-5">
           <h2 className="font-semibold text-gray-700 mb-3 text-sm uppercase tracking-wide">Azioni rapide — G{matchday.number}</h2>
           <div className="flex flex-wrap gap-3">
-            <Link href="/admin/votes"
-              className="flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium transition-colors">
-              📊 Importa voti
-            </Link>
+            <QuickImportButton matchdayId={matchday.id} matchdayNumber={matchday.number} />
             <Link href="/admin/schedule"
               className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors">
               {matchday.isLocked ? "🔓 Gestisci giornata" : "🔒 Blocca giornata"}

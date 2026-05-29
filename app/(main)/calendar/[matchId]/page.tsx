@@ -4,19 +4,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import TeamLogo from "@/app/components/TeamLogo";
 import Confetti from "@/app/components/Confetti";
-
-const ROLE_COLORS: Record<string, string> = {
-  Por: "bg-yellow-100 text-yellow-800",
-  Dc: "bg-blue-100 text-blue-800",
-  Dd: "bg-blue-100 text-blue-800",
-  Ds: "bg-blue-100 text-blue-800",
-  M: "bg-green-100 text-green-800",
-  C: "bg-green-100 text-green-800",
-  T: "bg-green-100 text-green-800",
-  W: "bg-green-100 text-green-800",
-  A: "bg-red-100 text-red-800",
-  Pc: "bg-red-100 text-red-800",
-};
+import { roleBadgeClass } from "@/app/lib/roles";
 
 type PlayerSlot = {
   playerId: number;
@@ -72,6 +60,31 @@ export default async function MatchDetailPage({
   const homeUserId = match.homeUserId as number;
   const awayUserId = match.awayUserId as number;
   const matchdayId = match.matchdayId as number;
+
+  // Head-to-head history (past matches between same two teams)
+  const h2hRes = await db.execute({
+    sql: `SELECT m.id, m.homeUserId, m.homeScore, m.awayScore, m.homePoints,
+                 m.homeGoals, m.awayGoals, md.number as matchdayNumber
+          FROM "Match" m
+          JOIN "Matchday" md ON md.id = m.matchdayId
+          WHERE m.id != ?
+            AND ((m.homeUserId = ? AND m.awayUserId = ?) OR (m.homeUserId = ? AND m.awayUserId = ?))
+            AND m.homeScore IS NOT NULL
+          ORDER BY md.number DESC
+          LIMIT 5`,
+    args: [id, homeUserId, awayUserId, awayUserId, homeUserId],
+  });
+  type H2HRow = { id: number; homeUserId: number; homeScore: number; awayScore: number; homePoints: number; homeGoals: number | null; awayGoals: number | null; matchdayNumber: number };
+  const h2h: H2HRow[] = h2hRes.rows.map((r) => ({
+    id: r.id as number,
+    homeUserId: r.homeUserId as number,
+    homeScore: r.homeScore as number,
+    awayScore: r.awayScore as number,
+    homePoints: r.homePoints as number,
+    homeGoals: r.homeGoals !== undefined ? (r.homeGoals as number | null) : null,
+    awayGoals: r.awayGoals !== undefined ? (r.awayGoals as number | null) : null,
+    matchdayNumber: r.matchdayNumber as number,
+  }));
 
   // Get both lineups with player slots + votes in one query
   const slotsRes = await db.execute({
@@ -186,6 +199,46 @@ export default async function MatchDetailPage({
           </div>
         </div>
       </div>
+
+      {/* Head-to-head history */}
+      {h2h.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="px-5 py-3 border-b bg-gray-50 flex items-center gap-2">
+            <span className="text-base">⚔️</span>
+            <span className="font-semibold text-gray-700 text-sm">Precedenti</span>
+            <span className="text-xs text-gray-400 ml-1">
+              {match.homeTeamName as string} vs {match.awayTeamName as string}
+            </span>
+          </div>
+          <div className="divide-y">
+            {h2h.map((row) => {
+              // Determine which side is home for this past match
+              const pastHomeIsCurrentHome = row.homeUserId === homeUserId;
+              const displayHomeScore = pastHomeIsCurrentHome ? (row.homeGoals ?? row.homeScore) : (row.awayGoals ?? row.awayScore);
+              const displayAwayScore = pastHomeIsCurrentHome ? (row.awayGoals ?? row.awayScore) : (row.homeGoals ?? row.homeScore);
+              const homeWonPast = pastHomeIsCurrentHome ? row.homePoints === 3 : row.homePoints === 0;
+              const awayWonPast = pastHomeIsCurrentHome ? row.homePoints === 0 : row.homePoints === 3;
+              const drawPast = row.homePoints === 1;
+              return (
+                <Link key={row.id} href={`/calendar/${row.id}`} className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50 transition-colors text-sm">
+                  <span className="text-xs text-gray-400 w-6 shrink-0">G{row.matchdayNumber}</span>
+                  <span className={`flex-1 text-right font-semibold truncate ${homeWonPast ? "text-green-700" : drawPast ? "text-gray-500" : "text-gray-400"}`}>
+                    {match.homeTeamName as string}
+                  </span>
+                  <span className="font-bold tabular-nums px-2 shrink-0 text-gray-700">
+                    {row.homeGoals !== null
+                      ? `${displayHomeScore}–${displayAwayScore}`
+                      : `${(pastHomeIsCurrentHome ? row.homeScore : row.awayScore).toFixed(1)}–${(pastHomeIsCurrentHome ? row.awayScore : row.homeScore).toFixed(1)}`}
+                  </span>
+                  <span className={`flex-1 font-semibold truncate ${awayWonPast ? "text-green-700" : drawPast ? "text-gray-500" : "text-gray-400"}`}>
+                    {match.awayTeamName as string}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Lineups side by side */}
       {(homeSlots.length > 0 || awaySlots.length > 0) && (
@@ -307,7 +360,7 @@ function SlotRow({ slot }: { slot: PlayerSlot }) {
     <div className="flex items-center gap-2 py-1.5">
       <span
         className={`text-xs px-1.5 py-0.5 rounded font-bold shrink-0 ${
-          ROLE_COLORS[slot.mantraRole] ?? "bg-gray-100 text-gray-700"
+          roleBadgeClass(slot.mantraRole) ?? "bg-gray-100 text-gray-700"
         }`}
       >
         {slot.mantraRole}
