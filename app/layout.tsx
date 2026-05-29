@@ -40,7 +40,7 @@ try{var t=localStorage.getItem('ipa-theme');if(t==='dark')document.documentEleme
 if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}
         `.trim() }} />
       </head>
-      <body className="min-h-full bg-gray-50 text-gray-900 antialiased overflow-x-hidden">{children}</body>
+      <body className="min-h-full text-gray-900 antialiased overflow-x-hidden">{children}</body>
     </html>
   );
 }

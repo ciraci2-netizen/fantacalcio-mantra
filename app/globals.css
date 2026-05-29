@@ -27,10 +27,22 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* League banner: full-page fixed background */
+html {
+  background-image: url('/league-banner.png');
+  background-size: cover;
+  background-position: center top;
+  background-attachment: fixed;
+}
+
 body {
-  background: var(--background);
+  background: rgba(249, 250, 251, 0.84);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.dark body, body.dark {
+  background: rgba(17, 24, 39, 0.88);
 }
 
 /* ── Dark-mode structural overrides ─────────────────────── */

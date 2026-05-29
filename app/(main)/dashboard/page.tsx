@@ -188,17 +188,14 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-5">
       {/* ── HERO BANNER ─────────────────────────────────────────── */}
-      <div className="relative rounded-2xl overflow-hidden shadow-xl">
-        {/* League banner background */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/league-banner.png"
-          alt="IPA Premier League"
-          className="absolute inset-0 w-full h-full object-cover object-center"
-          aria-hidden="true"
+      <div className="relative bg-gradient-to-br from-slate-900/90 via-blue-900/90 to-blue-800/90 rounded-2xl overflow-hidden shadow-xl">
+        <div
+          className="absolute inset-0 opacity-[0.04]"
+          style={{
+            backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)",
+            backgroundSize: "24px 24px",
+          }}
         />
-        {/* Dark overlay so text stays readable */}
-        <div className="absolute inset-0 bg-black/55" />
 
         <div className="relative px-5 sm:px-8 py-7">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
