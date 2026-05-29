@@ -116,7 +116,7 @@ export async function GET(req: NextRequest) {
       const reserves = roster
         .filter((p) => !usedIds.has(p.id))
         .sort((a, b) => (b.hasFv ? 1 : 0) - (a.hasFv ? 1 : 0) || b.fv - a.fv)
-        .slice(0, 7);
+        .slice(0, 11);
 
       const lineupRes = await db.execute({
         sql: `INSERT INTO "Lineup" (userId, matchdayId, formation, isSubmitted, isAutomatic)

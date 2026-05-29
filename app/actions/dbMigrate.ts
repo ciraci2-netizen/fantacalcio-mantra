@@ -17,7 +17,7 @@ const DEFAULT_BONUS_MALUS = [
 ];
 
 const DEFAULT_SECTIONS = [
-  { titolo: "Formazione", contenuto: "Ogni squadra schiera **11 titolari + 7 riserve** (totale 18 giocatori).\n\nModuli validi: **3-4-3 / 3-5-2 / 4-3-3 / 4-4-2 / 4-5-1 / 5-3-2 / 5-4-1**\n\n- 1 Portiere obbligatorio\n- Minimo 3 difensori\n- Minimo 1 attaccante\n- I ruoli Mantra sono: **Por, Dc, Dd, Ds, E, M, C, T, W, A, Pc**", sortOrder: 1 },
+  { titolo: "Formazione", contenuto: "Ogni squadra schiera **11 titolari + 11 riserve** (totale 22 giocatori).\n\nModuli validi: **3-4-3 / 3-5-2 / 4-3-3 / 4-4-2 / 4-5-1 / 5-3-2 / 5-4-1**\n\n- 1 Portiere obbligatorio\n- Minimo 3 difensori\n- Minimo 1 attaccante\n- I ruoli Mantra sono: **Por, Dc, Dd, Ds, E, M, C, T, W, A, Pc**", sortOrder: 1 },
   { titolo: "Sostituzioni Automatiche", contenuto: "Se un titolare **non gioca** (sv / non pervenuto), viene automaticamente sostituito dalla prima riserva disponibile con il ruolo compatibile.\n\nLe sostituzioni seguono l'ordine delle riserve indicato nella formazione.\n\nUna sostituzione non avviene se comprometterebbe i requisiti minimi di modulo.", sortOrder: 2 },
   { titolo: "Punteggi Partita", contenuto: "**Vittoria: 3 punti — Pareggio: 1 punto — Sconfitta: 0 punti**\n\nIl punteggio della partita è la somma dei fantavoti dei titolari (con eventuali sostituzioni automatiche).", sortOrder: 3 },
   { titolo: "Rosa", contenuto: "Ogni squadra ha una rosa di **massimo 26 giocatori**.\n\nLe rose vengono costruite tramite asta all'inizio della stagione.\n\nI giocatori possono essere ceduti o acquistati durante i **mercati** stagionali.", sortOrder: 4 },
@@ -146,6 +146,16 @@ export async function runMigrations() {
 
   // Colonna deadline su Matchday (ISO datetime string, es. "2025-11-15T10:30")
   try { await db.execute(`ALTER TABLE "Matchday" ADD COLUMN "deadline" TEXT`); } catch { /* già presente */ }
+
+  // Fattore campo
+  try { await db.execute(`ALTER TABLE "LeagueSettings" ADD COLUMN "homeAdvantage" REAL NOT NULL DEFAULT 0`); } catch { /* già presente */ }
+
+  // Conversione punteggio → gol
+  try { await db.execute(`ALTER TABLE "LeagueSettings" ADD COLUMN "scoreConversion" TEXT`); } catch { /* già presente */ }
+
+  // Gol per partita (colonne su Match)
+  try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "homeGoals" INTEGER`); } catch { /* già presente */ }
+  try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "awayGoals" INTEGER`); } catch { /* già presente */ }
 
   return { success: true };
 }

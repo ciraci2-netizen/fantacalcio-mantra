@@ -1,5 +1,8 @@
+import type { Metadata } from "next";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
+
+export const metadata: Metadata = { title: "Coppe" };
 
 type CupMatch = {
   id: number;

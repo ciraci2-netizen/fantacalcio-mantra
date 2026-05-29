@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import { getDb } from "@/app/lib/db";
+
+export const metadata: Metadata = { title: "Regolamento" };
 
 function renderMarkdown(text: string) {
   return text

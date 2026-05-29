@@ -105,14 +105,38 @@ export function calculateFantavoto(
 export type GoalThreshold = { m: number; b: number }; // minGoals → bonus
 
 export const DEFAULT_GOAL_THRESHOLDS: GoalThreshold[] = [
-  { m: 0, b: -6 },
-  { m: 1, b: -4 },
-  { m: 2, b: -2 },
-  { m: 3, b: 0 },
-  { m: 4, b: 3 },
-  { m: 5, b: 5 },
-  { m: 6, b: 9 },
+  { m: 0, b: 0 },
 ];
+
+// ── Score-to-goals conversion (Mantra system) ─────────────────────────────────
+
+export interface ScoreConversion {
+  enabled: boolean;
+  minScore: number; // punteggio per segnare esattamente 1 gol (default 66)
+  step: number;     // punti aggiuntivi per ogni gol in più (default 4)
+}
+
+export const DEFAULT_SCORE_CONVERSION: ScoreConversion = {
+  enabled: false,
+  minScore: 66,
+  step: 4,
+};
+
+/**
+ * Converte il punteggio totale di una formazione in numero di gol (sistema Mantra).
+ * Esempi con minScore=66, step=4:
+ *   < 66  → 0 gol
+ *   66–69.5 → 1 gol
+ *   70–73.5 → 2 gol
+ *   74–77.5 → 3 gol
+ */
+export function convertScoreToGoals(
+  score: number,
+  conv: ScoreConversion = DEFAULT_SCORE_CONVERSION
+): number {
+  if (!conv.enabled) return 0;
+  return Math.max(0, Math.floor((score - (conv.minScore - conv.step)) / conv.step));
+}
 
 /** Calcola il bonus soglie gol per una formazione */
 export function calculateGoalBonus(

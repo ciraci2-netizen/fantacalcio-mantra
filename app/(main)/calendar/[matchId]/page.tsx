@@ -44,6 +44,7 @@ export default async function MatchDetailPage({
   const matchRes = await db.execute({
     sql: `SELECT m.id, m.homeUserId, m.awayUserId,
                  m.homeScore, m.awayScore, m.homePoints, m.awayPoints,
+                 m.homeGoals, m.awayGoals,
                  hu.teamName as homeTeamName, hu.username as homeUsername,
                  au.teamName as awayTeamName, au.username as awayUsername,
                  md.number as matchdayNumber, md.id as matchdayId
@@ -144,16 +145,25 @@ export default async function MatchDetailPage({
             <div className="shrink-0 text-center px-2 sm:px-6">
               {played ? (
                 <>
-                  <div className="text-4xl font-bold text-white tracking-tight">
+                  <div className="text-4xl font-bold text-white tracking-tight tabular-nums">
                     <span className={homeWon ? "text-white" : "text-blue-300"}>
-                      {(match.homeScore as number).toFixed(1)}
+                      {match.homeGoals !== null
+                        ? (match.homeGoals as number)
+                        : (match.homeScore as number).toFixed(1)}
                     </span>
                     <span className="text-blue-300 mx-2 text-2xl">–</span>
                     <span className={awayWon ? "text-white" : "text-blue-300"}>
-                      {(match.awayScore as number).toFixed(1)}
+                      {match.awayGoals !== null
+                        ? (match.awayGoals as number)
+                        : (match.awayScore as number).toFixed(1)}
                     </span>
                   </div>
-                  <p className="text-xs text-blue-200 mt-1.5">
+                  {match.homeGoals !== null && (
+                    <p className="text-xs text-blue-300 mt-1 tabular-nums">
+                      {(match.homeScore as number).toFixed(1)} – {(match.awayScore as number).toFixed(1)} pt
+                    </p>
+                  )}
+                  <p className="text-xs text-blue-200 mt-1">
                     {homeWon ? "Vittoria casa" : awayWon ? "Vittoria ospiti" : "Pareggio"}
                   </p>
                 </>
@@ -185,6 +195,7 @@ export default async function MatchDetailPage({
             slots={homeSlots}
             isCurrentUser={homeUserId === session.userId}
             score={played ? (match.homeScore as number) : null}
+            goals={match.homeGoals !== null ? (match.homeGoals as number) : null}
             won={homeWon}
           />
           <LineupCard
@@ -192,6 +203,7 @@ export default async function MatchDetailPage({
             slots={awaySlots}
             isCurrentUser={awayUserId === session.userId}
             score={played ? (match.awayScore as number) : null}
+            goals={match.awayGoals !== null ? (match.awayGoals as number) : null}
             won={awayWon}
           />
         </div>
@@ -212,12 +224,14 @@ function LineupCard({
   slots,
   isCurrentUser,
   score,
+  goals,
   won,
 }: {
   teamName: string;
   slots: PlayerSlot[];
   isCurrentUser: boolean;
   score: number | null;
+  goals: number | null;
   won: boolean;
 }) {
   const starters = slots.filter((s) => s.isStarter);
@@ -237,7 +251,14 @@ function LineupCard({
           {isCurrentUser && <span className="ml-1.5 text-xs opacity-70">(tu)</span>}
         </span>
         {score !== null && (
-          <span className="text-xl font-bold shrink-0 ml-2">{score.toFixed(1)}</span>
+          <div className="text-right shrink-0 ml-2">
+            {goals !== null && (
+              <div className="text-xl font-bold tabular-nums">{goals} gol</div>
+            )}
+            <div className={`tabular-nums ${goals !== null ? "text-sm opacity-75" : "text-xl font-bold"}`}>
+              {score.toFixed(1)} pt
+            </div>
+          </div>
         )}
       </div>
 

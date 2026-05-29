@@ -1,7 +1,11 @@
+import type { Metadata } from "next";
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
 import Link from "next/link";
 import PushSubscribeButton from "@/app/components/PushSubscribeButton";
+import DeadlineChip from "@/app/components/DeadlineChip";
+
+export const metadata: Metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
   const session = await getSession();
@@ -17,11 +21,14 @@ export default async function DashboardPage() {
   const currentMatchdayRow = season
     ? (
         await db.execute({
-          sql: `SELECT id, number, isLocked FROM "Matchday" WHERE seasonId = ? AND number = ? LIMIT 1`,
+          sql: `SELECT id, number, isLocked, deadline FROM "Matchday" WHERE seasonId = ? AND number = ? LIMIT 1`,
           args: [season.id, season.currentMatchday],
         })
       ).rows[0] ?? null
     : null;
+
+  let deadline: string | null = null;
+  try { deadline = (currentMatchdayRow?.deadline as string | null) ?? null; } catch { /* col not yet migrated */ }
 
   const standings = await getStandings(season?.id as number | undefined);
   const myPosition = standings.findIndex((s) => s.userId === session.userId) + 1;
@@ -31,6 +38,7 @@ export default async function DashboardPage() {
     ? (
         await db.execute({
           sql: `SELECT m.id, m.homeUserId, m.awayUserId, m.homeScore, m.awayScore, m.homePoints,
+                       m.homeGoals, m.awayGoals,
                        hu.teamName as homeTeamName, hu.username as homeUsername,
                        au.teamName as awayTeamName, au.username as awayUsername
                 FROM "Match" m
@@ -143,6 +151,7 @@ export default async function DashboardPage() {
   const recentMatchesRes = season
     ? await db.execute({
         sql: `SELECT m.id, m.homeScore, m.awayScore, m.homePoints, m.awayPoints,
+                     m.homeGoals, m.awayGoals,
                      hu.teamName as homeTeam, au.teamName as awayTeam,
                      hu.id as homeUserId, au.id as awayUserId,
                      md.number as matchdayNumber
@@ -200,6 +209,8 @@ export default async function DashboardPage() {
                     src={logoUrl}
                     alt={session.teamName}
                     className="w-full h-full object-cover"
+                    loading="lazy"
+                    decoding="async"
                   />
                 ) : (
                   <span>{initials}</span>
@@ -271,6 +282,15 @@ export default async function DashboardPage() {
         )}
       </div>
 
+      {/* ── DEADLINE CHIP ───────────────────────────────────── */}
+      {currentMatchdayRow && (
+        <DeadlineChip
+          deadline={deadline}
+          isLocked={isLocked}
+          lineupSubmitted={lineupSubmitted}
+        />
+      )}
+
       {/* ── GRID: partita + classifica ────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Prossima/ultima partita */}
@@ -317,30 +337,41 @@ export default async function DashboardPage() {
                 </div>
                 <div className="shrink-0 text-center w-28">
                   {nextMatch.homeScore !== null ? (
-                    <div className="bg-slate-800 rounded-xl px-4 py-2 inline-flex items-center gap-1.5">
-                      <span
-                        className={`text-xl font-bold ${
-                          (nextMatch.homePoints as number) === 3
-                            ? "text-green-400"
-                            : (nextMatch.homePoints as number) === 0
-                            ? "text-red-400"
-                            : "text-gray-300"
-                        }`}
-                      >
-                        {(nextMatch.homeScore as number).toFixed(1)}
-                      </span>
-                      <span className="text-gray-500 text-sm">–</span>
-                      <span
-                        className={`text-xl font-bold ${
-                          (nextMatch.homePoints as number) === 0
-                            ? "text-green-400"
-                            : (nextMatch.homePoints as number) === 3
-                            ? "text-red-400"
-                            : "text-gray-300"
-                        }`}
-                      >
-                        {(nextMatch.awayScore as number).toFixed(1)}
-                      </span>
+                    <div className="bg-slate-800 rounded-xl px-4 py-2 inline-flex flex-col items-center gap-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`text-xl font-bold tabular-nums ${
+                            (nextMatch.homePoints as number) === 3
+                              ? "text-green-400"
+                              : (nextMatch.homePoints as number) === 0
+                              ? "text-red-400"
+                              : "text-gray-300"
+                          }`}
+                        >
+                          {nextMatch.homeGoals !== null
+                            ? (nextMatch.homeGoals as number)
+                            : (nextMatch.homeScore as number).toFixed(1)}
+                        </span>
+                        <span className="text-gray-500 text-sm">–</span>
+                        <span
+                          className={`text-xl font-bold tabular-nums ${
+                            (nextMatch.homePoints as number) === 0
+                              ? "text-green-400"
+                              : (nextMatch.homePoints as number) === 3
+                              ? "text-red-400"
+                              : "text-gray-300"
+                          }`}
+                        >
+                          {nextMatch.awayGoals !== null
+                            ? (nextMatch.awayGoals as number)
+                            : (nextMatch.awayScore as number).toFixed(1)}
+                        </span>
+                      </div>
+                      {nextMatch.homeGoals !== null && (
+                        <span className="text-[10px] text-gray-500 tabular-nums">
+                          {(nextMatch.homeScore as number).toFixed(1)}–{(nextMatch.awayScore as number).toFixed(1)}
+                        </span>
+                      )}
                     </div>
                   ) : (
                     <div className="bg-gray-100 rounded-xl px-4 py-2 inline-block">
@@ -650,9 +681,10 @@ export default async function DashboardPage() {
                         >
                           {m.homeTeam as string}
                         </span>
-                        <span className="shrink-0 font-bold text-gray-600 tabular-nums bg-gray-100 px-2 py-0.5 rounded-md">
-                          {(m.homeScore as number).toFixed(1)}–
-                          {(m.awayScore as number).toFixed(1)}
+                        <span className="shrink-0 font-bold text-gray-600 tabular-nums bg-gray-100 px-2 py-0.5 rounded-md text-center">
+                          {m.homeGoals !== null
+                            ? `${m.homeGoals as number}–${m.awayGoals as number}`
+                            : `${(m.homeScore as number).toFixed(1)}–${(m.awayScore as number).toFixed(1)}`}
                         </span>
                         <span
                           className={`flex-1 truncate font-semibold ${

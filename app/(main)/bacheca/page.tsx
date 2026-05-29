@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
 import BachecaClient from "./BachecaClient";
+
+export const metadata: Metadata = { title: "Bacheca" };
 
 const PAGE_SIZE = 20;
 

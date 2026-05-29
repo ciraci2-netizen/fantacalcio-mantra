@@ -7,6 +7,8 @@ type MatchRow = {
   homeScore: number | null;
   awayScore: number | null;
   homePoints: number | null;
+  homeGoals: number | null;
+  awayGoals: number | null;
   homeTeamName: string;
   awayTeamName: string;
 };
@@ -22,6 +24,7 @@ async function getCalendar() {
 
   const matchesRes = await db.execute({
     sql: `SELECT m.id, m.matchdayId, m.homeScore, m.awayScore, m.homePoints,
+                 m.homeGoals, m.awayGoals,
                  hu.teamName as homeTeamName,
                  au.teamName as awayTeamName,
                  md.number as matchdayNumber
@@ -45,6 +48,8 @@ async function getCalendar() {
       homeScore: row.homeScore as number | null,
       awayScore: row.awayScore as number | null,
       homePoints: row.homePoints as number | null,
+      homeGoals: row.homeGoals !== undefined ? (row.homeGoals as number | null) : null,
+      awayGoals: row.awayGoals !== undefined ? (row.awayGoals as number | null) : null,
       homeTeamName: row.homeTeamName as string,
       awayTeamName: row.awayTeamName as string,
     });
@@ -132,30 +137,37 @@ function MatchdayCard({ md }: { md: { number: number; matches: MatchRow[] } }) {
               </span>
 
               {played ? (
-                <div className="flex items-center gap-1 min-w-[90px] justify-center">
-                  <span
-                    className={`font-bold text-sm ${
-                      (m.homePoints ?? 0) === 3
-                        ? "text-green-600"
-                        : (m.homePoints ?? 0) === 0
-                        ? "text-red-500"
-                        : "text-gray-500"
-                    }`}
-                  >
-                    {m.homeScore?.toFixed(1)}
-                  </span>
-                  <span className="text-gray-300">—</span>
-                  <span
-                    className={`font-bold text-sm ${
-                      (m.homePoints ?? 0) === 0
-                        ? "text-green-600"
-                        : (m.homePoints ?? 0) === 3
-                        ? "text-red-500"
-                        : "text-gray-500"
-                    }`}
-                  >
-                    {m.awayScore?.toFixed(1)}
-                  </span>
+                <div className="flex flex-col items-center min-w-[90px] justify-center">
+                  <div className="flex items-center gap-1">
+                    <span
+                      className={`font-bold text-sm tabular-nums ${
+                        (m.homePoints ?? 0) === 3
+                          ? "text-green-600"
+                          : (m.homePoints ?? 0) === 0
+                          ? "text-red-500"
+                          : "text-gray-500"
+                      }`}
+                    >
+                      {m.homeGoals !== null ? m.homeGoals : m.homeScore?.toFixed(1)}
+                    </span>
+                    <span className="text-gray-300">—</span>
+                    <span
+                      className={`font-bold text-sm tabular-nums ${
+                        (m.homePoints ?? 0) === 0
+                          ? "text-green-600"
+                          : (m.homePoints ?? 0) === 3
+                          ? "text-red-500"
+                          : "text-gray-500"
+                      }`}
+                    >
+                      {m.awayGoals !== null ? m.awayGoals : m.awayScore?.toFixed(1)}
+                    </span>
+                  </div>
+                  {m.homeGoals !== null && (
+                    <span className="text-[10px] text-gray-400 tabular-nums">
+                      {m.homeScore?.toFixed(1)}–{m.awayScore?.toFixed(1)}
+                    </span>
+                  )}
                 </div>
               ) : (
                 <span className="text-gray-200 min-w-[90px] text-center font-bold text-sm">VS</span>

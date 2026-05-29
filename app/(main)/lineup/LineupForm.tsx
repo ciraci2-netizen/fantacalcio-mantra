@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useOptimistic, useState } from "react";
 import { saveLineup } from "@/app/actions/lineup";
 import { VALID_FORMATIONS, MANTRA_ROLES } from "@/app/lib/scoring";
 import PitchView, { type PitchPlayer } from "@/app/components/PitchView";
@@ -45,7 +45,17 @@ export default function LineupForm({
   roster,
   existingLineup,
 }: Props) {
-  const [error, action, pending] = useActionState(saveLineup, null);
+  const [result, formAction, pending] = useActionState(saveLineup, null);
+  // Optimistic: show success immediately on submit, reverts on server error
+  const [optimisticResult, setOptimisticResult] = useOptimistic(result);
+
+  function action(formData: FormData) {
+    setOptimisticResult("ok"); // assume success while round-trip happens
+    return formAction(formData);
+  }
+
+  const saved = optimisticResult === "ok";
+  const error = optimisticResult && optimisticResult !== "ok" ? optimisticResult : null;
 
   const [formation, setFormation] = useState(existingLineup?.formation ?? "4-4-2");
   const [starters, setStarters] = useState<(number | null)[]>(
@@ -54,7 +64,7 @@ export default function LineupForm({
       .map((_, i) => existingLineup?.starters[i] ?? null)
   );
   const [reserves, setReserves] = useState<(number | null)[]>(
-    Array(7)
+    Array(11)
       .fill(null)
       .map((_, i) => existingLineup?.reserves[i] ?? null)
   );
@@ -271,12 +281,27 @@ export default function LineupForm({
             </div>
           )}
 
+          {saved && !error && (
+            <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-3 text-sm flex items-center gap-2">
+              <span>✓</span>
+              <span>Formazione salvata con successo!</span>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={pending}
-            className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
+            className={`w-full font-semibold py-3 rounded-xl transition-colors disabled:opacity-60 ${
+              saved && !error && !pending
+                ? "bg-green-500 hover:bg-green-600 text-white"
+                : "bg-green-600 hover:bg-green-700 text-white"
+            }`}
           >
-            {pending ? "Salvataggio..." : "Salva formazione"}
+            {pending
+              ? "Salvataggio..."
+              : saved && !error
+              ? "✓ Formazione salvata"
+              : "Salva formazione"}
           </button>
         </div>
 

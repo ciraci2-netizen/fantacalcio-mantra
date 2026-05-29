@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
+import { checkRateLimit } from "@/app/lib/rateLimit";
 
 // POST /api/push/subscribe — save a push subscription
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  // Rate limit: max 10 subscribe calls per user per 10 minutes
+  const rlKey = `push-sub:${session.userId}`;
+  if (!checkRateLimit(rlKey, 10, 10 * 60 * 1000)) {
+    return NextResponse.json({ error: "Troppe richieste. Riprova tra qualche minuto." }, { status: 429 });
+  }
 
   try {
     const body = await req.json();
@@ -36,6 +43,11 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  // Rate limit: max 20 unsubscribe calls per user per 10 minutes
+  if (!checkRateLimit(`push-unsub:${session.userId}`, 20, 10 * 60 * 1000)) {
+    return NextResponse.json({ error: "Troppe richieste." }, { status: 429 });
+  }
 
   try {
     const { endpoint } = await req.json() as { endpoint: string };

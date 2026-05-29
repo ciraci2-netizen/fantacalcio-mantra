@@ -18,7 +18,7 @@ export async function saveLineup(prevState: string | null, formData: FormData) {
   }
 
   const reserveIds: number[] = [];
-  for (let i = 1; i <= 7; i++) {
+  for (let i = 1; i <= 11; i++) {
     const id = formData.get(`reserve_${i}`);
     if (id) reserveIds.push(parseInt(id as string));
   }
@@ -81,5 +81,5 @@ export async function saveLineup(prevState: string | null, formData: FormData) {
   }
 
   revalidatePath("/lineup");
-  return null;
+  return "ok";
 }

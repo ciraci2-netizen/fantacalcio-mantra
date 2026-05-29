@@ -32,6 +32,8 @@ export default function TeamLogo({
         src={logoUrl}
         alt={teamName}
         className={`${sizeClasses} rounded-full object-cover shrink-0 ${className}`}
+        loading="lazy"
+        decoding="async"
       />
     );
   }

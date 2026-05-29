@@ -5,7 +5,10 @@ import "./globals.css";
 const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "IPA Fantasy Football",
+  title: {
+    default: "IPA Fantasy Football",
+    template: "%s · IPA",
+  },
   description: "IPA Fantasy Football - Premier League con regole Mantra",
   manifest: "/manifest.json",
   appleWebApp: {

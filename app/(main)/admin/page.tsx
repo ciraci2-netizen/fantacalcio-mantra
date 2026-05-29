@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import { getSession } from "@/app/lib/session";
 import { redirect } from "next/navigation";
 import { getDb } from "@/app/lib/db";
 import Link from "next/link";
 import MigrateButton from "./MigrateButton";
+
+export const metadata: Metadata = { title: "Admin" };
 
 export const dynamic = "force-dynamic";
 

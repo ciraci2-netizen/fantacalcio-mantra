@@ -19,6 +19,10 @@ export async function autoMigrate(): Promise<void> {
     `ALTER TABLE "Matchday" ADD COLUMN votesImported INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE "Match" ADD COLUMN homePoints INTEGER`,
     `ALTER TABLE "Match" ADD COLUMN awayPoints INTEGER`,
+    `ALTER TABLE "Match" ADD COLUMN homeGoals INTEGER`,
+    `ALTER TABLE "Match" ADD COLUMN awayGoals INTEGER`,
+    `ALTER TABLE "LeagueSettings" ADD COLUMN homeAdvantage REAL NOT NULL DEFAULT 0`,
+    `ALTER TABLE "LeagueSettings" ADD COLUMN scoreConversion TEXT`,
 
     // Table creations (idempotent via IF NOT EXISTS)
     `CREATE TABLE IF NOT EXISTS "LeagueMessage" (

@@ -1,8 +1,10 @@
+import type { Metadata } from "next";
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
 import ScambiClient from "./ScambiClient";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Scambi" };
 
 export default async function ScambiPage() {
   const session = await getSession();

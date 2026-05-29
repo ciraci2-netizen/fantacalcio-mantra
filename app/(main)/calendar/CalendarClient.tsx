@@ -8,6 +8,8 @@ type MatchRow = {
   homeScore: number | null;
   awayScore: number | null;
   homePoints: number | null;
+  homeGoals: number | null;
+  awayGoals: number | null;
   homeUser: { id: number; teamName: string; logoUrl: string | null };
   awayUser: { id: number; teamName: string; logoUrl: string | null };
 };
@@ -22,7 +24,7 @@ function TeamAvatarSmall({ teamName, logoUrl }: { teamName: string; logoUrl: str
   const initials = teamName.slice(0, 2).toUpperCase();
   if (logoUrl) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={logoUrl} alt={teamName} className="w-6 h-6 rounded-full object-cover border border-gray-200 shrink-0" />;
+    return <img src={logoUrl} alt={teamName} className="w-6 h-6 rounded-full object-cover border border-gray-200 shrink-0" loading="lazy" decoding="async" />;
   }
   return (
     <div className="w-6 h-6 rounded-full bg-green-600 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
@@ -81,25 +83,34 @@ function MatchdayCard({
               </div>
 
               {/* Score / VS */}
-              <div className="flex items-center gap-1.5 shrink-0 min-w-[100px] justify-center">
+              <div className="flex items-center gap-1.5 shrink-0 min-w-[110px] justify-center">
                 {played ? (
-                  <>
-                    <span
-                      className={`text-base font-bold w-10 text-right ${
-                        homeWon ? "text-green-600" : isDraw ? "text-gray-500" : "text-red-400"
-                      }`}
-                    >
-                      {m.homeScore?.toFixed(1)}
-                    </span>
-                    <span className="text-gray-300 text-sm">—</span>
-                    <span
-                      className={`text-base font-bold w-10 text-left ${
-                        awayWon ? "text-green-600" : isDraw ? "text-gray-500" : "text-red-400"
-                      }`}
-                    >
-                      {m.awayScore?.toFixed(1)}
-                    </span>
-                  </>
+                  <div className="text-center">
+                    {/* Goals (primary) or raw scores */}
+                    <div className="flex items-center gap-1">
+                      <span
+                        className={`text-base font-bold w-8 text-right tabular-nums ${
+                          homeWon ? "text-green-600" : isDraw ? "text-gray-500" : "text-red-400"
+                        }`}
+                      >
+                        {m.homeGoals !== null ? m.homeGoals : m.homeScore?.toFixed(1)}
+                      </span>
+                      <span className="text-gray-300 text-sm">—</span>
+                      <span
+                        className={`text-base font-bold w-8 text-left tabular-nums ${
+                          awayWon ? "text-green-600" : isDraw ? "text-gray-500" : "text-red-400"
+                        }`}
+                      >
+                        {m.awayGoals !== null ? m.awayGoals : m.awayScore?.toFixed(1)}
+                      </span>
+                    </div>
+                    {/* Secondary: raw scores when goals are shown */}
+                    {m.homeGoals !== null && (
+                      <div className="text-[10px] text-gray-400 text-center mt-0.5 tabular-nums">
+                        {m.homeScore?.toFixed(1)} – {m.awayScore?.toFixed(1)}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <span className="text-gray-300 font-semibold text-sm tracking-widest">VS</span>
                 )}

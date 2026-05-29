@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import { unstable_cache } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import TeamLogo from "@/app/components/TeamLogo";
 import { teamColor, teamInitials } from "@/app/lib/teamColor";
+
+export const metadata: Metadata = { title: "Classifica" };
 
 type StandingRow = {
   userId: number;
@@ -124,7 +127,8 @@ function Podium({ standings, myUserId }: { standings: StandingRow[]; myUserId: n
                 {s.logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={s.logoUrl} alt={s.teamName}
-                    className={`w-14 h-14 rounded-full object-cover border-4 ${isMe ? "border-yellow-400" : "border-white/20"} shadow-lg`} />
+                    className={`w-14 h-14 rounded-full object-cover border-4 ${isMe ? "border-yellow-400" : "border-white/20"} shadow-lg`}
+                    loading="lazy" decoding="async" />
                 ) : (
                   <div className={`w-14 h-14 rounded-full ${bg} flex items-center justify-center font-bold text-white text-lg border-4 ${isMe ? "border-yellow-400" : "border-white/20"} shadow-lg`}>
                     {initials}

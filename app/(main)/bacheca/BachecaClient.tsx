@@ -22,6 +22,8 @@ function Avatar({ teamName, logoUrl }: { teamName: string; logoUrl: string | nul
         src={logoUrl}
         alt={teamName}
         className="w-9 h-9 rounded-full object-cover border-2 border-green-300 shrink-0"
+        loading="lazy"
+        decoding="async"
       />
     );
   }

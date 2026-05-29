@@ -2,7 +2,7 @@ import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { redirect } from "next/navigation";
 import SettingsClient from "./SettingsClient";
-import { DEFAULT_GOAL_THRESHOLDS } from "@/app/lib/scoring";
+import { DEFAULT_GOAL_THRESHOLDS, DEFAULT_SCORE_CONVERSION } from "@/app/lib/scoring";
 
 export default async function AdminSettingsPage() {
   const session = await getSession();
@@ -20,11 +20,13 @@ export default async function AdminSettingsPage() {
     initialCredits: 500,
     maxSubstitutions: 3,
     goalThresholds: DEFAULT_GOAL_THRESHOLDS,
+    homeAdvantage: 0,
+    scoreConversion: DEFAULT_SCORE_CONVERSION,
   };
   if (season) {
     try {
       const settingsRes = await db.execute({
-        sql: `SELECT initialCredits, maxSubstitutions, goalThresholds FROM "LeagueSettings" WHERE seasonId = ?`,
+        sql: `SELECT initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion FROM "LeagueSettings" WHERE seasonId = ?`,
         args: [season.id],
       });
       const raw = settingsRes.rows[0];
@@ -32,9 +34,13 @@ export default async function AdminSettingsPage() {
         settings = {
           initialCredits: (raw.initialCredits as number) ?? 500,
           maxSubstitutions: (raw.maxSubstitutions as number) ?? 3,
+          homeAdvantage: (raw.homeAdvantage as number) ?? 0,
           goalThresholds: raw.goalThresholds
             ? (() => { try { return JSON.parse(raw.goalThresholds as string); } catch { return DEFAULT_GOAL_THRESHOLDS; } })()
             : DEFAULT_GOAL_THRESHOLDS,
+          scoreConversion: raw.scoreConversion
+            ? (() => { try { return JSON.parse(raw.scoreConversion as string); } catch { return DEFAULT_SCORE_CONVERSION; } })()
+            : DEFAULT_SCORE_CONVERSION,
         };
       }
     } catch { /* tabella non ancora creata */ }

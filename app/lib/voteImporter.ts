@@ -10,8 +10,11 @@ import { scrapeVotes } from "./scraper";
 import {
   calculateFantavoto,
   calculateGoalBonus,
+  convertScoreToGoals,
   DEFAULT_GOAL_THRESHOLDS,
+  DEFAULT_SCORE_CONVERSION,
   type GoalThreshold,
+  type ScoreConversion,
 } from "./scoring";
 
 export interface ImportResult {
@@ -156,7 +159,7 @@ async function autoGenerateLineup(
   const reserves = roster
     .filter((p) => !usedIds.has(p.id))
     .sort((a, b) => (b.hasFv ? 1 : 0) - (a.hasFv ? 1 : 0) || b.fv - a.fv)
-    .slice(0, 7);
+    .slice(0, 11);
 
   const lineupRes = await db.execute({
     sql: `INSERT INTO "Lineup" (userId, matchdayId, formation, isSubmitted, isAutomatic) VALUES (?, ?, '4-4-2', 1, 1)`,
@@ -191,16 +194,24 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
 
   let maxSubstitutions = 3;
   let goalThresholds: GoalThreshold[] = DEFAULT_GOAL_THRESHOLDS;
+  let homeAdvantage = 0;
+  let scoreConversion: ScoreConversion = DEFAULT_SCORE_CONVERSION;
 
   try {
     const settingsRes = await db.execute({
-      sql: `SELECT maxSubstitutions, goalThresholds FROM "LeagueSettings" WHERE seasonId = ?`,
+      sql: `SELECT maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion FROM "LeagueSettings" WHERE seasonId = ?`,
       args: [seasonId],
     });
     if (settingsRes.rows.length > 0) {
       maxSubstitutions = settingsRes.rows[0].maxSubstitutions as number;
+      homeAdvantage = (settingsRes.rows[0].homeAdvantage as number) ?? 0;
       try {
         goalThresholds = JSON.parse(settingsRes.rows[0].goalThresholds as string);
+      } catch { /* usa default */ }
+      try {
+        if (settingsRes.rows[0].scoreConversion) {
+          scoreConversion = JSON.parse(settingsRes.rows[0].scoreConversion as string);
+        }
       } catch { /* usa default */ }
     }
   } catch { /* table not yet migrated */ }
@@ -287,14 +298,28 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
     const homeScore = (homeRes.rows[0]?.totalScore as number) ?? 0;
     const awayScore = (awayRes.rows[0]?.totalScore as number) ?? 0;
 
+    // Convert scores to goals (Mantra system) — null when conversion disabled
+    const homeGoals = scoreConversion.enabled ? convertScoreToGoals(homeScore, scoreConversion) : null;
+    const awayGoals = scoreConversion.enabled ? convertScoreToGoals(awayScore, scoreConversion) : null;
+
     let homePoints = 1;
     let awayPoints = 1;
-    if (homeScore > awayScore) { homePoints = 3; awayPoints = 0; }
-    else if (awayScore > homeScore) { homePoints = 0; awayPoints = 3; }
+
+    if (scoreConversion.enabled && homeGoals !== null && awayGoals !== null) {
+      // Win/loss based on goals, with home advantage applied before conversion
+      const effectiveHomeGoals = convertScoreToGoals(homeScore + homeAdvantage, scoreConversion);
+      if (effectiveHomeGoals > awayGoals) { homePoints = 3; awayPoints = 0; }
+      else if (awayGoals > effectiveHomeGoals) { homePoints = 0; awayPoints = 3; }
+    } else {
+      // Classic: compare raw scores with home advantage
+      const effectiveHome = homeScore + homeAdvantage;
+      if (effectiveHome > awayScore) { homePoints = 3; awayPoints = 0; }
+      else if (awayScore > effectiveHome) { homePoints = 0; awayPoints = 3; }
+    }
 
     await db.execute({
-      sql: `UPDATE "Match" SET homeScore = ?, awayScore = ?, homePoints = ?, awayPoints = ? WHERE id = ?`,
-      args: [homeScore, awayScore, homePoints, awayPoints, match.id],
+      sql: `UPDATE "Match" SET homeScore = ?, awayScore = ?, homePoints = ?, awayPoints = ?, homeGoals = ?, awayGoals = ? WHERE id = ?`,
+      args: [homeScore, awayScore, homePoints, awayPoints, homeGoals, awayGoals, match.id],
     });
   }
 

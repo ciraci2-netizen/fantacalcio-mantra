@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
-import { DEFAULT_GOAL_THRESHOLDS } from "@/app/lib/scoring";
+import { DEFAULT_GOAL_THRESHOLDS, DEFAULT_SCORE_CONVERSION } from "@/app/lib/scoring";
 
 // ─── LeagueSettings ─────────────────────────────────────────────────────────
 
@@ -14,34 +14,38 @@ export async function saveLeagueSettings(prevState: string | null, formData: For
   const seasonId = parseInt(formData.get("seasonId") as string);
   const initialCredits = parseInt(formData.get("initialCredits") as string) || 500;
   const maxSubstitutions = parseInt(formData.get("maxSubstitutions") as string) || 3;
+  const homeAdvantage = parseFloat(formData.get("homeAdvantage") as string) || 0;
 
-  // Parse goal thresholds from form: minGoals_0, bonus_0, minGoals_1, bonus_1 ...
-  const thresholds: { m: number; b: number }[] = [];
-  let i = 0;
-  while (formData.has(`thr_m_${i}`)) {
-    const m = parseInt(formData.get(`thr_m_${i}`) as string);
-    const b = parseFloat(formData.get(`thr_b_${i}`) as string);
-    if (!isNaN(m) && !isNaN(b)) thresholds.push({ m, b });
-    i++;
-  }
-  const goalThresholds = thresholds.length > 0
-    ? JSON.stringify(thresholds.sort((a, b) => a.m - b.m))
-    : JSON.stringify(DEFAULT_GOAL_THRESHOLDS);
+  // Goal thresholds — disabled by default (no bonus), preserved for backward compat
+  const goalThresholds = JSON.stringify(DEFAULT_GOAL_THRESHOLDS);
+
+  // Score-to-goals conversion (Mantra system)
+  const scoreConvEnabled = formData.get("scoreConvEnabled") === "1";
+  const scoreConvMinScore = parseFloat(formData.get("scoreConvMinScore") as string) || DEFAULT_SCORE_CONVERSION.minScore;
+  const scoreConvStep = parseFloat(formData.get("scoreConvStep") as string) || DEFAULT_SCORE_CONVERSION.step;
+  const scoreConversion = JSON.stringify({
+    enabled: scoreConvEnabled,
+    minScore: scoreConvMinScore,
+    step: scoreConvStep,
+  });
 
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO "LeagueSettings" (seasonId, initialCredits, maxSubstitutions, goalThresholds)
-          VALUES (?, ?, ?, ?)
+    sql: `INSERT INTO "LeagueSettings" (seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion)
+          VALUES (?, ?, ?, ?, ?, ?)
           ON CONFLICT(seasonId) DO UPDATE SET
-            initialCredits = excluded.initialCredits,
-            maxSubstitutions = excluded.maxSubstitutions,
-            goalThresholds = excluded.goalThresholds`,
-    args: [seasonId, initialCredits, maxSubstitutions, goalThresholds],
+            initialCredits    = excluded.initialCredits,
+            maxSubstitutions  = excluded.maxSubstitutions,
+            goalThresholds    = excluded.goalThresholds,
+            homeAdvantage     = excluded.homeAdvantage,
+            scoreConversion   = excluded.scoreConversion`,
+    args: [seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion],
   });
 
   revalidatePath("/admin/schedule");
   revalidatePath("/admin/votes");
-  return null;
+  revalidatePath("/admin/settings");
+  return "ok";
 }
 
 // ─── Crediti utenti ──────────────────────────────────────────────────────────

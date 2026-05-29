@@ -1,38 +1,9 @@
+import type { Metadata } from "next";
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
-import { MANTRA_ROLES } from "@/app/lib/scoring";
+import TeamClient from "./TeamClient";
 
-const ROLE_BG: Record<string, string> = {
-  Por: "bg-yellow-100 text-yellow-800 border-yellow-300",
-  Dc:  "bg-blue-100 text-blue-800 border-blue-300",
-  Dd:  "bg-blue-100 text-blue-800 border-blue-300",
-  Ds:  "bg-blue-100 text-blue-800 border-blue-300",
-  M:   "bg-green-100 text-green-800 border-green-300",
-  C:   "bg-green-100 text-green-800 border-green-300",
-  T:   "bg-green-100 text-green-800 border-green-300",
-  W:   "bg-green-100 text-green-800 border-green-300",
-  A:   "bg-red-100 text-red-800 border-red-300",
-  Pc:  "bg-red-100 text-red-800 border-red-300",
-};
-
-const ROLE_LABEL: Record<string, string> = {
-  Por: "Portieri",
-  Dc:  "Difensori Centrali",
-  Dd:  "Terzini Destri",
-  Ds:  "Terzini Sinistri",
-  M:   "Mediani",
-  C:   "Centrocampisti",
-  T:   "Trequartisti",
-  W:   "Esterni",
-  A:   "Attaccanti",
-  Pc:  "Seconde Punte",
-};
-
-type RosterItem = {
-  id: number;
-  purchasePrice: number;
-  player: { mantraRole: string; name: string; realTeam: string };
-};
+export const metadata: Metadata = { title: "Rosa" };
 
 export default async function TeamPage() {
   const session = await getSession();
@@ -55,7 +26,7 @@ export default async function TeamPage() {
   });
   const totalCredits = (creditsRes.rows[0]?.credits as number) ?? 500;
 
-  const roster: RosterItem[] = rosterRes.rows.map((r) => ({
+  const roster = rosterRes.rows.map((r) => ({
     id: r.id as number,
     purchasePrice: r.purchasePrice as number,
     player: {
@@ -65,16 +36,11 @@ export default async function TeamPage() {
     },
   }));
 
-  const byRole: Record<string, RosterItem[]> = {};
-  for (const r of roster) {
-    if (!byRole[r.player.mantraRole]) byRole[r.player.mantraRole] = [];
-    byRole[r.player.mantraRole].push(r);
-  }
-
   const totalValue = roster.reduce((sum, r) => sum + (r.purchasePrice ?? 0), 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">
@@ -85,7 +51,13 @@ export default async function TeamPage() {
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${totalCredits - totalValue >= 0 ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700"}`}>
+          <span
+            className={`px-3 py-1.5 rounded-full text-sm font-semibold ${
+              totalCredits - totalValue >= 0
+                ? "bg-blue-100 text-blue-700"
+                : "bg-red-100 text-red-700"
+            }`}
+          >
             💰 {totalCredits - totalValue} crediti rimanenti
           </span>
           <span
@@ -109,33 +81,7 @@ export default async function TeamPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {MANTRA_ROLES.filter((r) => byRole[r]?.length > 0).map((role) => (
-            <div key={role} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-              <div className={`px-4 py-2.5 flex items-center justify-between border-b ${ROLE_BG[role]}`}>
-                <span className="font-bold text-sm">{role}</span>
-                <span className="text-xs opacity-70">
-                  {ROLE_LABEL[role]} · {byRole[role].length}
-                </span>
-              </div>
-              <ul className="divide-y">
-                {byRole[role].map((r) => (
-                  <li key={r.id} className="px-4 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                    <div className="min-w-0">
-                      <p className="font-medium text-gray-800 text-sm truncate">{r.player.name}</p>
-                      <p className="text-xs text-gray-400">{r.player.realTeam}</p>
-                    </div>
-                    {r.purchasePrice > 0 && (
-                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full ml-2 shrink-0">
-                        {r.purchasePrice}M
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+        <TeamClient roster={roster} />
       )}
     </div>
   );

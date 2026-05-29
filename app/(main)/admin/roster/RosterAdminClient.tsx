@@ -67,7 +67,7 @@ export default function RosterAdminClient({
             }`}
           >
             {u.logoUrl ? (
-              <img src={u.logoUrl} alt={u.teamName} className="w-5 h-5 rounded-full object-cover" />
+              <img src={u.logoUrl} alt={u.teamName} className="w-5 h-5 rounded-full object-cover" loading="lazy" decoding="async" />
             ) : (
               <span className="w-5 h-5 rounded-full bg-green-100 text-green-700 text-xs flex items-center justify-center font-bold">
                 {u.teamName.slice(0, 1)}
@@ -88,7 +88,7 @@ export default function RosterAdminClient({
             <div className="px-4 py-3 bg-green-700 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {team.logoUrl ? (
-                  <img src={team.logoUrl} alt={team.teamName} className="w-6 h-6 rounded-full object-cover" />
+                  <img src={team.logoUrl} alt={team.teamName} className="w-6 h-6 rounded-full object-cover" loading="lazy" decoding="async" />
                 ) : (
                   <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center text-xs font-bold">
                     {team.teamName.slice(0, 1)}

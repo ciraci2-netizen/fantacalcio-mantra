@@ -78,6 +78,8 @@ export default function Navbar({
           src={logoUrl}
           alt={teamName}
           className={`${cls} rounded-full object-cover border-2 border-green-400 shrink-0`}
+          loading="lazy"
+          decoding="async"
         />
       );
     }

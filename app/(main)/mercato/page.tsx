@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import MercatoClient from "./MercatoClient";
+
+export const metadata: Metadata = { title: "Mercato" };
 
 export default async function MercatoPage() {
   const session = await getSession();

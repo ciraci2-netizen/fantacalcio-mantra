@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { MANTRA_ROLES } from "@/app/lib/scoring";
 import SvincolatiClient from "./SvincolatiClient";
+
+export const metadata: Metadata = { title: "Svincolati" };
 
 const ROLE_LABEL: Record<string, string> = {
   Por: "Portieri", Dc: "Difensori Centrali", Dd: "Terzini Destri",

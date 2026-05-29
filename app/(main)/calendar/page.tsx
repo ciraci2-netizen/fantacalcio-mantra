@@ -1,12 +1,17 @@
+import type { Metadata } from "next";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import CalendarClient from "./CalendarClient";
+
+export const metadata: Metadata = { title: "Calendario" };
 
 type MatchRow = {
   id: number;
   homeScore: number | null;
   awayScore: number | null;
   homePoints: number | null;
+  homeGoals: number | null;
+  awayGoals: number | null;
   homeUser: { id: number; teamName: string; logoUrl: string | null };
   awayUser: { id: number; teamName: string; logoUrl: string | null };
 };
@@ -28,6 +33,7 @@ export default async function CalendarPage() {
 
   const matchesRes = await db.execute({
     sql: `SELECT m.id, m.matchdayId, m.homeScore, m.awayScore, m.homePoints,
+                 m.homeGoals, m.awayGoals,
                  m.homeUserId, m.awayUserId,
                  hu.teamName as homeTeamName,
                  au.teamName as awayTeamName,
@@ -63,6 +69,8 @@ export default async function CalendarPage() {
       homeScore: row.homeScore as number | null,
       awayScore: row.awayScore as number | null,
       homePoints: row.homePoints as number | null,
+      homeGoals: row.homeGoals !== undefined ? (row.homeGoals as number | null) : null,
+      awayGoals: row.awayGoals !== undefined ? (row.awayGoals as number | null) : null,
       homeUser: { id: homeId, teamName: row.homeTeamName as string, logoUrl: logoMap[homeId] ?? null },
       awayUser: { id: awayId, teamName: row.awayTeamName as string, logoUrl: logoMap[awayId] ?? null },
     });

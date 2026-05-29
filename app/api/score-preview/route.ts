@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
+import { checkRateLimit } from "@/app/lib/rateLimit";
 
 /**
  * GET /api/score-preview?matchdayId=X
@@ -11,6 +12,11 @@ import { getSession } from "@/app/lib/session";
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Rate limit: max 30 score-preview requests per user per minute (it's polled every few seconds)
+  if (!checkRateLimit(`score-preview:${session.userId}`, 30, 60_000)) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
 
   const matchdayId = Number(req.nextUrl.searchParams.get("matchdayId"));
   if (!matchdayId) return NextResponse.json({ error: "Missing matchdayId" }, { status: 400 });

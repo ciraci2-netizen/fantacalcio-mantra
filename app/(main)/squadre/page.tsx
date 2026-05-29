@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import Link from "next/link";
+
+export const metadata: Metadata = { title: "Squadre" };
 
 export default async function SquadrePage() {
   const session = await getSession();

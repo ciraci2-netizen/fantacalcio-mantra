@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
 import LineupForm from "./LineupForm";
 import DeadlineTimer from "@/app/components/DeadlineTimer";
 import LiveScorePreview from "@/app/components/LiveScorePreview";
+
+export const metadata: Metadata = { title: "Formazione" };
 import Link from "next/link";
 
 export default async function LineupPage() {

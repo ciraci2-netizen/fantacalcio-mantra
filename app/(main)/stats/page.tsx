@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import { unstable_cache } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { teamHex } from "@/app/lib/teamColor";
+
+export const metadata: Metadata = { title: "Statistiche" };
 
 /* ── Bar chart component ─────────────────────────────────────────────────── */
 function TeamBarChart({ teams }: { teams: { teamName: string; avgScore: number; played: number }[] }) {

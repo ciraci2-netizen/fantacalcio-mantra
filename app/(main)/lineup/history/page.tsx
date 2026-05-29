@@ -1,8 +1,11 @@
 export const dynamic = "force-dynamic";
 
+import type { Metadata } from "next";
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
 import Link from "next/link";
+
+export const metadata: Metadata = { title: "Storico formazioni" };
 import HistoryPitchToggle from "./HistoryPitchToggle";
 
 export default async function LineupHistoryPage() {
