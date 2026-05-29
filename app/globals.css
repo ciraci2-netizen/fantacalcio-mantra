@@ -36,13 +36,13 @@ html {
 }
 
 body {
-  background: rgba(249, 250, 251, 0.84);
+  background: rgba(249, 250, 251, 0.62);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
 
 .dark body, body.dark {
-  background: rgba(17, 24, 39, 0.88);
+  background: rgba(17, 24, 39, 0.75);
 }
 
 /* ── Dark-mode structural overrides ─────────────────────── */

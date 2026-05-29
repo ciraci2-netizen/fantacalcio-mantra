@@ -95,10 +95,19 @@ export default function Navbar({
   return (
     <nav className="bg-green-700 text-white shadow-md relative z-50 overflow-x-hidden">
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
-        {/* Logo — subtitle hidden at xl to save space */}
-        <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
-          <span className="text-xl font-bold">⚽ IPA</span>
-          <span className="text-green-200 text-xs hidden 2xl:block">Fantasy Football PL</span>
+        {/* Logo */}
+        <Link href="/dashboard" className="flex items-center gap-2 shrink-0 group">
+          {/* Mini banner as circular icon */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/league-banner.png"
+            alt="IPA"
+            className="w-9 h-9 rounded-full object-cover object-center border-2 border-white/30 shadow-md group-hover:border-white/60 transition-all"
+          />
+          <div className="flex flex-col leading-none">
+            <span className="text-base font-extrabold tracking-wide">IPA</span>
+            <span className="text-green-200 text-[10px] font-medium hidden sm:block">Premier League</span>
+          </div>
         </Link>
 
         {/* Desktop links — min-w-0 + overflow-hidden prevents any scrollbar */}
