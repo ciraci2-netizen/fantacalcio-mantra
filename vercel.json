@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/auto-lock",
-      "schedule": "5 * * * *"
+      "schedule": "5 0 * * *"
     },
     {
       "path": "/api/cron/lock-matchday",
@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/auto-import",
-      "schedule": "0 7,10,13,16 * * 1,2"
+      "schedule": "0 10 * * 1"
     }
   ]
 }
