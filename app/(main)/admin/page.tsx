@@ -229,6 +229,24 @@ export default async function AdminPage() {
         </div>
       </div>
 
+      {/* ── UTILITÀ ────────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap gap-3 items-center">
+        <a
+          href="/api/admin/export"
+          className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium transition-colors"
+          download
+        >
+          💾 Scarica backup JSON
+        </a>
+        <a
+          href="/api/health"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium transition-colors"
+        >
+          🩺 Health check DB
+        </a>
+      </div>
       <MigrateButton />
     </div>
   );

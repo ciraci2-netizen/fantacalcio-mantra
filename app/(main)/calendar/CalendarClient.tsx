@@ -157,8 +157,16 @@ export default function CalendarClient({
   );
   const touchStartX = useRef<number | null>(null);
 
+  const [fading, setFading] = useState(false);
+
   const go = (idx: number) => {
-    setActiveIdx(Math.max(0, Math.min(idx, matchdays.length - 1)));
+    const next = Math.max(0, Math.min(idx, matchdays.length - 1));
+    if (next === activeIdx) return;
+    setFading(true);
+    setTimeout(() => {
+      setActiveIdx(next);
+      setFading(false);
+    }, 120);
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -204,11 +212,12 @@ export default function CalendarClient({
         })}
       </div>
 
-      {/* Swipeable card */}
+      {/* Swipeable card con fade transition */}
       <div
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         className="select-none"
+        style={{ transition: "opacity 0.12s ease", opacity: fading ? 0 : 1 }}
       >
         {md && <MatchdayCard md={md} currentUserId={currentUserId} />}
       </div>

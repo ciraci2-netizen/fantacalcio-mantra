@@ -1,4 +1,28 @@
 import * as cheerio from "cheerio";
+import { log, logError } from "./logger";
+
+/** Fetch con retry esponenziale (3 tentativi: 1s, 2s, 4s) */
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3): Promise<Response> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.ok) return res;
+      if (attempt < retries) {
+        const delay = 1000 * Math.pow(2, attempt - 1);
+        log("scraper_retry", { attempt, status: res.status, delay });
+        await new Promise((r) => setTimeout(r, delay));
+      } else {
+        throw new Error(`HTTP ${res.status}`);
+      }
+    } catch (err) {
+      if (attempt === retries) { logError("scraper_fail", err, { attempt, url }); throw err; }
+      const delay = 1000 * Math.pow(2, attempt - 1);
+      log("scraper_retry", { attempt, error: String(err), delay }, "warn");
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error("fetchWithRetry: unreachable");
+}
 
 export interface ScrapedVote {
   name: string;
@@ -31,7 +55,7 @@ function parseVote(val: string): number | null {
 export async function scrapeVotes(matchday: number): Promise<ScrapedVote[]> {
   const url = `https://www.fantapiu3.com/voti-globali/fantacalcio-voti-fantapiu3-premier-league.php`;
 
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -39,10 +63,6 @@ export async function scrapeVotes(matchday: number): Promise<ScrapedVote[]> {
     },
     cache: "no-store",
   });
-
-  if (!res.ok) {
-    throw new Error(`Errore nel fetch della pagina: ${res.status}`);
-  }
 
   const html = await res.text();
   const $ = cheerio.load(html);

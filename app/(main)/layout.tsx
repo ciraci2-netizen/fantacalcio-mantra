@@ -6,6 +6,7 @@ import Navbar from "@/app/components/Navbar";
 import BottomNav from "@/app/components/BottomNav";
 import { ToastProvider } from "@/app/components/ToastProvider";
 import PwaInstallPrompt from "@/app/components/PwaInstallPrompt";
+import OnboardingModal from "@/app/components/OnboardingModal";
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
   // Run schema migrations idempotently on every cold start (fail-safe — won't break build)
@@ -58,6 +59,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
         </main>
         <BottomNav />
         <PwaInstallPrompt />
+        <OnboardingModal />
       </div>
     </ToastProvider>
   );

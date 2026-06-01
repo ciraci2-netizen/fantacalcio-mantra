@@ -49,9 +49,10 @@ interface RosterItem {
 
 interface Props {
   roster: RosterItem[];
+  totalCredits?: number;
 }
 
-export default function TeamClient({ roster }: Props) {
+export default function TeamClient({ roster, totalCredits = 500 }: Props) {
   const [macro, setMacro]   = useState<MacroKey>("all");
   const [sort, setSort]     = useState<SortKey>("nome");
   const [search, setSearch] = useState("");
@@ -88,8 +89,34 @@ export default function TeamClient({ roster }: Props) {
   }
   const roleKeys = MANTRA_ROLES.filter((r) => byRole[r]?.length > 0);
 
+  const totalSpent = useMemo(() => roster.reduce((sum, r) => sum + r.purchasePrice, 0), [roster]);
+  const creditPct = Math.min(100, Math.round((totalSpent / totalCredits) * 100));
+  const creditsLeft = totalCredits - totalSpent;
+
   return (
     <div className="space-y-4">
+      {/* ── Budget bar ───────────────────────────────────── */}
+      <div className="bg-white rounded-xl border shadow-sm px-4 py-3">
+        <div className="flex items-center justify-between text-sm mb-1.5">
+          <span className="font-semibold text-gray-700">💰 Budget</span>
+          <span className={`font-bold ${creditsLeft >= 0 ? "text-green-600" : "text-red-600"}`}>
+            {creditsLeft >= 0 ? `${creditsLeft}M rimasti` : `${Math.abs(creditsLeft)}M sforati`}
+          </span>
+        </div>
+        <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${
+              creditPct >= 95 ? "bg-red-500" : creditPct >= 80 ? "bg-amber-400" : "bg-green-500"
+            }`}
+            style={{ width: `${creditPct}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-xs text-gray-400 mt-1">
+          <span>{totalSpent}M spesi · {roster.length} giocatori</span>
+          <span>{totalCredits}M totali</span>
+        </div>
+      </div>
+
       {/* ── Filter / sort bar ─────────────────────────────── */}
       <div className="bg-white rounded-xl border shadow-sm p-3 flex flex-wrap items-center gap-3">
         {/* Macro role buttons */}

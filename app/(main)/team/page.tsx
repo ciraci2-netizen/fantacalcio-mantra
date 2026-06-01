@@ -81,7 +81,7 @@ export default async function TeamPage() {
           </p>
         </div>
       ) : (
-        <TeamClient roster={roster} />
+        <TeamClient roster={roster} totalCredits={totalCredits} />
       )}
     </div>
   );

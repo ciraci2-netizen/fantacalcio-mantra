@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import TeamLogo from "@/app/components/TeamLogo";
+import StandingsSortClient from "./StandingsSortClient";
 import { teamColor, teamInitials } from "@/app/lib/teamColor";
 
 export const metadata: Metadata = { title: "Classifica" };
@@ -201,130 +202,7 @@ export default async function StandingsPage() {
         <Podium standings={standings} myUserId={session.userId} />
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        {/* Column headers */}
-        <div className="hidden sm:grid grid-cols-[3rem_1fr_5rem_repeat(9,3.5rem)] px-4 py-2 border-b bg-gray-50 text-xs font-medium text-gray-400 uppercase tracking-wide">
-          <div />
-          <div />
-          <div className="text-center">forma</div>
-          <div className="text-center">g</div>
-          <div className="text-center">v</div>
-          <div className="text-center">n</div>
-          <div className="text-center">p</div>
-          <div className="text-center">g+</div>
-          <div className="text-center">g-</div>
-          <div className="text-center">dr</div>
-          <div className="text-center font-semibold text-gray-600">pt</div>
-          <div className="text-center">pt tot</div>
-        </div>
-
-        <div className="divide-y">
-          {standings.map((s, i) => {
-            const isMe = s.userId === session.userId;
-            return (
-              <div
-                key={s.userId}
-                className={`flex sm:grid sm:grid-cols-[3rem_1fr_5rem_repeat(9,3.5rem)] items-center gap-2 sm:gap-0 px-4 py-3 transition-colors ${
-                  isMe
-                    ? "border-l-4 border-blue-500 bg-blue-50/40"
-                    : "border-l-4 border-transparent hover:bg-gray-50"
-                }`}
-              >
-                {/* Position */}
-                <div className="flex items-center justify-center w-8 sm:w-auto">
-                  <span
-                    className={`text-lg font-bold leading-none ${
-                      POSITION_COLORS[i] ?? "text-gray-400"
-                    }`}
-                  >
-                    {i + 1}
-                  </span>
-                </div>
-
-                {/* Team */}
-                <div className="flex items-center gap-3 min-w-0 flex-1 sm:flex-none">
-                  <TeamLogo logoUrl={s.logoUrl} teamName={s.teamName} size="sm" />
-                  <div className="min-w-0">
-                    <p
-                      className={`font-semibold text-sm leading-tight truncate ${
-                        isMe ? "text-blue-700" : "text-blue-600"
-                      }`}
-                    >
-                      {s.teamName}
-                    </p>
-                    <p className="text-gray-400 text-xs leading-tight truncate hidden sm:block">
-                      {s.username}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Forma recente chips (last 5 results) */}
-                <div className="hidden sm:flex items-center justify-center gap-0.5">
-                  {s.form.length === 0 ? (
-                    <span className="text-gray-300 text-xs">—</span>
-                  ) : (
-                    s.form.map((r, idx) => (
-                      <span
-                        key={idx}
-                        className={`w-5 h-5 rounded text-[10px] flex items-center justify-center ${FORM_STYLES[r]}`}
-                      >
-                        {r}
-                      </span>
-                    ))
-                  )}
-                </div>
-
-                {/* Stats */}
-                <div className="hidden sm:contents text-sm text-gray-600 text-center">
-                  <div className="flex items-center justify-center">{s.played}</div>
-                  <div className="flex items-center justify-center text-green-600 font-medium">{s.wins}</div>
-                  <div className="flex items-center justify-center">{s.draws}</div>
-                  <div className="flex items-center justify-center text-red-500">{s.losses}</div>
-                  <div className="flex items-center justify-center">{s.gf}</div>
-                  <div className="flex items-center justify-center">{s.ga}</div>
-                  <div className="flex items-center justify-center">
-                    {s.gd > 0 ? `+${s.gd}` : s.gd}
-                  </div>
-                  <div className="flex items-center justify-center font-bold text-blue-600 text-base">
-                    {s.points}
-                  </div>
-                  <div className="flex items-center justify-center text-gray-500 text-xs font-medium">
-                    {s.gf}
-                  </div>
-                </div>
-
-                {/* Mobile: show form chips + pt */}
-                <div className="sm:hidden ml-auto flex items-center gap-2">
-                  <div className="flex gap-0.5">
-                    {s.form.slice(0, 3).map((r, idx) => (
-                      <span
-                        key={idx}
-                        className={`w-4 h-4 rounded text-[9px] flex items-center justify-center ${FORM_STYLES[r]}`}
-                      >
-                        {r}
-                      </span>
-                    ))}
-                  </div>
-                  <span className="font-bold text-blue-600 text-lg">{s.points}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Legend */}
-        <div className="px-4 py-2 border-t bg-gray-50 text-xs text-gray-400 flex flex-wrap gap-x-4 gap-y-1">
-          <span>g = giocate</span>
-          <span>v = vinte</span>
-          <span>n = nulle</span>
-          <span>p = perse</span>
-          <span>g+ = punti fatti</span>
-          <span>g- = punti subiti</span>
-          <span>dr = diff. punti</span>
-          <span className="font-semibold text-gray-500">pt = punti lega</span>
-          <span>pt tot = punti fantacalcio totali</span>
-        </div>
-      </div>
+      <StandingsSortClient standings={standings} myUserId={session.userId} />
     </div>
   );
 }
