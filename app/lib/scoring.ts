@@ -41,7 +41,7 @@ export const DEFAULT_SCORING: ScoringConfig = {
 };
 
 // Ruoli Mantra
-export const MANTRA_ROLES = ["Por", "Dc", "Dd", "Ds", "M", "C", "T", "W", "A", "Pc"] as const;
+export const MANTRA_ROLES = ["POR", "TER", "DC", "M", "OFF", "ATT"] as const;
 export type MantraRole = (typeof MANTRA_ROLES)[number];
 
 // Formazioni valide Mantra (difensori-centrocampisti-attaccanti)
@@ -53,16 +53,12 @@ export const VALID_FORMATIONS = [
 
 // Modificatori fuori ruolo: quale ruolo può giocare in quale posizione e con quale malus
 export const ROLE_MODIFIERS: Record<string, Record<string, number>> = {
-  Por: { Por: 0 },
-  Dc: { Dc: 0, Dd: -1, Ds: -1 },
-  Dd: { Dd: 0, Dc: -1, Ds: -1 },
-  Ds: { Ds: 0, Dc: -1, Dd: -1 },
-  M: { M: 0, C: -1, T: -1, Ds: -2, Dd: -2 },
-  C: { C: 0, M: -1, T: -1, W: -1 },
-  T: { T: 0, C: -1, M: -1, A: -1, W: -1 },
-  W: { W: 0, T: -1, A: -1, C: -2 },
-  A: { A: 0, Pc: -1, W: -1, T: -2 },
-  Pc: { Pc: 0, A: -1 },
+  POR: { POR: 0 },
+  DC:  { DC: 0, TER: -1 },
+  TER: { TER: 0, DC: -1, M: -2 },
+  M:   { M: 0, TER: -2, OFF: -1 },
+  OFF: { OFF: 0, M: -1, ATT: -1 },
+  ATT: { ATT: 0, OFF: -1 },
 };
 
 export function calculateFantavoto(
@@ -89,7 +85,7 @@ export function calculateFantavoto(
   score += voteData.amm * config.ammonizione;
   score += voteData.esp * config.espulsione;
 
-  if (mantraRole === "Por") {
+  if (mantraRole === "POR") {
     score += voteData.rpRs * config.rigoreParato;
   } else {
     score += voteData.rpRs * config.rigoreSbagliato;

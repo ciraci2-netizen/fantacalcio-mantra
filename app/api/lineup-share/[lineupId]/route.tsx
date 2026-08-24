@@ -5,29 +5,21 @@ import { getSession } from "@/app/lib/session";
 export const runtime = "nodejs";
 
 const ROLE_COLORS: Record<string, string> = {
-  Por: "#fef3c7",
-  Dc: "#dbeafe",
-  Dd: "#dbeafe",
-  Ds: "#dbeafe",
-  M:  "#dcfce7",
-  C:  "#dcfce7",
-  T:  "#dcfce7",
-  W:  "#dcfce7",
-  A:  "#fee2e2",
-  Pc: "#fee2e2",
+  POR: "#fef3c7",
+  DC:  "#dbeafe",
+  TER: "#e0e7ff",
+  M:   "#dcfce7",
+  OFF: "#ccfbf1",
+  ATT: "#fee2e2",
 };
 
 const ROLE_TEXT: Record<string, string> = {
-  Por: "#92400e",
-  Dc: "#1e40af",
-  Dd: "#1e40af",
-  Ds: "#1e40af",
-  M:  "#166534",
-  C:  "#166534",
-  T:  "#166534",
-  W:  "#166534",
-  A:  "#991b1b",
-  Pc: "#991b1b",
+  POR: "#92400e",
+  DC:  "#1e40af",
+  TER: "#3730a3",
+  M:   "#166534",
+  OFF: "#0f766e",
+  ATT: "#991b1b",
 };
 
 export async function GET(

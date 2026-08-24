@@ -1,20 +1,16 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { addPlayerToRoster, removePlayerFromRoster, updatePurchasePrice } from "@/app/actions/roster";
+import { useActionState, useState, useRef, type ChangeEvent } from "react";
+import { addPlayerToRoster, removePlayerFromRoster, updatePurchasePrice, importRosterCSV } from "@/app/actions/roster";
 import { MANTRA_ROLES } from "@/app/lib/scoring";
 
 const ROLE_COLORS: Record<string, string> = {
-  Por: "bg-yellow-100 text-yellow-800",
-  Dc: "bg-blue-100 text-blue-800",
-  Dd: "bg-blue-100 text-blue-800",
-  Ds: "bg-blue-100 text-blue-800",
+  POR: "bg-yellow-100 text-yellow-800",
+  DC: "bg-blue-100 text-blue-800",
+  TER: "bg-indigo-100 text-indigo-800",
   M: "bg-green-100 text-green-800",
-  C: "bg-green-100 text-green-800",
-  T: "bg-green-100 text-green-800",
-  W: "bg-green-100 text-green-800",
-  A: "bg-red-100 text-red-800",
-  Pc: "bg-red-100 text-red-800",
+  OFF: "bg-teal-100 text-teal-800",
+  ATT: "bg-red-100 text-red-800",
 };
 
 type RosterEntry = { id: number; playerId: number; purchasePrice: number; name: string; mantraRole: string; realTeam: string };
@@ -31,10 +27,43 @@ export default function RosterAdminClient({
   const [addError, addAction] = useActionState(addPlayerToRoster, null);
   const [removeError, removeAction] = useActionState(removePlayerFromRoster, null);
   const [, priceAction] = useActionState(updatePurchasePrice, null);
+  const [importResult, importAction, importPending] = useActionState(importRosterCSV, null);
 
   const [selectedTeam, setSelectedTeam] = useState<number>(users[0]?.id ?? 0);
   const [freeSearch, setFreeSearch] = useState("");
   const [freeRole, setFreeRole] = useState("tutti");
+
+  const [csvData, setCsvData] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [parseError, setParseError] = useState("");
+  const importFormRef = useRef<HTMLFormElement>(null);
+
+  async function handleFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    setParseError("");
+
+    try {
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        const text = await file.text();
+        setCsvData(text);
+      } else {
+        // .xlsx / .xls
+        const XLSX = await import("xlsx");
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+        const lines = rows
+          .map((row) => row.map((cell) => (cell ?? "").toString().trim()).join(";"))
+          .filter((line) => line.replace(/;/g, "").length > 0);
+        setCsvData(lines.join("\n"));
+      }
+    } catch {
+      setParseError("Impossibile leggere il file. Verifica che sia un .csv o .xlsx valido.");
+    }
+  }
 
   const team = users.find((u) => u.id === selectedTeam);
   const totalSpent = team?.roster.reduce((s, r) => s + r.purchasePrice, 0) ?? 0;
@@ -52,6 +81,65 @@ export default function RosterAdminClient({
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold text-gray-800">Gestione Rose</h1>
         <span className="text-sm text-gray-500">{freePlayers.length} giocatori svincolati</span>
+      </div>
+
+      {/* ── Import rose da file Excel/CSV ──────────────────────── */}
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b bg-gray-50">
+          <h2 className="font-semibold text-gray-700">Importa rose da file (Excel o CSV)</h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Colonne per riga: <code className="bg-gray-100 px-1 rounded">squadra, giocatore, ruolo, squadra reale, prezzo</code>.
+            {" "}Ruolo e squadra reale servono solo se il giocatore non è già a database. Prezzo opzionale (default 0).
+          </p>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="inline-flex items-center gap-2 bg-white border rounded-lg px-3 py-2 text-sm cursor-pointer hover:border-green-400">
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFile}
+                className="hidden"
+              />
+              📂 Scegli file (.csv / .xlsx)
+            </label>
+            {fileName && <span className="text-sm text-gray-600">{fileName}</span>}
+          </div>
+
+          {parseError && <p className="text-sm text-red-600">{parseError}</p>}
+
+          {csvData && (
+            <>
+              <textarea
+                value={csvData}
+                onChange={(e) => setCsvData(e.target.value)}
+                rows={6}
+                className="w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <form
+                ref={importFormRef}
+                action={importAction}
+                onSubmit={() => {
+                  // reset dopo l'invio, il risultato arriva da importResult
+                  setTimeout(() => { setCsvData(""); setFileName(""); }, 0);
+                }}
+              >
+                <input type="hidden" name="csv" value={csvData} />
+                <button
+                  type="submit"
+                  disabled={importPending}
+                  className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg font-medium"
+                >
+                  {importPending ? "Importazione…" : "Importa rose"}
+                </button>
+              </form>
+            </>
+          )}
+
+          {importResult && (
+            <pre className="text-xs whitespace-pre-wrap bg-gray-50 border rounded-lg p-3 text-gray-700">{importResult}</pre>
+          )}
+        </div>
       </div>
 
       {/* Selettore squadra */}

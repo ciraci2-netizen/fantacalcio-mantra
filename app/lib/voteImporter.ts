@@ -139,16 +139,16 @@ async function autoGenerateLineup(
     return sorted.slice(0, n);
   };
 
-  const gk = pick(roster, ["Por"], 1);
-  const def = pick(roster.filter((p) => !gk.includes(p)), ["Dc", "Dd", "Ds"], 4);
+  const gk = pick(roster, ["POR"], 1);
+  const def = pick(roster.filter((p) => !gk.includes(p)), ["DC", "TER"], 4);
   const mid = pick(
     roster.filter((p) => !gk.includes(p) && !def.includes(p)),
-    ["M", "C", "T", "W"],
+    ["M", "OFF"],
     4
   );
   const att = pick(
     roster.filter((p) => !gk.includes(p) && !def.includes(p) && !mid.includes(p)),
-    ["A", "Pc"],
+    ["ATT"],
     2
   );
 

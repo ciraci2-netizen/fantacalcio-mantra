@@ -81,9 +81,9 @@ export async function GET(req: NextRequest) {
         hasFv: r.hasFv !== null,
       }));
 
-      const defRoles = ["Dc", "Dd", "Ds"];
-      const midRoles = ["M", "C", "T", "W"];
-      const attRoles = ["A", "Pc"];
+      const defRoles = ["DC", "TER"];
+      const midRoles = ["M", "OFF"];
+      const attRoles = ["ATT"];
 
       const pick = (pool: RP[], roles: string[], n: number): RP[] => {
         const sorted = pool
@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
         return sorted.slice(0, n);
       };
 
-      const gk = pick(roster, ["Por"], 1);
+      const gk = pick(roster, ["POR"], 1);
       const def = pick(
         roster.filter((p) => !gk.includes(p)),
         defRoles,

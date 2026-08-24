@@ -51,7 +51,7 @@ export async function generateCalendar(prevState: string | null, formData: FormD
 
   const usersRes = await db.execute(`SELECT id FROM "User" WHERE isAdmin = 0`);
   const users = usersRes.rows;
-  if (users.length !== 12) return `Servono esattamente 12 partecipanti (trovati: ${users.length}).`;
+  if (users.length !== 10) return `Servono esattamente 10 partecipanti (trovati: ${users.length}).`;
 
   const schedule = generateRoundRobin(users.map((u) => u.id as number));
 

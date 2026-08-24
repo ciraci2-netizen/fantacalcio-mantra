@@ -7,9 +7,8 @@ import SvincolatiClient from "./SvincolatiClient";
 export const metadata: Metadata = { title: "Svincolati" };
 
 const ROLE_LABEL: Record<string, string> = {
-  Por: "Portieri", Dc: "Difensori Centrali", Dd: "Terzini Destri",
-  Ds: "Terzini Sinistri", M: "Mediani", C: "Centrocampisti",
-  T: "Trequartisti", W: "Esterni", A: "Attaccanti", Pc: "Seconde Punte",
+  POR: "Portieri", DC: "Difensori Centrali", TER: "Terzini",
+  M: "Mediani", OFF: "Offensivi", ATT: "Attaccanti",
 };
 
 export default async function SvincolatiPage() {

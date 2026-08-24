@@ -17,7 +17,7 @@ const DEFAULT_BONUS_MALUS = [
 ];
 
 const DEFAULT_SECTIONS = [
-  { titolo: "Formazione", contenuto: "Ogni squadra schiera **11 titolari + 11 riserve** (totale 22 giocatori).\n\nModuli validi: **3-4-3 / 3-5-2 / 4-3-3 / 4-4-2 / 4-5-1 / 5-3-2 / 5-4-1**\n\n- 1 Portiere obbligatorio\n- Minimo 3 difensori\n- Minimo 1 attaccante\n- I ruoli Mantra sono: **Por, Dc, Dd, Ds, E, M, C, T, W, A, Pc**", sortOrder: 1 },
+  { titolo: "Formazione", contenuto: "Ogni squadra schiera **11 titolari + 11 riserve** (totale 22 giocatori).\n\nModuli validi: **3-4-3 / 3-5-2 / 4-3-3 / 4-4-2 / 4-5-1 / 5-3-2 / 5-4-1**\n\n- 1 Portiere obbligatorio\n- Minimo 3 difensori\n- Minimo 1 attaccante\n- I ruoli Mantra sono: **POR, DC, TER, M, OFF, ATT**", sortOrder: 1 },
   { titolo: "Sostituzioni Automatiche", contenuto: "Se un titolare **non gioca** (sv / non pervenuto), viene automaticamente sostituito dalla prima riserva disponibile con il ruolo compatibile.\n\nLe sostituzioni seguono l'ordine delle riserve indicato nella formazione.\n\nUna sostituzione non avviene se comprometterebbe i requisiti minimi di modulo.", sortOrder: 2 },
   { titolo: "Punteggi Partita", contenuto: "**Vittoria: 3 punti — Pareggio: 1 punto — Sconfitta: 0 punti**\n\nIl punteggio della partita è la somma dei fantavoti dei titolari (con eventuali sostituzioni automatiche).", sortOrder: 3 },
   { titolo: "Rosa", contenuto: "Ogni squadra ha una rosa di **massimo 26 giocatori**.\n\nLe rose vengono costruite tramite asta all'inizio della stagione.\n\nI giocatori possono essere ceduti o acquistati durante i **mercati** stagionali.", sortOrder: 4 },
@@ -158,4 +158,50 @@ export async function runMigrations() {
   try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "awayGoals" INTEGER`); } catch { /* già presente */ }
 
   return { success: true };
+}
+
+// Vecchio ruolo Mantra → nuovo ruolo semplificato
+const ROLE_MIGRATION_MAP: Record<string, string> = {
+  Por: "POR",
+  Dc: "DC",
+  Dd: "TER",
+  Ds: "TER",
+  M: "M",
+  C: "OFF",
+  T: "OFF",
+  W: "OFF",
+  E: "OFF",
+  A: "ATT",
+  Pc: "ATT",
+};
+
+const NEW_ROLES = new Set(["POR", "DC", "TER", "M", "OFF", "ATT"]);
+
+/** Converte i ruoli dei giocatori dal vecchio formato Mantra (Por/Dc/Dd/Ds/…) al nuovo (POR/DC/TER/M/OFF/ATT). Sicuro da eseguire più volte. */
+export async function migratePlayerRoles() {
+  const session = await getSession();
+  if (!session?.isAdmin) return { error: "Non autorizzato" };
+
+  const db = getDb();
+  const res = await db.execute(`SELECT id, name, mantraRole FROM "Player"`);
+
+  let updated = 0;
+  let skipped = 0;
+  const unknown: string[] = [];
+
+  for (const row of res.rows) {
+    const id = row.id as number;
+    const name = row.name as string;
+    const oldRole = row.mantraRole as string;
+
+    if (NEW_ROLES.has(oldRole)) { skipped++; continue; }
+
+    const newRole = ROLE_MIGRATION_MAP[oldRole];
+    if (!newRole) { unknown.push(`${name} ("${oldRole}")`); continue; }
+
+    await db.execute({ sql: `UPDATE "Player" SET mantraRole = ? WHERE id = ?`, args: [newRole, id] });
+    updated++;
+  }
+
+  return { success: true, updated, skipped, unknown };
 }

@@ -5,22 +5,17 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 
 const ROLE_BG: Record<string, string> = {
-  Por: "bg-yellow-100 text-yellow-800 border-yellow-300",
-  Dc:  "bg-blue-100 text-blue-800 border-blue-300",
-  Dd:  "bg-blue-100 text-blue-800 border-blue-300",
-  Ds:  "bg-blue-100 text-blue-800 border-blue-300",
+  POR: "bg-yellow-100 text-yellow-800 border-yellow-300",
+  DC:  "bg-blue-100 text-blue-800 border-blue-300",
+  TER: "bg-indigo-100 text-indigo-800 border-indigo-300",
   M:   "bg-green-100 text-green-800 border-green-300",
-  C:   "bg-green-100 text-green-800 border-green-300",
-  T:   "bg-green-100 text-green-800 border-green-300",
-  W:   "bg-green-100 text-green-800 border-green-300",
-  A:   "bg-red-100 text-red-800 border-red-300",
-  Pc:  "bg-red-100 text-red-800 border-red-300",
+  OFF: "bg-teal-100 text-teal-800 border-teal-300",
+  ATT: "bg-red-100 text-red-800 border-red-300",
 };
 
 const ROLE_LABEL: Record<string, string> = {
-  Por: "Portieri", Dc: "Difensori Centrali", Dd: "Terzini Destri", Ds: "Terzini Sinistri",
-  M: "Mediani", C: "Centrocampisti", T: "Trequartisti", W: "Esterni",
-  A: "Attaccanti", Pc: "Seconde Punte",
+  POR: "Portieri", DC: "Difensori Centrali", TER: "Terzini",
+  M: "Mediani", OFF: "Offensivi", ATT: "Attaccanti",
 };
 
 export default async function TeamDetailPage({ params }: { params: Promise<{ userId: string }> }) {

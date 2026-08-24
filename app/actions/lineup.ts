@@ -5,16 +5,16 @@ import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { log } from "@/app/lib/logger";
 
-const DEF_ROLES = new Set(["Dc", "Dd", "Ds"]);
-const MID_ROLES = new Set(["M", "C", "T", "W", "E"]);
-const ATT_ROLES = new Set(["A", "Pc"]);
+const DEF_ROLES = new Set(["DC", "TER"]);
+const MID_ROLES = new Set(["M", "OFF"]);
+const ATT_ROLES = new Set(["ATT"]);
 
 /** Validates that starters satisfy the minimum module requirements */
 function validateFormation(
   roles: string[],
   formation: string
 ): string | null {
-  const gkCount  = roles.filter((r) => r === "Por").length;
+  const gkCount  = roles.filter((r) => r === "POR").length;
   const defCount = roles.filter((r) => DEF_ROLES.has(r)).length;
   const attCount = roles.filter((r) => ATT_ROLES.has(r)).length;
 

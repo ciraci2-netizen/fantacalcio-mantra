@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/app/lib/db";
 import Link from "next/link";
 import MigrateButton from "./MigrateButton";
+import MigrateRolesButton from "./MigrateRolesButton";
 import QuickImportButton from "./QuickImportButton";
 
 export const metadata: Metadata = { title: "Admin" };
@@ -248,6 +249,7 @@ export default async function AdminPage() {
         </a>
       </div>
       <MigrateButton />
+      <MigrateRolesButton />
     </div>
   );
 }

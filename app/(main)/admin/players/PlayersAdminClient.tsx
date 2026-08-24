@@ -14,16 +14,12 @@ interface Player {
 }
 
 const ROLE_COLORS: Record<string, string> = {
-  Por: "bg-yellow-100 text-yellow-800",
-  Dc: "bg-blue-100 text-blue-800",
-  Dd: "bg-blue-100 text-blue-800",
-  Ds: "bg-blue-100 text-blue-800",
+  POR: "bg-yellow-100 text-yellow-800",
+  DC: "bg-blue-100 text-blue-800",
+  TER: "bg-indigo-100 text-indigo-800",
   M: "bg-green-100 text-green-800",
-  C: "bg-green-100 text-green-800",
-  T: "bg-green-100 text-green-800",
-  W: "bg-green-100 text-green-800",
-  A: "bg-red-100 text-red-800",
-  Pc: "bg-red-100 text-red-800",
+  OFF: "bg-teal-100 text-teal-800",
+  ATT: "bg-red-100 text-red-800",
 };
 
 export default function PlayersAdminClient({ players }: { players: Player[] }) {

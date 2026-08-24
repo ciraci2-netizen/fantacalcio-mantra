@@ -125,10 +125,10 @@ export async function scrapeVotes(matchday: number): Promise<ScrapedVote[]> {
 // Mappa ruolo fantapiu3 (P/D/C/A) a ruolo Mantra
 export function mapRoleToMantra(role: string): string {
   const map: Record<string, string> = {
-    P: "Por",
-    D: "Dc",
-    C: "C",
-    A: "A",
+    P: "POR",
+    D: "DC",
+    C: "OFF",
+    A: "ATT",
   };
-  return map[role.toUpperCase()] || "C";
+  return map[role.toUpperCase()] || "OFF";
 }

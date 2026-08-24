@@ -10,17 +10,17 @@ export interface PitchPlayer {
 
 // Role → display group (0=GK, 1=DEF, 2=MID, 3=ATT)
 const ROLE_ORDER: Record<string, number> = {
-  Por: 0,
-  Dc: 1, Dd: 1, Ds: 1,
-  M: 2, C: 2, T: 2, W: 2,
-  A: 3, Pc: 3,
+  POR: 0,
+  DC: 1, TER: 1,
+  M: 2, OFF: 2,
+  ATT: 3,
 };
 
 const ROLE_BG: Record<string, string> = {
-  Por: "#fde68a",
-  Dc: "#93c5fd", Dd: "#93c5fd", Ds: "#93c5fd",
-  M:  "#86efac", C:  "#86efac", T:  "#86efac", W: "#86efac",
-  A:  "#fca5a5", Pc: "#fca5a5",
+  POR: "#fde68a",
+  DC: "#93c5fd", TER: "#a5b4fc",
+  M:  "#86efac", OFF: "#5eead4",
+  ATT: "#fca5a5",
 };
 
 /** "Mario Rossi" → "M. Rossi" (capped at 10 chars) */
@@ -176,7 +176,7 @@ function PlayerDot({
           className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shadow-lg border-2 border-white/50"
           style={{ background: roleBg, color: "#1e293b" }}
         >
-          {player.role.slice(0, 2)}
+          {player.role}
         </div>
         {isOut && (
           <span
