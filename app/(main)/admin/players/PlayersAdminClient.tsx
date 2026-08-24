@@ -95,7 +95,7 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
               <strong>Import CSV rapido</strong> — formato: NOME,SQUADRA,RUOLO,NOME_FANTAPIU3 (una riga per giocatore)
             </p>
             <p className="text-xs text-gray-400">
-              Esempio: SALAH,LIVERPOOL,W,SALAH
+              Esempio: SALAH,LIVERPOOL,OFF,SALAH
             </p>
           </div>
         </div>
@@ -106,14 +106,14 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
           <h2 className="font-semibold text-gray-700 mb-3">Import CSV</h2>
           <p className="text-xs text-gray-500 mb-3">
             Formato: <code className="bg-gray-100 px-1 rounded">NOME,SQUADRA,RUOLO,NOME_FANTAPIU3</code> — una riga per giocatore.<br />
-            Esempio: <code className="bg-gray-100 px-1 rounded">SALAH,LIVERPOOL,W,SALAH</code>
+            Esempio: <code className="bg-gray-100 px-1 rounded">SALAH,LIVERPOOL,OFF,SALAH</code>
           </p>
           <form action={csvAction} className="space-y-3">
             <textarea
               name="csv"
               required
               rows={10}
-              placeholder={"SALAH,LIVERPOOL,W\nHAALAND,MANCITY,A,HAALAND"}
+              placeholder={"SALAH,LIVERPOOL,OFF\nHAALAND,MANCITY,ATT,HAALAND"}
               className="w-full border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {csvResult && (
