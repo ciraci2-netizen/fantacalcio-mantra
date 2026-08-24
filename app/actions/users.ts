@@ -17,7 +17,7 @@ export async function createUser(prevState: string | null, formData: FormData) {
 
   const db = getDb();
   const countRes = await db.execute(`SELECT COUNT(*) as c FROM "User" WHERE isAdmin = 0`);
-  if ((countRes.rows[0].c as number) >= 12) return "Hai già 12 partecipanti.";
+  if ((countRes.rows[0].c as number) >= 10) return "Hai già 10 partecipanti.";
 
   const existing = await db.execute({ sql: `SELECT id FROM "User" WHERE username = ?`, args: [username] });
   if (existing.rows.length > 0) return "Username già in uso.";

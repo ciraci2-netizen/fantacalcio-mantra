@@ -63,7 +63,7 @@ export default function UsersAdminClient({
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Gestisci Utenti</h1>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">{users.length} / 12 partecipanti</span>
+          <span className="text-sm text-gray-500">{users.length} / 10 partecipanti</span>
           <button
             onClick={() => setShowCreateForm(!showCreateForm)}
             className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium"

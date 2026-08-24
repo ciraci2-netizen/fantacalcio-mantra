@@ -80,7 +80,7 @@ export default async function AdminPage() {
   const votesImportedCount = votesImportedRes.rows[0].c as number;
 
   const cards = [
-    { href: "/admin/users",    icon: "👥", title: "Utenti",       desc: `${userCount} / 12 partecipanti`,         color: "purple" },
+    { href: "/admin/users",    icon: "👥", title: "Utenti",       desc: `${userCount} / 10 partecipanti`,         color: "purple" },
     { href: "/admin/players",  icon: "👤", title: "Giocatori",    desc: `${playerCount} nel database`,             color: "blue"   },
     { href: "/admin/schedule", icon: "📅", title: "Calendario",   desc: season ? `${season.name as string}` : "Nessuna stagione", color: "green" },
     { href: "/admin/votes",    icon: "📊", title: "Voti",         desc: `${votesImportedCount} giornate importate`, color: "amber" },
