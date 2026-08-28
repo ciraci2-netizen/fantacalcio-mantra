@@ -33,7 +33,7 @@ export default async function ScambiPage() {
 
   // All other users and their rosters
   const usersRes = await db.execute({
-    sql: `SELECT u.id, u.teamName, u.username FROM "User" u WHERE u.isAdmin = 0 AND u.id != ? ORDER BY u.teamName ASC`,
+    sql: `SELECT u.id, u.teamName, u.username FROM "User" u WHERE u.isParticipant = 1 AND u.id != ? ORDER BY u.teamName ASC`,
     args: [session.userId],
   });
 

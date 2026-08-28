@@ -49,7 +49,7 @@ export async function generateCalendar(prevState: string | null, formData: FormD
   });
   const matchdays = matchdaysRes.rows;
 
-  const usersRes = await db.execute(`SELECT id FROM "User" WHERE isAdmin = 0`);
+  const usersRes = await db.execute(`SELECT id FROM "User" WHERE isParticipant = 1`);
   const users = usersRes.rows;
   if (users.length !== 10) return `Servono esattamente 10 partecipanti (trovati: ${users.length}).`;
 
@@ -154,7 +154,7 @@ export async function importCalendarCsv(prevState: string | null, formData: Form
   const db = getDb();
 
   // Load all teams
-  const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isAdmin = 0`);
+  const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isParticipant = 1`);
   const teamByName = new Map<string, number>();
   for (const u of usersRes.rows) {
     teamByName.set((u.teamName as string).toLowerCase().trim(), u.id as number);

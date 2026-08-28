@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
 
     // 1. Auto-generate lineups for non-submitters
     const allUsersRes = await db.execute(
-      `SELECT id FROM "User" WHERE isAdmin = 0`
+      `SELECT id FROM "User" WHERE isParticipant = 1`
     );
 
     for (const user of allUsersRes.rows) {

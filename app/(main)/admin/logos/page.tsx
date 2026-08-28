@@ -9,7 +9,7 @@ export default async function AdminLogosPage() {
 
   const db = getDb();
   const usersRes = await db.execute(
-    `SELECT id, teamName, username, logoUrl FROM "User" WHERE isAdmin = 0 ORDER BY teamName ASC`
+    `SELECT id, teamName, username, logoUrl FROM "User" WHERE isParticipant = 1 ORDER BY teamName ASC`
   );
 
   const users = usersRes.rows.map((r) => ({

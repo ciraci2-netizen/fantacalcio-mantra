@@ -16,7 +16,7 @@ export async function createUser(prevState: string | null, formData: FormData) {
   if (!username || !password || !teamName) return "Compila tutti i campi.";
 
   const db = getDb();
-  const countRes = await db.execute(`SELECT COUNT(*) as c FROM "User" WHERE isAdmin = 0`);
+  const countRes = await db.execute(`SELECT COUNT(*) as c FROM "User" WHERE isParticipant = 1`);
   if ((countRes.rows[0].c as number) >= 10) return "Hai già 10 partecipanti.";
 
   const existing = await db.execute({ sql: `SELECT id FROM "User" WHERE username = ?`, args: [username] });
@@ -27,6 +27,36 @@ export async function createUser(prevState: string | null, formData: FormData) {
 
   revalidatePath("/admin/users");
   return null;
+}
+
+// ─── Admin toggle (account unico: presidente + admin) ──────────────────────
+export async function setUserAdmin(prevState: string | null, formData: FormData) {
+  const session = await getSession();
+  if (!session?.isAdmin) return "Non autorizzato.";
+
+  const userId = parseInt(formData.get("userId") as string);
+  const makeAdmin = formData.get("isAdmin") === "1";
+
+  const db = getDb();
+
+  if (!makeAdmin) {
+    // Sicurezza: non permettere di rimuovere l'ultimo admin rimasto.
+    const adminCountRes = await db.execute(`SELECT COUNT(*) as c FROM "User" WHERE isAdmin = 1`);
+    const adminCount = adminCountRes.rows[0].c as number;
+    const targetRes = await db.execute({ sql: `SELECT isAdmin FROM "User" WHERE id = ?`, args: [userId] });
+    const isCurrentlyAdmin = Boolean(targetRes.rows[0]?.isAdmin);
+    if (isCurrentlyAdmin && adminCount <= 1) {
+      return "Non puoi rimuovere l'ultimo account admin rimasto.";
+    }
+  }
+
+  await db.execute({
+    sql: `UPDATE "User" SET isAdmin = ? WHERE id = ?`,
+    args: [makeAdmin ? 1 : 0, userId],
+  });
+
+  revalidatePath("/admin/users");
+  return "ok";
 }
 
 export async function updateUserPassword(prevState: string | null, formData: FormData) {

@@ -60,7 +60,7 @@ export default async function AdminSettingsPage() {
               COUNT(r.id) as rosterCount
        FROM "User" u
        LEFT JOIN "Roster" r ON r.userId = u.id
-       WHERE u.isAdmin = 0
+       WHERE u.isParticipant = 1
        GROUP BY u.id
        ORDER BY u.teamName ASC`
     );
@@ -80,7 +80,7 @@ export default async function AdminSettingsPage() {
               COUNT(r.id) as rosterCount
        FROM "User" u
        LEFT JOIN "Roster" r ON r.userId = u.id
-       WHERE u.isAdmin = 0
+       WHERE u.isParticipant = 1
        GROUP BY u.id
        ORDER BY u.teamName ASC`
     );

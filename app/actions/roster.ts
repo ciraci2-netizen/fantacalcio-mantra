@@ -100,7 +100,7 @@ export async function importRosterCSV(prevState: string | null, formData: FormDa
   const db = getDb();
   const { numPortieri, numMovimento } = await getRosterLimits(db);
 
-  const usersRes = await db.execute(`SELECT id, teamName, username FROM "User" WHERE isAdmin = 0`);
+  const usersRes = await db.execute(`SELECT id, teamName, username FROM "User" WHERE isParticipant = 1`);
   const userByKey = new Map<string, { id: number; teamName: string }>();
   for (const u of usersRes.rows) {
     userByKey.set((u.teamName as string).toLowerCase().trim(), { id: u.id as number, teamName: u.teamName as string });

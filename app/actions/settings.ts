@@ -79,7 +79,7 @@ export async function setUserCredits(prevState: string | null, formData: FormDat
 
   const db = getDb();
   await db.execute({
-    sql: `UPDATE "User" SET credits = ? WHERE id = ? AND isAdmin = 0`,
+    sql: `UPDATE "User" SET credits = ? WHERE id = ? AND isParticipant = 1`,
     args: [credits, userId],
   });
 

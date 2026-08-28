@@ -25,6 +25,7 @@ export async function autoMigrate(): Promise<void> {
     `ALTER TABLE "LeagueSettings" ADD COLUMN scoreConversion TEXT`,
     `ALTER TABLE "LeagueSettings" ADD COLUMN numPortieri INTEGER NOT NULL DEFAULT 3`,
     `ALTER TABLE "LeagueSettings" ADD COLUMN numMovimento INTEGER NOT NULL DEFAULT 23`,
+    `ALTER TABLE "User" ADD COLUMN isParticipant INTEGER NOT NULL DEFAULT 1`,
 
     // Table creations (idempotent via IF NOT EXISTS)
     `CREATE TABLE IF NOT EXISTS "LeagueMessage" (

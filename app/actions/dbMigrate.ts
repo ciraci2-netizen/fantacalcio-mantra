@@ -161,6 +161,15 @@ export async function runMigrations() {
   try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "homeGoals" INTEGER`); } catch { /* già presente */ }
   try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "awayGoals" INTEGER`); } catch { /* già presente */ }
 
+  // isParticipant: distingue "squadra reale in gara" da isAdmin (permesso).
+  // Permette a un account di essere ALLO STESSO TEMPO admin e presidente di
+  // una squadra. Default true per tutti; false solo per l'account admin
+  // "tecnico" originale (username 'admin', senza squadra reale).
+  try { await db.execute(`ALTER TABLE "User" ADD COLUMN "isParticipant" INTEGER NOT NULL DEFAULT 1`); } catch { /* già presente */ }
+  try {
+    await db.execute(`UPDATE "User" SET isParticipant = 0 WHERE username = 'admin'`);
+  } catch { /* colonna non ancora presente al primo giro, riprovare eseguendo di nuovo */ }
+
   return { success: true };
 }
 

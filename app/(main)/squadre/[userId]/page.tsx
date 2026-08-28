@@ -33,7 +33,7 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ use
   const db = getDb();
 
   const userRes = await db.execute({
-    sql: `SELECT id, teamName, username FROM "User" WHERE id = ? AND isAdmin = 0`,
+    sql: `SELECT id, teamName, username FROM "User" WHERE id = ? AND isParticipant = 1`,
     args: [userId],
   });
   if (userRes.rows.length === 0) notFound();

@@ -20,7 +20,7 @@ export default async function SquadrePage() {
      FROM "User" u
      LEFT JOIN "Roster" r ON r.userId = u.id
      LEFT JOIN "Player" p ON p.id = r.playerId
-     WHERE u.isAdmin = 0
+     WHERE u.isParticipant = 1
      GROUP BY u.id
      ORDER BY u.teamName ASC`
   );

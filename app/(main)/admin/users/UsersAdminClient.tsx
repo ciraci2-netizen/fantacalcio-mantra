@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { createUser, updateUserPassword, deleteUser } from "@/app/actions/users";
+import { createUser, updateUserPassword, deleteUser, setUserAdmin } from "@/app/actions/users";
 import { addPlayerToRoster, removePlayerFromRoster } from "@/app/actions/roster";
 
 interface RosterEntry {
@@ -17,6 +17,7 @@ interface User {
   id: number;
   username: string;
   teamName: string;
+  isAdmin: boolean;
   roster: RosterEntry[];
 }
 
@@ -105,7 +106,14 @@ export default function UsersAdminClient({
               onClick={() => setExpandedUser(expandedUser === user.id ? null : user.id)}
             >
               <div>
-                <p className="font-semibold text-gray-800">{user.teamName}</p>
+                <p className="font-semibold text-gray-800">
+                  {user.teamName}
+                  {user.isAdmin && (
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-700 align-middle">
+                      Admin
+                    </span>
+                  )}
+                </p>
                 <p className="text-sm text-gray-400">@{user.username}</p>
               </div>
               <div className="flex items-center gap-3">
@@ -120,6 +128,7 @@ export default function UsersAdminClient({
               <div className="border-t px-5 py-4 space-y-4">
                 <div className="flex flex-wrap gap-2">
                   <PasswordResetForm userId={user.id} />
+                  <AdminToggleForm userId={user.id} isAdmin={user.isAdmin} />
                   <form action={deleteAction}>
                     <input type="hidden" name="userId" value={user.id} />
                     <button
@@ -193,6 +202,33 @@ export default function UsersAdminClient({
         ))}
       </div>
     </div>
+  );
+}
+
+/* ── Toggle "è anche admin" — per account unico (presidente + admin) ────── */
+function AdminToggleForm({ userId, isAdmin }: { userId: number; isAdmin: boolean }) {
+  const [state, action, pending] = useActionState(setUserAdmin, null);
+  const error = state && state !== "ok" ? state : null;
+
+  return (
+    <form action={action} className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <input type="hidden" name="userId" value={userId} />
+        <input type="hidden" name="isAdmin" value={isAdmin ? "0" : "1"} />
+        <button
+          type="submit"
+          disabled={pending}
+          className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap disabled:opacity-50 ${
+            isAdmin
+              ? "bg-purple-100 hover:bg-purple-200 text-purple-800"
+              : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+          }`}
+        >
+          {pending ? "..." : isAdmin ? "★ Rimuovi admin" : "☆ Rendi admin"}
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
+    </form>
   );
 }
 

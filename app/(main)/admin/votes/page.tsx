@@ -32,7 +32,7 @@ export default async function AdminVotesPage() {
   ) ?? null;
 
   // Lineup submission status for the current matchday
-  const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isAdmin = 0 ORDER BY teamName ASC`);
+  const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isParticipant = 1 ORDER BY teamName ASC`);
   let lineupSubmissions: { userId: number; teamName: string; submitted: boolean; score: number | null }[] = [];
 
   if (currentMd) {

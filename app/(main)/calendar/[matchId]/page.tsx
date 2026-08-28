@@ -48,7 +48,7 @@ export default async function MatchDetailPage({
   // Load logos
   const logoMap: Record<number, string | null> = {};
   try {
-    const logoRes = await db.execute(`SELECT id, logoUrl FROM "User" WHERE isAdmin = 0`);
+    const logoRes = await db.execute(`SELECT id, logoUrl FROM "User" WHERE isParticipant = 1`);
     for (const row of logoRes.rows) {
       logoMap[row.id as number] = (row.logoUrl as string | null) ?? null;
     }

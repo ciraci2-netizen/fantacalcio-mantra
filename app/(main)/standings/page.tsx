@@ -43,7 +43,7 @@ async function getStandings(seasonId: number): Promise<StandingRow[]> {
             JOIN "Matchday" md ON md.id = m2.matchdayId
             WHERE md.seasonId = ? AND m2.homePoints IS NOT NULL
           ) m ON m.homeUserId = u.id OR m.awayUserId = u.id
-          WHERE u.isAdmin = 0
+          WHERE u.isParticipant = 1
           GROUP BY u.id
           ORDER BY points DESC, gf DESC`,
     args: [seasonId],
@@ -51,7 +51,7 @@ async function getStandings(seasonId: number): Promise<StandingRow[]> {
 
   const logoMap: Record<number, string | null> = {};
   try {
-    const logoRes = await db.execute(`SELECT id, logoUrl FROM "User" WHERE isAdmin = 0`);
+    const logoRes = await db.execute(`SELECT id, logoUrl FROM "User" WHERE isParticipant = 1`);
     for (const row of logoRes.rows) {
       logoMap[row.id as number] = (row.logoUrl as string | null) ?? null;
     }

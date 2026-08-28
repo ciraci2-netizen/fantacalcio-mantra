@@ -10,7 +10,7 @@ export default async function AdminUsersPage() {
   const db = getDb();
 
   const usersRes = await db.execute(
-    `SELECT id, username, teamName FROM "User" WHERE isAdmin = 0 ORDER BY id ASC`
+    `SELECT id, username, teamName, isAdmin FROM "User" WHERE isParticipant = 1 ORDER BY id ASC`
   );
 
   const usersData = [];
@@ -28,6 +28,7 @@ export default async function AdminUsersPage() {
       id: user.id as number,
       username: user.username as string,
       teamName: user.teamName as string,
+      isAdmin: Boolean(user.isAdmin),
       roster: rosterRes.rows.map((r) => ({
         id: r.id as number,
         playerId: r.playerId as number,

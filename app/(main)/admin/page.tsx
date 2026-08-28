@@ -41,7 +41,7 @@ export default async function AdminPage() {
       };
 
       // Who has/hasn't submitted lineup
-      const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isAdmin = 0 ORDER BY teamName ASC`);
+      const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isParticipant = 1 ORDER BY teamName ASC`);
       const submittedRes = await db.execute({
         sql: `SELECT userId FROM "Lineup" WHERE matchdayId = ?`,
         args: [matchday.id],
@@ -69,7 +69,7 @@ export default async function AdminPage() {
   // ── Quick stats ──────────────────────────────────────────────────────────
   const [playerCountRes, userCountRes, votesImportedRes] = await Promise.all([
     db.execute(`SELECT COUNT(*) as c FROM "Player"`),
-    db.execute(`SELECT COUNT(*) as c FROM "User" WHERE isAdmin = 0`),
+    db.execute(`SELECT COUNT(*) as c FROM "User" WHERE isParticipant = 1`),
     season
       ? db.execute({ sql: `SELECT COUNT(*) as c FROM "Matchday" WHERE seasonId = ? AND votesImported = 1`, args: [season.id] })
       : Promise.resolve({ rows: [{ c: 0 }] }),

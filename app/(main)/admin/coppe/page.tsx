@@ -51,7 +51,7 @@ export default async function AdminCoppePage() {
     })
   );
 
-  const usersRes = await db.execute(`SELECT id, teamName, username FROM "User" WHERE isAdmin = 0 ORDER BY teamName ASC`);
+  const usersRes = await db.execute(`SELECT id, teamName, username FROM "User" WHERE isParticipant = 1 ORDER BY teamName ASC`);
   const users = usersRes.rows.map((u) => ({ id: u.id as number, teamName: u.teamName as string, username: u.username as string }));
 
   return (

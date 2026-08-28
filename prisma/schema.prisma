@@ -18,6 +18,13 @@ model User {
   password    String
   teamName    String
   isAdmin     Boolean  @default(false)
+  /// Se true, l'utente è una squadra reale in gara (conta per il tetto di
+  /// 10, compare in classifiche/calendario/mercato/ecc). Serve per poter
+  /// avere un account che è ALLO STESSO TEMPO admin e presidente di una
+  /// squadra: isAdmin resta solo un permesso, isParticipant distingue chi
+  /// gioca davvero. Di default true; è false solo per l'account admin
+  /// "tecnico" senza squadra.
+  isParticipant Boolean @default(true)
   credits     Int      @default(500)
   createdAt   DateTime @default(now())
   roster      Roster[]

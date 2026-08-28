@@ -51,7 +51,7 @@ export default async function AdminMercatoPage() {
     })
   );
 
-  const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isAdmin = 0 ORDER BY teamName ASC`);
+  const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isParticipant = 1 ORDER BY teamName ASC`);
   const users = usersRes.rows.map((u) => ({ id: u.id as number, teamName: u.teamName as string }));
 
   return (

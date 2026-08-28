@@ -13,7 +13,7 @@ export default async function AdminRosterPage() {
 
   // Tutti gli utenti con le loro rose (in un'unica query per efficienza)
   const usersRes = await db.execute(
-    `SELECT id, teamName, username, credits, logoUrl FROM "User" WHERE isAdmin = 0 ORDER BY teamName ASC`
+    `SELECT id, teamName, username, credits, logoUrl FROM "User" WHERE isParticipant = 1 ORDER BY teamName ASC`
   );
 
   const rosterRes = await db.execute(

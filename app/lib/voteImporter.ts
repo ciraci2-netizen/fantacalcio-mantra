@@ -217,7 +217,7 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
   } catch { /* table not yet migrated */ }
 
   // Auto-generate for non-submitters
-  const allUsersRes = await db.execute(`SELECT id FROM "User" WHERE isAdmin = 0`);
+  const allUsersRes = await db.execute(`SELECT id FROM "User" WHERE isParticipant = 1`);
   for (const user of allUsersRes.rows) {
     await autoGenerateLineup(user.id as number, matchdayId, db);
   }
