@@ -44,6 +44,51 @@ export const DEFAULT_SCORING: ScoringConfig = {
 export const MANTRA_ROLES = ["POR", "TER", "DC", "M", "OFF", "ATT"] as const;
 export type MantraRole = (typeof MANTRA_ROLES)[number];
 
+// Alias comuni (nomi per esteso / sigle classiche fantacalcio) che vengono
+// mappati sui codici Mantra canonici sopra, così un import da Excel/CSV con
+// "PORTIERE", "TERZINO", ecc. invece delle sigle non fallisce inutilmente.
+const MANTRA_ROLE_ALIASES: Record<string, MantraRole> = {
+  PORTIERE: "POR",
+
+  "DIFENSORE CENTRALE": "DC",
+  DIFENSORE: "DC",
+  CENTRALE: "DC",
+
+  TERZINO: "TER",
+  "TERZINO DESTRO": "TER",
+  "TERZINO SINISTRO": "TER",
+  "ESTERNO BASSO": "TER",
+  "ESTERNO DIFENSIVO": "TER",
+  DD: "TER",
+  DS: "TER",
+
+  CENTROCAMPISTA: "M",
+  MEDIANO: "M",
+  MEZZALA: "M",
+  REGISTA: "M",
+
+  TREQUARTISTA: "OFF",
+  "ESTERNO ALTO": "OFF",
+  "ESTERNO OFFENSIVO": "OFF",
+  ALA: "OFF",
+  OFFENSIVO: "OFF",
+
+  ATTACCANTE: "ATT",
+  PUNTA: "ATT",
+  "PRIMA PUNTA": "ATT",
+};
+
+/**
+ * Normalizza un ruolo in input (case-insensitive, spazi liberi) verso una
+ * delle sigle Mantra canoniche. Ritorna null se non riconosciuto.
+ */
+export function normalizeMantraRole(input: string | null | undefined): MantraRole | null {
+  const clean = input?.toUpperCase().trim().replace(/\s+/g, " ");
+  if (!clean) return null;
+  if ((MANTRA_ROLES as readonly string[]).includes(clean)) return clean as MantraRole;
+  return MANTRA_ROLE_ALIASES[clean] ?? null;
+}
+
 // Formazioni valide Mantra (difensori-centrocampisti-attaccanti)
 export const VALID_FORMATIONS = [
   "3-4-3", "3-5-2", "3-4-2-1", "3-3-3-1",

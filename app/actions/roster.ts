@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
-import { MANTRA_ROLES } from "@/app/lib/scoring";
+import { normalizeMantraRole } from "@/app/lib/scoring";
 
 export async function addPlayerToRoster(prevState: string | null, formData: FormData) {
   const session = await getSession();
@@ -122,14 +122,14 @@ export async function importRosterCSV(prevState: string | null, formData: FormDa
     let playerId = playerByName.get(playerKey);
 
     if (!playerId) {
-      const ruolo = ruoloRaw?.toUpperCase();
       const squadraReale = squadraRealeRaw?.toUpperCase();
-      if (!ruolo || !squadraReale) {
+      if (!ruoloRaw || !squadraReale) {
         errors.push(`Giocatore "${giocatoreRaw}" non trovato nel database e mancano ruolo/squadra reale per crearlo.`);
         continue;
       }
-      if (!MANTRA_ROLES.includes(ruolo as never)) {
-        errors.push(`Ruolo non valido per "${giocatoreRaw}": ${ruolo}`);
+      const ruolo = normalizeMantraRole(ruoloRaw);
+      if (!ruolo) {
+        errors.push(`Ruolo non valido per "${giocatoreRaw}": ${ruoloRaw}`);
         continue;
       }
       const insertRes = await db.execute({

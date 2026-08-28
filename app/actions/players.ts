@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
-import { MANTRA_ROLES } from "@/app/lib/scoring";
+import { MANTRA_ROLES, normalizeMantraRole } from "@/app/lib/scoring";
 
 export async function createPlayer(prevState: string | null, formData: FormData) {
   const session = await getSession();
@@ -79,8 +79,9 @@ export async function importPlayersCSV(prevState: string | null, formData: FormD
   for (const line of lines) {
     const parts = line.split(",").map((p) => p.trim());
     if (parts.length < 3) { errors.push(`Riga non valida: ${line}`); continue; }
-    const [name, realTeam, mantraRole, fantapiu3Name] = parts;
-    if (!MANTRA_ROLES.includes(mantraRole as never)) { errors.push(`Ruolo non valido per ${name}: ${mantraRole}`); continue; }
+    const [name, realTeam, mantraRoleRaw, fantapiu3Name] = parts;
+    const mantraRole = normalizeMantraRole(mantraRoleRaw);
+    if (!mantraRole) { errors.push(`Ruolo non valido per ${name}: ${mantraRoleRaw}`); continue; }
     try {
       await db.execute({
         sql: `INSERT OR IGNORE INTO "Player" (name, realTeam, mantraRole, fantapiu3Name) VALUES (?, ?, ?, ?)`,
