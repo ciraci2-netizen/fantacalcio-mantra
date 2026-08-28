@@ -41,7 +41,13 @@ export default async function AdminPage() {
       };
 
       // Who has/hasn't submitted lineup
-      const usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isParticipant = 1 ORDER BY teamName ASC`);
+      let usersRes;
+      try {
+        usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isParticipant = 1 ORDER BY teamName ASC`);
+      } catch {
+        // isParticipant non ancora migrata: fallback al vecchio filtro
+        usersRes = await db.execute(`SELECT id, teamName FROM "User" WHERE isAdmin = 0 ORDER BY teamName ASC`);
+      }
       const submittedRes = await db.execute({
         sql: `SELECT userId FROM "Lineup" WHERE matchdayId = ?`,
         args: [matchday.id],
@@ -69,7 +75,14 @@ export default async function AdminPage() {
   // ── Quick stats ──────────────────────────────────────────────────────────
   const [playerCountRes, userCountRes, votesImportedRes] = await Promise.all([
     db.execute(`SELECT COUNT(*) as c FROM "Player"`),
-    db.execute(`SELECT COUNT(*) as c FROM "User" WHERE isParticipant = 1`),
+    (async () => {
+      try {
+        return await db.execute(`SELECT COUNT(*) as c FROM "User" WHERE isParticipant = 1`);
+      } catch {
+        // isParticipant non ancora migrata: fallback al vecchio filtro
+        return await db.execute(`SELECT COUNT(*) as c FROM "User" WHERE isAdmin = 0`);
+      }
+    })(),
     season
       ? db.execute({ sql: `SELECT COUNT(*) as c FROM "Matchday" WHERE seasonId = ? AND votesImported = 1`, args: [season.id] })
       : Promise.resolve({ rows: [{ c: 0 }] }),
