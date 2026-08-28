@@ -2,6 +2,7 @@
 
 import { useActionState, useState, useMemo } from "react";
 import { saveLeagueSettings, setUserCredits } from "@/app/actions/settings";
+import { MIN_PORTIERI, MAX_PORTIERI, MIN_MOVIMENTO, MAX_MOVIMENTO } from "@/app/lib/leagueSettings";
 
 type User = {
   id: number;
@@ -19,6 +20,8 @@ type Props = {
     initialCredits: number;
     maxSubstitutions: number;
     homeAdvantage: number;
+    numPortieri: number;
+    numMovimento: number;
     scoreConversion: {
       enabled: boolean;
       minScore: number;
@@ -31,6 +34,10 @@ type Props = {
 export default function SettingsClient({ seasonId, seasonName, settings, users }: Props) {
   const [settingsResult, settingsAction, settingsPending] = useActionState(saveLeagueSettings, null);
   const [creditsResult, creditsAction, creditsPending] = useActionState(setUserCredits, null);
+
+  /* ── Slot rosa: portieri / movimento ──────────────────────── */
+  const [numPortieri, setNumPortieri] = useState<number>(settings.numPortieri);
+  const [numMovimento, setNumMovimento] = useState<number>(settings.numMovimento);
 
   /* ── Fattore campo ────────────────────────────────────────── */
   const [homeAdv, setHomeAdv] = useState<number>(settings.homeAdvantage);
@@ -71,6 +78,9 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
 
       <form action={settingsAction} className="space-y-6">
         <input type="hidden" name="seasonId" value={seasonId} />
+        {/* Slot rosa */}
+        <input type="hidden" name="numPortieri" value={numPortieri} />
+        <input type="hidden" name="numMovimento" value={numMovimento} />
         {/* Fattore campo */}
         <input type="hidden" name="homeAdvantage" value={homeAdv} />
         {/* Conversione punteggio → gol */}
@@ -110,6 +120,57 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
               />
               <p className="text-xs text-gray-400 mt-1">Quante riserve possono entrare automaticamente per titolari senza voto (es. 3)</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Card 1b: Slot rosa ─────────────────────────────── */}
+        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+          <div className="bg-blue-50 border-b border-blue-100 px-5 py-3 flex items-center gap-2">
+            <span className="text-lg">👥</span>
+            <h2 className="font-semibold text-gray-700">Composizione rosa</h2>
+          </div>
+          <div className="p-5">
+            <p className="text-sm text-gray-600 mb-4">
+              Imposta quanti slot ha ogni rosa per <strong>portieri</strong> e per{" "}
+              <strong>giocatori di movimento</strong> (DC, TER, M, OFF, ATT).
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1">
+                  Slot portieri
+                </label>
+                <input
+                  type="number"
+                  min={MIN_PORTIERI}
+                  max={MAX_PORTIERI}
+                  value={numPortieri}
+                  onChange={(e) => setNumPortieri(parseInt(e.target.value) || MIN_PORTIERI)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Da {MIN_PORTIERI} a {MAX_PORTIERI} portieri per rosa
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1">
+                  Slot giocatori di movimento
+                </label>
+                <input
+                  type="number"
+                  min={MIN_MOVIMENTO}
+                  max={MAX_MOVIMENTO}
+                  value={numMovimento}
+                  onChange={(e) => setNumMovimento(parseInt(e.target.value) || MIN_MOVIMENTO)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Da {MIN_MOVIMENTO} a {MAX_MOVIMENTO} giocatori di movimento per rosa
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-sm text-blue-800">
+              Totale rosa: <strong>{numPortieri + numMovimento} giocatori</strong> ({numPortieri} portieri + {numMovimento} movimento)
             </div>
           </div>
         </div>

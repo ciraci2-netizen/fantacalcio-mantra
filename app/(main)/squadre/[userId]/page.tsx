@@ -1,6 +1,7 @@
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { MANTRA_ROLES } from "@/app/lib/scoring";
+import { getRosterLimits } from "@/app/lib/leagueSettings";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 
@@ -61,6 +62,11 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ use
     byRole[r.player.mantraRole].push(r);
   }
 
+  const { numPortieri, numMovimento } = await getRosterLimits(db);
+  const porCount = byRole["POR"]?.length ?? 0;
+  const movCount = roster.length - porCount;
+  const rosterComplete = porCount === numPortieri && movCount === numMovimento;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -74,8 +80,8 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ use
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${roster.length === 26 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-            {roster.length} / 26 giocatori
+          <span className={`px-3 py-1.5 rounded-full text-sm font-semibold ${rosterComplete ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+            POR {porCount}/{numPortieri} · MOV {movCount}/{numMovimento}
           </span>
           <Link href="/squadre" className="text-green-600 text-sm hover:underline">← Tutte le squadre</Link>
         </div>

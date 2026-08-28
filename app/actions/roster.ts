@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { normalizeMantraRole } from "@/app/lib/scoring";
+import { getRosterLimits } from "@/app/lib/leagueSettings";
 
 export async function addPlayerToRoster(prevState: string | null, formData: FormData) {
   const session = await getSession();
@@ -15,8 +16,25 @@ export async function addPlayerToRoster(prevState: string | null, formData: Form
 
   const db = getDb();
 
-  const countRes = await db.execute({ sql: `SELECT COUNT(*) as c FROM "Roster" WHERE userId = ?`, args: [userId] });
-  if ((countRes.rows[0].c as number) >= 26) return "La rosa è già completa (26 giocatori).";
+  const playerRes = await db.execute({ sql: `SELECT mantraRole FROM "Player" WHERE id = ?`, args: [playerId] });
+  const mantraRole = playerRes.rows[0]?.mantraRole as string | undefined;
+  if (!mantraRole) return "Giocatore non trovato.";
+
+  const { numPortieri, numMovimento } = await getRosterLimits(db);
+  const isPor = mantraRole === "POR";
+  const limit = isPor ? numPortieri : numMovimento;
+
+  const countRes = await db.execute({
+    sql: isPor
+      ? `SELECT COUNT(*) as c FROM "Roster" r JOIN "Player" p ON p.id = r.playerId WHERE r.userId = ? AND p.mantraRole = 'POR'`
+      : `SELECT COUNT(*) as c FROM "Roster" r JOIN "Player" p ON p.id = r.playerId WHERE r.userId = ? AND p.mantraRole != 'POR'`,
+    args: [userId],
+  });
+  if ((countRes.rows[0].c as number) >= limit) {
+    return isPor
+      ? `Slot portieri già al completo (${limit}).`
+      : `Slot giocatori di movimento già al completo (${limit}).`;
+  }
 
   const existing = await db.execute({ sql: `SELECT id FROM "Roster" WHERE playerId = ?`, args: [playerId] });
   if (existing.rows.length > 0) return "Questo giocatore è già nella rosa di un altro utente.";
@@ -80,6 +98,7 @@ export async function importRosterCSV(prevState: string | null, formData: FormDa
   if (!csv) return "Nessun dato da importare.";
 
   const db = getDb();
+  const { numPortieri, numMovimento } = await getRosterLimits(db);
 
   const usersRes = await db.execute(`SELECT id, teamName, username FROM "User" WHERE isAdmin = 0`);
   const userByKey = new Map<string, { id: number; teamName: string }>();
@@ -88,15 +107,29 @@ export async function importRosterCSV(prevState: string | null, formData: FormDa
     userByKey.set((u.username as string).toLowerCase().trim(), { id: u.id as number, teamName: u.teamName as string });
   }
 
-  const playersRes = await db.execute(`SELECT id, name FROM "Player"`);
+  const playersRes = await db.execute(`SELECT id, name, mantraRole FROM "Player"`);
   const playerByName = new Map<string, number>();
+  const roleById = new Map<number, string>();
   for (const p of playersRes.rows) {
     playerByName.set((p.name as string).toLowerCase().trim(), p.id as number);
+    roleById.set(p.id as number, p.mantraRole as string);
   }
 
-  const rosterCountRes = await db.execute(`SELECT userId, COUNT(*) as c FROM "Roster" GROUP BY userId`);
-  const rosterCount = new Map<number, number>();
-  for (const r of rosterCountRes.rows) rosterCount.set(r.userId as number, r.c as number);
+  // Conteggi rosa correnti, separati per portieri e movimento
+  const rosterCountRes = await db.execute(`
+    SELECT r.userId,
+           SUM(CASE WHEN p.mantraRole = 'POR' THEN 1 ELSE 0 END) as porCount,
+           SUM(CASE WHEN p.mantraRole != 'POR' THEN 1 ELSE 0 END) as movCount
+    FROM "Roster" r
+    JOIN "Player" p ON p.id = r.playerId
+    GROUP BY r.userId
+  `);
+  const porCount = new Map<number, number>();
+  const movCount = new Map<number, number>();
+  for (const r of rosterCountRes.rows) {
+    porCount.set(r.userId as number, (r.porCount as number) ?? 0);
+    movCount.set(r.userId as number, (r.movCount as number) ?? 0);
+  }
 
   const takenRes = await db.execute(`SELECT playerId FROM "Roster"`);
   const takenPlayers = new Set<number>(takenRes.rows.map((r) => r.playerId as number));
@@ -120,6 +153,7 @@ export async function importRosterCSV(prevState: string | null, formData: FormDa
 
     const playerKey = giocatoreRaw.toLowerCase();
     let playerId = playerByName.get(playerKey);
+    let role = playerId ? roleById.get(playerId) : undefined;
 
     if (!playerId) {
       const squadraReale = squadraRealeRaw?.toUpperCase();
@@ -138,13 +172,22 @@ export async function importRosterCSV(prevState: string | null, formData: FormDa
       });
       playerId = Number(insertRes.lastInsertRowid);
       playerByName.set(playerKey, playerId);
+      roleById.set(playerId, ruolo);
+      role = ruolo;
       created++;
     }
 
     if (takenPlayers.has(playerId)) { errors.push(`"${giocatoreRaw}" è già in una rosa.`); continue; }
 
-    const currentCount = rosterCount.get(user.id) ?? 0;
-    if (currentCount >= 26) { errors.push(`Rosa di "${user.teamName}" già completa (26 giocatori).`); continue; }
+    const isPor = role === "POR";
+    const limit = isPor ? numPortieri : numMovimento;
+    const currentCount = (isPor ? porCount.get(user.id) : movCount.get(user.id)) ?? 0;
+    if (currentCount >= limit) {
+      errors.push(
+        `Rosa di "${user.teamName}" già completa per ${isPor ? "portieri" : "giocatori di movimento"} (${limit}).`
+      );
+      continue;
+    }
 
     const purchasePrice = parseInt(prezzoRaw) || 0;
 
@@ -153,7 +196,8 @@ export async function importRosterCSV(prevState: string | null, formData: FormDa
       args: [user.id, playerId, purchasePrice],
     });
     takenPlayers.add(playerId);
-    rosterCount.set(user.id, currentCount + 1);
+    if (isPor) porCount.set(user.id, currentCount + 1);
+    else movCount.set(user.id, currentCount + 1);
     imported++;
   }
 

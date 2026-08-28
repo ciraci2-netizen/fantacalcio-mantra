@@ -3,6 +3,7 @@ import { getSession } from "@/app/lib/session";
 import { redirect } from "next/navigation";
 import SettingsClient from "./SettingsClient";
 import { DEFAULT_GOAL_THRESHOLDS, DEFAULT_SCORE_CONVERSION } from "@/app/lib/scoring";
+import { DEFAULT_PORTIERI, DEFAULT_MOVIMENTO } from "@/app/lib/leagueSettings";
 
 export default async function AdminSettingsPage() {
   const session = await getSession();
@@ -22,11 +23,13 @@ export default async function AdminSettingsPage() {
     goalThresholds: DEFAULT_GOAL_THRESHOLDS,
     homeAdvantage: 0,
     scoreConversion: DEFAULT_SCORE_CONVERSION,
+    numPortieri: DEFAULT_PORTIERI,
+    numMovimento: DEFAULT_MOVIMENTO,
   };
   if (season) {
     try {
       const settingsRes = await db.execute({
-        sql: `SELECT initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion FROM "LeagueSettings" WHERE seasonId = ?`,
+        sql: `SELECT initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento FROM "LeagueSettings" WHERE seasonId = ?`,
         args: [season.id],
       });
       const raw = settingsRes.rows[0];
@@ -35,6 +38,8 @@ export default async function AdminSettingsPage() {
           initialCredits: (raw.initialCredits as number) ?? 500,
           maxSubstitutions: (raw.maxSubstitutions as number) ?? 3,
           homeAdvantage: (raw.homeAdvantage as number) ?? 0,
+          numPortieri: (raw.numPortieri as number) ?? DEFAULT_PORTIERI,
+          numMovimento: (raw.numMovimento as number) ?? DEFAULT_MOVIMENTO,
           goalThresholds: raw.goalThresholds
             ? (() => { try { return JSON.parse(raw.goalThresholds as string); } catch { return DEFAULT_GOAL_THRESHOLDS; } })()
             : DEFAULT_GOAL_THRESHOLDS,

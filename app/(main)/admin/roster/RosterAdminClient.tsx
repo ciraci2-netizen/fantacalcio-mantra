@@ -20,10 +20,14 @@ type FreePlayer = { id: number; name: string; realTeam: string; mantraRole: stri
 export default function RosterAdminClient({
   users,
   freePlayers,
+  rosterLimits,
 }: {
   users: User[];
   freePlayers: FreePlayer[];
+  rosterLimits: { numPortieri: number; numMovimento: number };
 }) {
+  const { numPortieri, numMovimento } = rosterLimits;
+  const rosterSize = numPortieri + numMovimento;
   const [addError, addAction] = useActionState(addPlayerToRoster, null);
   const [removeError, removeAction] = useActionState(removePlayerFromRoster, null);
   const [, priceAction] = useActionState(updatePurchasePrice, null);
@@ -67,6 +71,8 @@ export default function RosterAdminClient({
 
   const team = users.find((u) => u.id === selectedTeam);
   const totalSpent = team?.roster.reduce((s, r) => s + r.purchasePrice, 0) ?? 0;
+  const teamPorCount = team?.roster.filter((r) => r.mantraRole === "POR").length ?? 0;
+  const teamMovCount = (team?.roster.length ?? 0) - teamPorCount;
 
   const filteredFree = freePlayers.filter(
     (p) =>
@@ -163,7 +169,7 @@ export default function RosterAdminClient({
             )}
             <span>{u.teamName}</span>
             <span className={`text-xs rounded-full px-1.5 ${selectedTeam === u.id ? "bg-green-500" : "bg-gray-100 text-gray-500"}`}>
-              {u.roster.length}/26
+              {u.roster.length}/{rosterSize}
             </span>
           </button>
         ))}
@@ -185,7 +191,7 @@ export default function RosterAdminClient({
                 <span className="font-semibold">{team.teamName}</span>
               </div>
               <div className="text-sm text-green-200 flex gap-3">
-                <span>{team.roster.length}/26 giocatori</span>
+                <span>POR {teamPorCount}/{numPortieri} · MOV {teamMovCount}/{numMovimento}</span>
                 <span>💰 {team.credits - totalSpent} cred. rimasti</span>
               </div>
             </div>

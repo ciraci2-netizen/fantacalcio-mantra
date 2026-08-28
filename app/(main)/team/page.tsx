@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
+import { getRosterLimits } from "@/app/lib/leagueSettings";
 import TeamClient from "./TeamClient";
 
 export const metadata: Metadata = { title: "Rosa" };
@@ -38,6 +39,11 @@ export default async function TeamPage() {
 
   const totalValue = roster.reduce((sum, r) => sum + (r.purchasePrice ?? 0), 0);
 
+  const { numPortieri, numMovimento } = await getRosterLimits(db);
+  const porCount = roster.filter((r) => r.player.mantraRole === "POR").length;
+  const movCount = roster.length - porCount;
+  const rosterComplete = porCount === numPortieri && movCount === numMovimento;
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -62,12 +68,12 @@ export default async function TeamPage() {
           </span>
           <span
             className={`px-3 py-1.5 rounded-full text-sm font-semibold ${
-              roster.length === 26
+              rosterComplete
                 ? "bg-green-100 text-green-700"
                 : "bg-amber-100 text-amber-700"
             }`}
           >
-            {roster.length} / 26 giocatori
+            POR {porCount}/{numPortieri} · MOV {movCount}/{numMovimento}
           </span>
         </div>
       </div>

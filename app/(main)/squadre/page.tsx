@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
+import { getRosterLimits } from "@/app/lib/leagueSettings";
 import Link from "next/link";
 
 export const metadata: Metadata = { title: "Squadre" };
@@ -10,12 +11,15 @@ export default async function SquadrePage() {
   if (!session) return null;
 
   const db = getDb();
+  const { numPortieri, numMovimento } = await getRosterLimits(db);
 
   const usersRes = await db.execute(
     `SELECT u.id, u.teamName, u.username,
-            COUNT(r.id) as rosterCount
+            SUM(CASE WHEN p.mantraRole = 'POR' THEN 1 ELSE 0 END) as porCount,
+            SUM(CASE WHEN r.id IS NOT NULL AND p.mantraRole != 'POR' THEN 1 ELSE 0 END) as movCount
      FROM "User" u
      LEFT JOIN "Roster" r ON r.userId = u.id
+     LEFT JOIN "Player" p ON p.id = r.playerId
      WHERE u.isAdmin = 0
      GROUP BY u.id
      ORDER BY u.teamName ASC`
@@ -25,7 +29,8 @@ export default async function SquadrePage() {
     id: u.id as number,
     teamName: u.teamName as string,
     username: u.username as string,
-    rosterCount: u.rosterCount as number,
+    porCount: (u.porCount as number) ?? 0,
+    movCount: (u.movCount as number) ?? 0,
   }));
 
   return (
@@ -58,10 +63,12 @@ export default async function SquadrePage() {
                 <p className="text-gray-400 text-sm">@{team.username}</p>
                 <p
                   className={`text-xs mt-0.5 font-medium ${
-                    team.rosterCount === 26 ? "text-green-600" : "text-amber-600"
+                    team.porCount === numPortieri && team.movCount === numMovimento
+                      ? "text-green-600"
+                      : "text-amber-600"
                   }`}
                 >
-                  {team.rosterCount} / 26 giocatori
+                  POR {team.porCount}/{numPortieri} · MOV {team.movCount}/{numMovimento}
                 </p>
               </div>
             </Link>

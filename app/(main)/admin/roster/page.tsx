@@ -1,6 +1,7 @@
 import { getSession } from "@/app/lib/session";
 import { redirect } from "next/navigation";
 import { getDb } from "@/app/lib/db";
+import { getRosterLimits } from "@/app/lib/leagueSettings";
 import RosterAdminClient from "./RosterAdminClient";
 
 export default async function AdminRosterPage() {
@@ -8,6 +9,7 @@ export default async function AdminRosterPage() {
   if (!session?.isAdmin) redirect("/dashboard");
 
   const db = getDb();
+  const rosterLimits = await getRosterLimits(db);
 
   // Tutti gli utenti con le loro rose (in un'unica query per efficienza)
   const usersRes = await db.execute(
@@ -64,6 +66,6 @@ export default async function AdminRosterPage() {
     }));
 
   return (
-    <RosterAdminClient users={users} freePlayers={freePlayers} />
+    <RosterAdminClient users={users} freePlayers={freePlayers} rosterLimits={rosterLimits} />
   );
 }

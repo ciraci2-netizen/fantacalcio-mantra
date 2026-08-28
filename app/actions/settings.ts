@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { DEFAULT_GOAL_THRESHOLDS, DEFAULT_SCORE_CONVERSION } from "@/app/lib/scoring";
+import {
+  MIN_PORTIERI, MAX_PORTIERI, DEFAULT_PORTIERI,
+  MIN_MOVIMENTO, MAX_MOVIMENTO, DEFAULT_MOVIMENTO,
+} from "@/app/lib/leagueSettings";
 
 // ─── LeagueSettings ─────────────────────────────────────────────────────────
 
@@ -15,6 +19,19 @@ export async function saveLeagueSettings(prevState: string | null, formData: For
   const initialCredits = parseInt(formData.get("initialCredits") as string) || 500;
   const maxSubstitutions = parseInt(formData.get("maxSubstitutions") as string) || 3;
   const homeAdvantage = parseFloat(formData.get("homeAdvantage") as string) || 0;
+
+  // Slot rosa: portieri e giocatori di movimento (range fissi validati qui)
+  const numPortieriRaw = parseInt(formData.get("numPortieri") as string);
+  const numPortieri = isNaN(numPortieriRaw) ? DEFAULT_PORTIERI : numPortieriRaw;
+  if (numPortieri < MIN_PORTIERI || numPortieri > MAX_PORTIERI) {
+    return `Il numero di portieri deve essere tra ${MIN_PORTIERI} e ${MAX_PORTIERI}.`;
+  }
+
+  const numMovimentoRaw = parseInt(formData.get("numMovimento") as string);
+  const numMovimento = isNaN(numMovimentoRaw) ? DEFAULT_MOVIMENTO : numMovimentoRaw;
+  if (numMovimento < MIN_MOVIMENTO || numMovimento > MAX_MOVIMENTO) {
+    return `Il numero di giocatori di movimento deve essere tra ${MIN_MOVIMENTO} e ${MAX_MOVIMENTO}.`;
+  }
 
   // Goal thresholds — disabled by default (no bonus), preserved for backward compat
   const goalThresholds = JSON.stringify(DEFAULT_GOAL_THRESHOLDS);
@@ -31,15 +48,17 @@ export async function saveLeagueSettings(prevState: string | null, formData: For
 
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO "LeagueSettings" (seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion)
-          VALUES (?, ?, ?, ?, ?, ?)
+    sql: `INSERT INTO "LeagueSettings" (seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(seasonId) DO UPDATE SET
             initialCredits    = excluded.initialCredits,
             maxSubstitutions  = excluded.maxSubstitutions,
             goalThresholds    = excluded.goalThresholds,
             homeAdvantage     = excluded.homeAdvantage,
-            scoreConversion   = excluded.scoreConversion`,
-    args: [seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion],
+            scoreConversion   = excluded.scoreConversion,
+            numPortieri       = excluded.numPortieri,
+            numMovimento      = excluded.numMovimento`,
+    args: [seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento],
   });
 
   revalidatePath("/admin/schedule");

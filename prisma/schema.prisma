@@ -65,6 +65,9 @@ model LeagueSettings {
   seasonId          Int    @unique
   initialCredits    Int    @default(500)
   maxSubstitutions  Int    @default(3)
+  /// Slot rosa: portieri (3-8) e giocatori di movimento (21-26)
+  numPortieri       Int    @default(3)
+  numMovimento      Int    @default(23)
   /// JSON array of {minGoals, bonus} sorted by minGoals asc
   /// Default: [{"m":0,"b":-6},{"m":1,"b":-4},{"m":2,"b":-2},{"m":3,"b":0},{"m":4,"b":3},{"m":5,"b":5},{"m":6,"b":9}]
   goalThresholds    String @default("[{\"m\":0,\"b\":-6},{\"m\":1,\"b\":-4},{\"m\":2,\"b\":-2},{\"m\":3,\"b\":0},{\"m\":4,\"b\":3},{\"m\":5,\"b\":5},{\"m\":6,\"b\":9}]")
