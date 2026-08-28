@@ -55,45 +55,30 @@ export async function generateCalendar(prevState: string | null, formData: FormD
 
   const schedule = generateRoundRobin(users.map((u) => u.id as number));
 
+  // Fill every matchday that exists for this season, cycling through the
+  // round-robin schedule as many times as needed — this supports any
+  // "numero giornate" the admin chose (not locked to a fixed number of
+  // legs). Home/away are swapped on alternating cycles so fixtures stay
+  // balanced even when the giornate count isn't an exact multiple of the
+  // round-robin length.
   let matchdayIdx = 0;
-
-  for (const round of schedule) {
-    if (matchdayIdx >= matchdays.length) break;
-    const md = matchdays[matchdayIdx];
-    await db.execute({ sql: `DELETE FROM "Match" WHERE matchdayId = ?`, args: [md.id] });
-    for (const [homeId, awayId] of round) {
-      await db.execute({
-        sql: `INSERT INTO "Match" (matchdayId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
-        args: [md.id, homeId, awayId],
-      });
+  let leg = 0;
+  while (matchdayIdx < matchdays.length) {
+    const swapSides = leg % 2 === 1;
+    for (const round of schedule) {
+      if (matchdayIdx >= matchdays.length) break;
+      const md = matchdays[matchdayIdx];
+      await db.execute({ sql: `DELETE FROM "Match" WHERE matchdayId = ?`, args: [md.id] });
+      for (const [homeId, awayId] of round) {
+        const [h, a] = swapSides ? [awayId, homeId] : [homeId, awayId];
+        await db.execute({
+          sql: `INSERT INTO "Match" (matchdayId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
+          args: [md.id, h, a],
+        });
+      }
+      matchdayIdx++;
     }
-    matchdayIdx++;
-  }
-
-  for (const round of schedule) {
-    if (matchdayIdx >= matchdays.length) break;
-    const md = matchdays[matchdayIdx];
-    await db.execute({ sql: `DELETE FROM "Match" WHERE matchdayId = ?`, args: [md.id] });
-    for (const [homeId, awayId] of round) {
-      await db.execute({
-        sql: `INSERT INTO "Match" (matchdayId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
-        args: [md.id, awayId, homeId],
-      });
-    }
-    matchdayIdx++;
-  }
-
-  for (const round of schedule) {
-    if (matchdayIdx >= matchdays.length) break;
-    const md = matchdays[matchdayIdx];
-    await db.execute({ sql: `DELETE FROM "Match" WHERE matchdayId = ?`, args: [md.id] });
-    for (const [homeId, awayId] of round) {
-      await db.execute({
-        sql: `INSERT INTO "Match" (matchdayId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
-        args: [md.id, homeId, awayId],
-      });
-    }
-    matchdayIdx++;
+    leg++;
   }
 
   revalidatePath("/admin/schedule");

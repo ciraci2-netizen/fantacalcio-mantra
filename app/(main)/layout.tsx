@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/app/lib/session";
 import { getDb } from "@/app/lib/db";
-import { autoMigrate } from "@/app/lib/autoMigrate";
 import Navbar from "@/app/components/Navbar";
 import BottomNav from "@/app/components/BottomNav";
 import { ToastProvider } from "@/app/components/ToastProvider";
@@ -9,8 +8,12 @@ import PwaInstallPrompt from "@/app/components/PwaInstallPrompt";
 import OnboardingModal from "@/app/components/OnboardingModal";
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
-  // Run schema migrations idempotently on every cold start (fail-safe — won't break build)
-  try { await autoMigrate(); } catch { /* DB not configured at build time — OK */ }
+  // Schema migrations run once via the admin panel ("Esegui migrazione DB"),
+  // not on every request — see app/actions/dbMigrate.ts. Running the full
+  // autoMigrate() list of ALTER/CREATE statements on every cold start added
+  // ~9 sequential round-trips to the DB before any page could render, which
+  // was tipping requests over the serverless function timeout and surfacing
+  // as random 503s across the whole app.
 
   const session = await getSession();
   if (!session) redirect("/login");
