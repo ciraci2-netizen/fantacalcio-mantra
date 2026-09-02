@@ -53,10 +53,14 @@ function parseVote(val: string): number | null {
 }
 
 export async function scrapeVotes(matchday: number): Promise<ScrapedVote[]> {
-  // NB: la pagina "premier-league" era sbagliata — quella è la Premier League
-  // inglese, non la Serie A italiana usata da questa lega. Fonte corretta:
-  // "voti-globali" Serie A di Fantagazzetta, con selezione giornata via query string.
-  const url = `https://www.fantapiu3.com/voti-globali/fantacalcio-voti-fantagazzetta-serie-a.php?giornata=${matchday}`;
+  // NB: la vecchia URL "voti-globali/...premier-league.php" è una pagina
+  // di fantapiu3.com abbandonata, ferma alla stagione 23/24 — non contiene
+  // MAI i voti della stagione corrente, da cui "0 abbinati" ad ogni import.
+  // Quella viva e aggiornata è sotto /voti/ (senza "-globali").
+  // NB2: questa pagina NON supporta la selezione giornata via query string
+  // (mostra sempre l'ultima giornata disponibile), quindi il parametro
+  // `matchday` qui non è utilizzabile per richiedere giornate passate.
+  const url = `https://www.fantapiu3.com/voti/voti-fantapiu3-fantacalcio-premier-league.php`;
 
   const res = await fetchWithRetry(url, {
     headers: {
