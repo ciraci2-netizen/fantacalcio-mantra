@@ -141,3 +141,124 @@ export async function calculateAllScores(prevState: string | null, formData: For
     return `Errore: ${err instanceof Error ? err.message : "Errore sconosciuto"}`;
   }
 }
+
+// -- Admin: fix una tantum per il bug "gol su rigore" -----------------------
+// I gol segnati su rigore (campo gsr) venivano scorati con rigoreSbagliato
+// (-3) invece che con golFatto (+3) — vedi app/lib/scoring.ts. La formula è
+// già corretta per i NUOVI import; queste due action ricalcolano il
+// fantavoto dei voti già salvati con la formula sbagliata (dryRun di default,
+// apply=true per scrivere davvero) e rilanciano calculateScoresCore per le
+// giornate coinvolte già importate, così anche punteggi/classifica già
+// calcolati vengono corretti.
+async function computeGsrBackfillDiffs() {
+  const db = getDb();
+  const res = await db.execute(
+    `SELECT pv.playerId, pv.matchdayId, pv.vote, pv.fantavoto, pv.gfGs, pv.gsr,
+            pv.amm, pv.esp, pv.rpRs, pv.aut, pv.ass, pv.adf,
+            p.name, p.mantraRole
+     FROM "PlayerVote" pv
+     JOIN "Player" p ON p.id = pv.playerId
+     WHERE pv.gsr > 0`
+  );
+
+  const diffs: Array<{
+    playerId: number;
+    name: string;
+    matchdayId: number;
+    gsr: number;
+    oldFantavoto: number | null;
+    newFantavoto: number | null;
+  }> = [];
+
+  for (const row of res.rows) {
+    const mantraRole = row.mantraRole as string;
+    const newFantavoto = calculateFantavoto(
+      {
+        vote: row.vote as number | null,
+        fantavoto: null, // se vote non è null, il fantavoto va sempre ricalcolato dagli eventi
+        gfGs: row.gfGs as number,
+        gsr: row.gsr as number,
+        amm: row.amm as number,
+        esp: row.esp as number,
+        rpRs: row.rpRs as number,
+        aut: row.aut as number,
+        ass: row.ass as number,
+        adf: row.adf as number,
+      },
+      mantraRole
+    );
+    const oldFantavoto = row.fantavoto as number | null;
+    if (newFantavoto !== oldFantavoto) {
+      diffs.push({
+        playerId: row.playerId as number,
+        name: row.name as string,
+        matchdayId: row.matchdayId as number,
+        gsr: row.gsr as number,
+        oldFantavoto,
+        newFantavoto,
+      });
+    }
+  }
+  return diffs;
+}
+
+export async function backfillGsrDryRun(prevState: string | null, formData: FormData) {
+  void formData;
+  const session = await getSession();
+  if (!session?.isAdmin) return "Non autorizzato.";
+
+  const diffs = await computeGsrBackfillDiffs();
+  if (diffs.length === 0) {
+    return "? Nessun voto da correggere: nessun gol su rigore è stato scorato con la formula sbagliata.";
+  }
+  const matchdays = [...new Set(diffs.map((d) => d.matchdayId))].sort((a, b) => a - b);
+  const lines = diffs
+    .map((d) => `  • G${d.matchdayId} — ${d.name}: ${d.oldFantavoto} ? ${d.newFantavoto} (${d.gsr} gol su rigore)`)
+    .slice(0, 40);
+  const more = diffs.length > 40 ? `\n  … e altri ${diffs.length - 40} voti` : "";
+  return `DRYRUN: ${diffs.length} voti da correggere su ${matchdays.length} giornate (id: ${matchdays.join(", ")}).\n${lines.join("\n")}${more}`;
+}
+
+export async function backfillGsrApply(prevState: string | null, formData: FormData) {
+  void formData;
+  const session = await getSession();
+  if (!session?.isAdmin) return "Non autorizzato.";
+
+  const db = getDb();
+  const diffs = await computeGsrBackfillDiffs();
+  if (diffs.length === 0) {
+    return "? Nessun voto da correggere.";
+  }
+
+  for (const d of diffs) {
+    await db.execute({
+      sql: `UPDATE "PlayerVote" SET fantavoto = ? WHERE playerId = ? AND matchdayId = ?`,
+      args: [d.newFantavoto, d.playerId, d.matchdayId],
+    });
+  }
+
+  const matchdaysAffected = [...new Set(diffs.map((d) => d.matchdayId))].sort((a, b) => a - b);
+  let recalculated = 0;
+  const recalcErrors: string[] = [];
+  for (const matchdayId of matchdaysAffected) {
+    try {
+      const mdRes = await db.execute({
+        sql: `SELECT votesImported FROM "Matchday" WHERE id = ?`,
+        args: [matchdayId],
+      });
+      if (mdRes.rows[0]?.votesImported) {
+        await calculateScoresCore(matchdayId);
+        recalculated++;
+      }
+    } catch (err) {
+      recalcErrors.push(`G${matchdayId}: ${err instanceof Error ? err.message : "errore sconosciuto"}`);
+    }
+  }
+
+  revalidatePath("/admin/votes");
+  revalidatePath("/standings");
+  revalidatePath("/calendar");
+
+  const errPart = recalcErrors.length > 0 ? `\n?? Errori nel ricalcolo: ${recalcErrors.join("; ")}` : "";
+  return `APPLIED: ${diffs.length} voti corretti su ${matchdaysAffected.length} giornate, ${recalculated} giornate ricalcolate.${errPart}`;
+}

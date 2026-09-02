@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { importVotes, calculateAllScores, updatePlayerVote } from "@/app/actions/votes";
+import { importVotes, calculateAllScores, updatePlayerVote, backfillGsrDryRun, backfillGsrApply } from "@/app/actions/votes";
 import { lockAndAdvanceMatchday, setMatchdayDeadline } from "@/app/actions/schedule";
 import { setPlayerStatus } from "@/app/actions/settings";
 import DeadlineTimer from "@/app/components/DeadlineTimer";
@@ -92,6 +92,9 @@ export default function VotesAdminClient({
   const [advanceResult, advanceAction, advancePending] = useActionState(lockAndAdvanceMatchday, null);
   const [, statusAction] = useActionState(setPlayerStatus, null);
   const [deadlineResult, deadlineAction, deadlinePending] = useActionState(setMatchdayDeadline, null);
+  const [gsrDryRunResult, gsrDryRunAction, gsrDryRunPending] = useActionState(backfillGsrDryRun, null);
+  const [gsrApplyResult, gsrApplyAction, gsrApplyPending] = useActionState(backfillGsrApply, null);
+  const [gsrApplyArmed, setGsrApplyArmed] = useState(false);
 
   const [selectedMatchday, setSelectedMatchday] = useState(
     matchdays.find((m) => m.number === currentMatchday) ?? matchdays[0]
