@@ -5,6 +5,41 @@ import Link from "next/link";
 import TeamLogo from "@/app/components/TeamLogo";
 import Confetti from "@/app/components/Confetti";
 import { roleBadgeClass } from "@/app/lib/roles";
+import { roleBucket } from "@/app/lib/scoring";
+
+const HARD_MAX_SUBSTITUTIONS = 5;
+
+// Replica la logica di sostituzione automatica "ruolo per ruolo" di
+// calculateScoresCore (app/lib/voteImporter.ts): un titolare senza voto
+// viene sostituito dalla prima riserva con voto dello stesso bucket di
+// ruolo (portiere/difesa/centrocampo/attacco), in ordine di modulo. Qui
+// serve solo per capire QUALI riserve sono effettivamente entrate in
+// campo, per evidenziarle nel tabellino.
+function computeSubbedInIds(slots: PlayerSlot[], maxSubstitutions: number): Set<number> {
+  const starters = slots.filter((s) => s.isStarter);
+  const reserves = slots.filter((s) => !s.isStarter);
+  const usedReserveIdxs = new Set<number>();
+  const subbedInIds = new Set<number>();
+  let subsUsed = 0;
+
+  for (const starter of starters) {
+    if (starter.fantavoto !== null) continue;
+    if (subsUsed >= maxSubstitutions) continue;
+    const starterBucket = roleBucket(starter.mantraRole);
+    const rIdx = reserves.findIndex(
+      (r, i) =>
+        !usedReserveIdxs.has(i) &&
+        r.fantavoto !== null &&
+        roleBucket(r.mantraRole) === starterBucket
+    );
+    if (rIdx !== -1) {
+      usedReserveIdxs.add(rIdx);
+      subbedInIds.add(reserves[rIdx].playerId);
+      subsUsed++;
+    }
+  }
+  return subbedInIds;
+}
 
 type PlayerSlot = {
   playerId: number;
@@ -86,14 +121,19 @@ export default async function MatchDetailPage({
   // se diverso da zero) - vedi calculateScoresCore in app/lib/voteImporter.ts,
   // dove viene sommato al punteggio della squadra di casa prima del confronto.
   let homeAdvantage = 0;
+  let maxSubstitutions = 3;
   try {
     const seasonId = match.seasonId as number | undefined;
     if (seasonId) {
       const settingsRes = await db.execute({
-        sql: `SELECT homeAdvantage FROM "LeagueSettings" WHERE seasonId = ?`,
+        sql: `SELECT homeAdvantage, maxSubstitutions FROM "LeagueSettings" WHERE seasonId = ?`,
         args: [seasonId],
       });
       homeAdvantage = (settingsRes.rows[0]?.homeAdvantage as number) ?? 0;
+      const rawMaxSubs = settingsRes.rows[0]?.maxSubstitutions as number | undefined;
+      if (rawMaxSubs !== undefined) {
+        maxSubstitutions = Math.min(rawMaxSubs, HARD_MAX_SUBSTITUTIONS);
+      }
     }
   } catch { /* tabella impostazioni non ancora migrata */ }
 
@@ -151,6 +191,11 @@ export default async function MatchDetailPage({
     if ((row.userId as number) === homeUserId) homeSlots.push(slot);
     else awaySlots.push(slot);
   }
+
+  // Riserve entrate effettivamente in campo (sostituzione automatica di un
+  // titolare senza voto), da evidenziare nel tabellino.
+  const homeSubbedInIds = computeSubbedInIds(homeSlots, maxSubstitutions);
+  const awaySubbedInIds = computeSubbedInIds(awaySlots, maxSubstitutions);
 
   const played = match.homeScore !== null;
   const homeWon = (match.homePoints as number) === 3;
@@ -333,6 +378,7 @@ export default async function MatchDetailPage({
             score={played ? (match.homeScore as number) : null}
             goals={match.homeGoals !== null ? (match.homeGoals as number) : null}
             won={homeWon}
+            subbedInIds={homeSubbedInIds}
           />
           <LineupCard
             teamName={match.awayTeamName as string}
@@ -341,6 +387,7 @@ export default async function MatchDetailPage({
             score={played ? (match.awayScore as number) : null}
             goals={match.awayGoals !== null ? (match.awayGoals as number) : null}
             won={awayWon}
+            subbedInIds={awaySubbedInIds}
           />
         </div>
       )}
@@ -362,6 +409,7 @@ function LineupCard({
   score,
   goals,
   won,
+  subbedInIds,
 }: {
   teamName: string;
   slots: PlayerSlot[];
@@ -369,6 +417,7 @@ function LineupCard({
   score: number | null;
   goals: number | null;
   won: boolean;
+  subbedInIds: Set<number>;
 }) {
   const starters = slots.filter((s) => s.isStarter);
   const reserves = slots.filter((s) => !s.isStarter);
@@ -418,10 +467,15 @@ function LineupCard({
           <div className="mt-3 pt-3 border-t">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
               Riserve ({reserves.length})
+              {subbedInIds.size > 0 && (
+                <span className="ml-1.5 text-green-600 normal-case tracking-normal font-medium">
+                  - {subbedInIds.size} entrat{subbedInIds.size === 1 ? "a" : "e"} in campo
+                </span>
+              )}
             </p>
-            <div className="space-y-1 opacity-70">
+            <div className="space-y-1">
               {reserves.map((s) => (
-                <SlotRow key={s.playerId} slot={s} />
+                <SlotRow key={s.playerId} slot={s} subbedIn={subbedInIds.has(s.playerId)} />
               ))}
             </div>
           </div>
@@ -431,7 +485,7 @@ function LineupCard({
   );
 }
 
-function SlotRow({ slot }: { slot: PlayerSlot }) {
+function SlotRow({ slot, subbedIn = false }: { slot: PlayerSlot; subbedIn?: boolean }) {
   const fv = slot.fantavoto;
   const fvColor =
     fv === null ? "text-gray-400" :
@@ -439,8 +493,17 @@ function SlotRow({ slot }: { slot: PlayerSlot }) {
     fv >= 6 ? "text-blue-600 font-semibold" :
     "text-red-500";
 
+  // Riserva entrata effettivamente in campo (sostituzione automatica di un
+  // titolare senza voto): evidenziata e non affievolita come le altre
+  // riserve rimaste in panchina.
+  const rowClass = subbedIn
+    ? "flex items-center gap-2 py-1.5 pl-1.5 -ml-1.5 border-l-2 border-green-500 bg-green-50 rounded-r"
+    : !slot.isStarter
+    ? "flex items-center gap-2 py-1.5 opacity-60"
+    : "flex items-center gap-2 py-1.5";
+
   return (
-    <div className="flex items-center gap-2 py-1.5">
+    <div className={rowClass}>
       <span
         className={`text-xs px-1.5 py-0.5 rounded font-bold shrink-0 ${
           roleBadgeClass(slot.mantraRole) ?? "bg-gray-100 text-gray-700"
@@ -448,9 +511,19 @@ function SlotRow({ slot }: { slot: PlayerSlot }) {
       >
         {slot.mantraRole}
       </span>
+      {subbedIn && (
+        <span
+          title="Entrato dalla panchina"
+          className="text-[10px] font-bold text-white bg-green-600 rounded px-1 py-0.5 shrink-0 leading-none"
+        >
+          IN
+        </span>
+      )}
       <Link
         href={`/giocatore/${slot.playerId}`}
-        className="text-sm flex-1 truncate text-gray-700 hover:text-blue-600 hover:underline transition-colors"
+        className={`text-sm flex-1 truncate hover:text-blue-600 hover:underline transition-colors ${
+          subbedIn ? "text-green-800 font-medium" : "text-gray-700"
+        }`}
       >
         {slot.name}
       </Link>
