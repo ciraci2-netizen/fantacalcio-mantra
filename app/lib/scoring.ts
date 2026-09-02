@@ -147,7 +147,8 @@ export function calculateFantavoto(
     score += voteData.gfGs * Math.abs(config.golSubito);
   }
 
-  score += voteData.gsr * config.rigoreSbagliato;
+  // gsr = GOAL SU RIGORE: gol segnato su rigore, va premiato come un gol normale.
+  score += voteData.gsr * config.golFatto;
   score += voteData.amm * config.ammonizione;
   score += voteData.esp * config.espulsione;
 
