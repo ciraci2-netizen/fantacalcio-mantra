@@ -27,6 +27,9 @@ type StandingRow = {
 async function getStandings(seasonId: number): Promise<StandingRow[]> {
   const db = getDb();
 
+  // G+/G- mostrano i gol del sistema Mantra (m.homeGoals/awayGoals) quando la
+  // conversione punteggio->gol e attiva; se e disattivata per una giornata
+  // (colonne NULL), si torna al punteggio grezzo come prima.
   const res = await db.execute({
     sql: `SELECT
             u.id, u.teamName, u.username,
@@ -35,8 +38,8 @@ async function getStandings(seasonId: number): Promise<StandingRow[]> {
             COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 1) OR (m.awayUserId = u.id AND m.awayPoints = 1) THEN 1 ELSE 0 END), 0) as draws,
             COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 0) OR (m.awayUserId = u.id AND m.awayPoints = 0) THEN 1 ELSE 0 END), 0) as losses,
             COALESCE(COUNT(m.id), 0) as played,
-            COALESCE(ROUND(SUM(CASE WHEN m.homeUserId = u.id THEN m.homeScore ELSE m.awayScore END), 1), 0) as gf,
-            COALESCE(ROUND(SUM(CASE WHEN m.homeUserId = u.id THEN m.awayScore ELSE m.homeScore END), 1), 0) as ga
+            COALESCE(ROUND(SUM(CASE WHEN m.homeUserId = u.id THEN COALESCE(m.homeGoals, m.homeScore) ELSE COALESCE(m.awayGoals, m.awayScore) END), 1), 0) as gf,
+            COALESCE(ROUND(SUM(CASE WHEN m.homeUserId = u.id THEN COALESCE(m.awayGoals, m.awayScore) ELSE COALESCE(m.homeGoals, m.homeScore) END), 1), 0) as ga
           FROM "User" u
           LEFT JOIN (
             SELECT m2.* FROM "Match" m2
