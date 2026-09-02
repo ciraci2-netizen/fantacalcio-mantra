@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { MANTRA_ROLES } from "@/app/lib/scoring";
 
 const ROLE_COLORS: Record<string, string> = {
@@ -18,10 +19,12 @@ export default function SvincolatiClient({
   players,
   countByRole,
   roleLabel,
+  isAdmin,
 }: {
   players: Player[];
   countByRole: Record<string, number>;
   roleLabel: Record<string, string>;
+  isAdmin?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("tutti");
@@ -50,6 +53,14 @@ export default function SvincolatiClient({
           <p className="text-gray-500 text-sm mt-0.5">{players.length} giocatori non assegnati a nessuna squadra</p>
         </div>
         <div className="flex gap-2">
+          {isAdmin && (
+            <Link
+              href="/admin/players"
+              className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
+            >
+              🛠️ Importa/gestisci giocatori
+            </Link>
+          )}
           <button
             onClick={() => setView("byRole")}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium ${view === "byRole" ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}

@@ -42,6 +42,7 @@ export default async function SvincolatiPage() {
       players={players}
       countByRole={countByRole}
       roleLabel={ROLE_LABEL}
+      isAdmin={Boolean(session.isAdmin)}
     />
   );
 }

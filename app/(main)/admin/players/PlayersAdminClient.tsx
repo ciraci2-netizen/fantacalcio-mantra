@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, type ChangeEvent } from "react";
 import { createPlayer, deletePlayer, importPlayersCSV } from "@/app/actions/players";
 import { MANTRA_ROLES } from "@/app/lib/scoring";
 
@@ -30,6 +30,35 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
   const [roleFilter, setRoleFilter] = useState("tutti");
   const [showForm, setShowForm] = useState(false);
   const [showCsv, setShowCsv] = useState(false);
+  const [csvText, setCsvText] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [parseError, setParseError] = useState("");
+
+  async function handleFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    setParseError("");
+
+    try {
+      if (file.name.toLowerCase().endsWith(".csv")) {
+        setCsvText(await file.text());
+      } else {
+        // .xlsx / .xls
+        const XLSX = await import("xlsx");
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+        const lines = rows
+          .map((row) => row.map((cell) => (cell ?? "").toString().trim()).join(","))
+          .filter((line) => line.replace(/,/g, "").length > 0);
+        setCsvText(lines.join("\n"));
+      }
+    } catch {
+      setParseError("Impossibile leggere il file. Verifica che sia un .csv o .xlsx valido.");
+    }
+  }
 
   const filtered = players.filter(
     (p) =>
@@ -103,16 +132,36 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
 
       {showCsv && (
         <div className="bg-white rounded-xl border shadow-sm p-5">
-          <h2 className="font-semibold text-gray-700 mb-3">Import CSV</h2>
+          <h2 className="font-semibold text-gray-700 mb-3">Import giocatori (svincolati)</h2>
           <p className="text-xs text-gray-500 mb-3">
-            Formato: <code className="bg-gray-100 px-1 rounded">NOME,SQUADRA,RUOLO,NOME_FANTAPIU3</code> — una riga per giocatore.<br />
+            Formato: <code className="bg-gray-100 px-1 rounded">NOME,SQUADRA,RUOLO,NOME_FANTAPIU3</code> — una riga per giocatore
+            (l&apos;ultima colonna è opzionale). Vengono aggiunti come svincolati, non assegnati a nessuna squadra:
+            per assegnarli usa poi <em>Gestione Rose</em>.<br />
             Esempio: <code className="bg-gray-100 px-1 rounded">SALAH,LIVERPOOL,OFF,SALAH</code>
           </p>
-          <form action={csvAction} className="space-y-3">
+
+          <div className="flex items-center gap-3 flex-wrap mb-3">
+            <label className="inline-flex items-center gap-2 bg-white border rounded-lg px-3 py-2 text-sm cursor-pointer hover:border-blue-400">
+              <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFile} className="hidden" />
+              📂 Scegli file (.csv / .xlsx)
+            </label>
+            {fileName && <span className="text-sm text-gray-600">{fileName}</span>}
+          </div>
+          {parseError && <p className="text-sm text-red-600 mb-3">{parseError}</p>}
+
+          <form
+            action={csvAction}
+            className="space-y-3"
+            onSubmit={() => {
+              setTimeout(() => { setCsvText(""); setFileName(""); }, 0);
+            }}
+          >
             <textarea
               name="csv"
               required
               rows={10}
+              value={csvText}
+              onChange={(e) => setCsvText(e.target.value)}
               placeholder={"SALAH,LIVERPOOL,OFF\nHAALAND,MANCITY,ATT,HAALAND"}
               className="w-full border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -123,7 +172,7 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
             )}
             <button
               type="submit"
-              disabled={csvPending}
+              disabled={csvPending || !csvText.trim()}
               className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
             >
               {csvPending ? "Importazione..." : "Importa giocatori"}

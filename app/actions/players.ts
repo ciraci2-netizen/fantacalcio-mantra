@@ -77,7 +77,10 @@ export async function importPlayersCSV(prevState: string | null, formData: FormD
   const db = getDb();
 
   for (const line of lines) {
-    const parts = line.split(",").map((p) => p.trim());
+    // Autodetect separatore: "," per CSV standard, ";" per export Excel
+    // in locale italiano (stesso approccio di importRosterCSV).
+    const sep = line.includes(";") ? ";" : ",";
+    const parts = line.split(sep).map((p) => p.trim());
     if (parts.length < 3) { errors.push(`Riga non valida: ${line}`); continue; }
     const [name, realTeam, mantraRoleRaw, fantapiu3Name] = parts;
     const mantraRole = normalizeMantraRole(mantraRoleRaw);
