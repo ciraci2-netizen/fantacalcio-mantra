@@ -117,6 +117,111 @@ export function roleBucket(role: string): RoleBucket {
   return null;
 }
 
+type SubCategory = "gk" | "def" | "mid" | "off" | "att" | null;
+
+function subCategoryOf(role: string): SubCategory {
+  if (role === "POR") return "gk";
+  if (DEF_ROLES.has(role)) return "def";
+  if (role === "M") return "mid";
+  if (role === "OFF") return "off";
+  if (ATT_ROLES.has(role)) return "att";
+  return null;
+}
+
+export interface SubCandidate {
+  mantraRole: string;
+  fantavoto: number | null;
+}
+
+/**
+ * Calcola le sostituzioni automatiche di un titolare senza voto (assente o
+ * "sv"), usata sia dal calcolo dei punteggi (calculateScoresCore in
+ * app/lib/voteImporter.ts) sia dalla evidenziazione nel tabellino
+ * (computeSubbedInIds in app/(main)/calendar/[matchId]/page.tsx): unica
+ * fonte di verita condivisa dai due file, cosi il punteggio calcolato e
+ * quanto mostrato nel tabellino restano sempre coerenti.
+ *
+ * Regole: si scorre la lista titolari nell ordine in cui sono stati salvati
+ * (il campo position) e, per ciascun titolare senza voto, si scorre la
+ * lista riserve nello stesso ordine di priorita scelto in fase di
+ * formazione, cercando la PRIMA riserva con voto che, entrando al posto del
+ * titolare, mantenga valido il modulo secondo tre soglie: almeno 3
+ * difensori, al massimo 3 attaccanti, al massimo 5 totali tra
+ * centrocampisti offensivi (OFF) e attaccanti (ATT). Il modulo puo quindi
+ * cambiare completamente rispetto a quello schierato in origine. Un
+ * portiere titolare puo essere sostituito solo da un portiere di riserva
+ * (e un portiere di riserva non puo mai entrare per un giocatore di
+ * movimento). Se nessuna riserva compatibile e disponibile, il titolare
+ * resta a 0 (nessuna sostituzione forzata fuori dai limiti).
+ */
+export function computeAutoSubstitutions(
+  starters: SubCandidate[],
+  reserves: SubCandidate[],
+  maxSubstitutions: number
+): (number | null)[] {
+  const starterCats = starters.map((s) => subCategoryOf(s.mantraRole));
+  const reserveCats = reserves.map((r) => subCategoryOf(r.mantraRole));
+
+  let currentDef = starterCats.filter((c) => c === "def").length;
+  let currentAtt = starterCats.filter((c) => c === "att").length;
+  let currentOffAtt = starterCats.filter((c) => c === "off" || c === "att").length;
+
+  const usedReserveIdxs = new Set<number>();
+  const reserveForStarter: (number | null)[] = starters.map(() => null);
+  let subsUsed = 0;
+
+  for (let si = 0; si < starters.length; si++) {
+    if (starters[si].fantavoto !== null) continue;
+    if (subsUsed >= maxSubstitutions) continue;
+
+    const starterCat = starterCats[si];
+    if (starterCat === null) continue;
+    const starterIsGk = starterCat === "gk";
+
+    let chosen = -1;
+    for (let ri = 0; ri < reserves.length; ri++) {
+      if (usedReserveIdxs.has(ri)) continue;
+      if (reserves[ri].fantavoto === null) continue;
+      const rCat = reserveCats[ri];
+      if (rCat === null) continue;
+
+      const reserveIsGk = rCat === "gk";
+      if (starterIsGk !== reserveIsGk) continue;
+
+      if (starterIsGk && reserveIsGk) {
+        chosen = ri;
+        break;
+      }
+
+      let newDef = currentDef;
+      let newAtt = currentAtt;
+      let newOffAtt = currentOffAtt;
+      if (starterCat === "def") newDef--;
+      if (starterCat === "att") newAtt--;
+      if (starterCat === "off" || starterCat === "att") newOffAtt--;
+      if (rCat === "def") newDef++;
+      if (rCat === "att") newAtt++;
+      if (rCat === "off" || rCat === "att") newOffAtt++;
+
+      if (newDef >= 3 && newAtt <= 3 && newOffAtt <= 5) {
+        chosen = ri;
+        currentDef = newDef;
+        currentAtt = newAtt;
+        currentOffAtt = newOffAtt;
+        break;
+      }
+    }
+
+    if (chosen !== -1) {
+      usedReserveIdxs.add(chosen);
+      reserveForStarter[si] = chosen;
+      subsUsed++;
+    }
+  }
+
+  return reserveForStarter;
+}
+
 // Modificatori fuori ruolo: quale ruolo può giocare in quale posizione e con quale malus
 export const ROLE_MODIFIERS: Record<string, Record<string, number>> = {
   POR: { POR: 0 },

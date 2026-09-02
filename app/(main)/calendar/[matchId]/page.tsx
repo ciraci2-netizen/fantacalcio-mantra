@@ -5,39 +5,25 @@ import Link from "next/link";
 import TeamLogo from "@/app/components/TeamLogo";
 import Confetti from "@/app/components/Confetti";
 import { roleBadgeClass } from "@/app/lib/roles";
-import { roleBucket } from "@/app/lib/scoring";
+import { computeAutoSubstitutions } from "@/app/lib/scoring";
 
 const HARD_MAX_SUBSTITUTIONS = 5;
 
-// Replica la logica di sostituzione automatica "ruolo per ruolo" di
-// calculateScoresCore (app/lib/voteImporter.ts): un titolare senza voto
-// viene sostituito dalla prima riserva con voto dello stesso bucket di
-// ruolo (portiere/difesa/centrocampo/attacco), in ordine di modulo. Qui
+// Usa la stessa logica di sostituzione automatica di calculateScoresCore
+// (app/lib/voteImporter.ts) - vedi computeAutoSubstitutions in
+// app/lib/scoring.ts, unica fonte di verita condivisa dai due file. Qui
 // serve solo per capire QUALI riserve sono effettivamente entrate in
 // campo, per evidenziarle nel tabellino.
 function computeSubbedInIds(slots: PlayerSlot[], maxSubstitutions: number): Set<number> {
   const starters = slots.filter((s) => s.isStarter);
   const reserves = slots.filter((s) => !s.isStarter);
-  const usedReserveIdxs = new Set<number>();
   const subbedInIds = new Set<number>();
-  let subsUsed = 0;
 
-  for (const starter of starters) {
-    if (starter.fantavoto !== null) continue;
-    if (subsUsed >= maxSubstitutions) continue;
-    const starterBucket = roleBucket(starter.mantraRole);
-    const rIdx = reserves.findIndex(
-      (r, i) =>
-        !usedReserveIdxs.has(i) &&
-        r.fantavoto !== null &&
-        roleBucket(r.mantraRole) === starterBucket
-    );
-    if (rIdx !== -1) {
-      usedReserveIdxs.add(rIdx);
-      subbedInIds.add(reserves[rIdx].playerId);
-      subsUsed++;
-    }
-  }
+  const reserveForStarter = computeAutoSubstitutions(starters, reserves, maxSubstitutions);
+  reserveForStarter.forEach((rIdx) => {
+    if (rIdx !== null) subbedInIds.add(reserves[rIdx].playerId);
+  });
+
   return subbedInIds;
 }
 

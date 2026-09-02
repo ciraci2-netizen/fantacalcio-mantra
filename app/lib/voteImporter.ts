@@ -12,7 +12,7 @@ import {
   calculateGoalBonus,
   calculateDefenseModifier,
   convertScoreToGoals,
-  roleBucket,
+  computeAutoSubstitutions,
   DEFAULT_GOAL_THRESHOLDS,
   DEFAULT_SCORE_CONVERSION,
   type GoalThreshold,
@@ -299,36 +299,38 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
     let base = 0;
     let subsUsed = 0;
     let totalGoals = 0;
-    const usedReserveIdxs = new Set<number>();
 
-    for (const starter of starterRows) {
+    // Sostituzioni automatiche: vedi computeAutoSubstitutions in
+    // app/lib/scoring.ts per la logica condivisa con il tabellino (ordine di
+    // priorita delle riserve, modulo libero di cambiare, limiti su
+    // difensori/attaccanti/OFF+ATT).
+    const reserveForStarter = computeAutoSubstitutions(
+      starterRows.map((s) => ({
+        mantraRole: s.mantraRole as string,
+        fantavoto: s.fantavoto as number | null,
+      })),
+      reserveRows.map((r) => ({
+        mantraRole: r.mantraRole as string,
+        fantavoto: r.fantavoto as number | null,
+      })),
+      maxSubstitutions
+    );
+
+    starterRows.forEach((starter, si) => {
       const gfGs = starter.goals as number;
       if (gfGs > 0) totalGoals += gfGs;
 
       if (starter.fantavoto !== null) {
         base += starter.fantavoto as number;
-      } else if (subsUsed < maxSubstitutions) {
-        // Sostituzione automatica "ruolo per ruolo": la riserva che entra deve
-        // avere lo stesso bucket di ruolo del titolare assente (portiere con
-        // portiere, difensore con difensore TER/DC, centrocampista M/OFF con
-        // centrocampista, attaccante con attaccante) — così il modulo
-        // schierato resta sempre valido. Se non c'è nessuna riserva
-        // compatibile con un voto, quel titolare conta 0 (nessuna
-        // sostituzione "fuori modulo").
-        const starterBucket = roleBucket(starter.mantraRole as string);
-        const rIdx = reserveRows.findIndex(
-          (_, i) =>
-            !usedReserveIdxs.has(i) &&
-            reserveRows[i].fantavoto !== null &&
-            roleBucket(reserveRows[i].mantraRole as string) === starterBucket
-        );
-        if (rIdx !== -1) {
-          usedReserveIdxs.add(rIdx);
-          base += reserveRows[rIdx].fantavoto as number;
-          subsUsed++;
-        }
+        return;
       }
-    }
+
+      const rIdx = reserveForStarter[si];
+      if (rIdx !== null) {
+        base += reserveRows[rIdx].fantavoto as number;
+        subsUsed++;
+      }
+    });
 
     const goalBonus = calculateGoalBonus(totalGoals, goalThresholds);
     const total = Math.round((base + goalBonus) * 100) / 100;
