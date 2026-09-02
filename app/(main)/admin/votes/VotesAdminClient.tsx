@@ -153,6 +153,60 @@ export default function VotesAdminClient({
         Stagione: <strong>{seasonName}</strong> — Fonte: Fantapiu3.com Premier League
       </p>
 
+      {/* -- Fix una tantum: gol su rigore scorati come rigore sbagliato -- */}
+      <div className="bg-white rounded-xl border shadow-sm p-5 space-y-3">
+        <h2 className="font-semibold text-gray-700">
+          Correggi voti: gol su rigore
+        </h2>
+        <p className="text-gray-500 text-sm">
+          Fix una tantum per un bug gia risolto nel calcolo (i gol segnati su rigore davano -3 invece di +3).
+          Questo controlla/corregge i voti <strong>gia importati in passato</strong> con la formula sbagliata.
+          I nuovi import sono gia corretti automaticamente.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <form action={gsrDryRunAction}>
+            <button
+              type="submit"
+              disabled={gsrDryRunPending}
+              className="bg-gray-600 hover:bg-gray-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            >
+              {gsrDryRunPending ? "Controllo..." : "Controlla (nessuna modifica)"}
+            </button>
+          </form>
+          {gsrApplyArmed && (
+            <form action={gsrApplyAction}>
+              <button
+                type="submit"
+                disabled={gsrApplyPending}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+              >
+                {gsrApplyPending ? "Applico..." : "Applica la correzione ora"}
+              </button>
+            </form>
+          )}
+        </div>
+        {gsrDryRunResult && (
+          <div className="px-4 py-3 rounded-lg text-sm bg-amber-50 border border-amber-200 text-amber-800 whitespace-pre-wrap">
+            {gsrDryRunResult}
+            {gsrDryRunResult.startsWith("DRYRUN") && !gsrApplyArmed && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => setGsrApplyArmed(true)}
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+                >
+                  Mostra pulsante &quot;Applica&quot; (modifica i punteggi gia calcolati)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {gsrApplyResult && (
+          <div className="px-4 py-3 rounded-lg text-sm bg-green-50 border border-green-200 text-green-700 whitespace-pre-wrap">
+            {gsrApplyResult}
+          </div>
+        )}
+      </div>
       {/* ── Formazioni inviate ─────────────────────────────── */}
       <div className="bg-white rounded-xl border shadow-sm p-5">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
