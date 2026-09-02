@@ -96,6 +96,27 @@ export const VALID_FORMATIONS = [
   "5-3-2", "5-4-1",
 ];
 
+// Raggruppamento ruoli per la validazione dei moduli (vedi validateFormation
+// in app/actions/lineup.ts) e per le sostituzioni automatiche "ruolo per
+// ruolo" (vedi la sostituzione automatica in app/lib/voteImporter.ts): un
+// modulo Mantra (es. "4-4-2") conta i difensori (TER+DC insieme) e gli
+// attaccanti (ATT) — il centrocampo (M+OFF) riempie il resto senza
+// distinzione tra i due. Unica fonte di verità condivisa dai due file.
+export const DEF_ROLES = new Set(["DC", "TER"]);
+export const MID_ROLES = new Set(["M", "OFF"]);
+export const ATT_ROLES = new Set(["ATT"]);
+
+export type RoleBucket = "GK" | "DEF" | "MID" | "ATT" | null;
+
+/** Bucket di un ruolo Mantra, per confrontare "stesso ruolo ai fini del modulo". */
+export function roleBucket(role: string): RoleBucket {
+  if (role === "POR") return "GK";
+  if (DEF_ROLES.has(role)) return "DEF";
+  if (MID_ROLES.has(role)) return "MID";
+  if (ATT_ROLES.has(role)) return "ATT";
+  return null;
+}
+
 // Modificatori fuori ruolo: quale ruolo può giocare in quale posizione e con quale malus
 export const ROLE_MODIFIERS: Record<string, Record<string, number>> = {
   POR: { POR: 0 },

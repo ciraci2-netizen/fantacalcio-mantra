@@ -17,7 +17,11 @@ export async function saveLeagueSettings(prevState: string | null, formData: For
 
   const seasonId = parseInt(formData.get("seasonId") as string);
   const initialCredits = parseInt(formData.get("initialCredits") as string) || 500;
-  const maxSubstitutions = parseInt(formData.get("maxSubstitutions") as string) || 3;
+  // Sostituzioni automatiche per assenti/sv: al massimo 5 a giornata (vedi
+  // anche il clamp difensivo in calculateScoresCore, che non si fida di
+  // eventuali valori salvati prima di questo limite).
+  const maxSubstitutionsRaw = parseInt(formData.get("maxSubstitutions") as string);
+  const maxSubstitutions = Math.min(Math.max(isNaN(maxSubstitutionsRaw) ? 3 : maxSubstitutionsRaw, 0), 5);
   const homeAdvantage = parseFloat(formData.get("homeAdvantage") as string) || 0;
 
   // Slot rosa: portieri e giocatori di movimento (range fissi validati qui)

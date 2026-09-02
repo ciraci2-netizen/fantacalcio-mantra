@@ -12,11 +12,18 @@ import {
   calculateGoalBonus,
   calculateDefenseModifier,
   convertScoreToGoals,
+  roleBucket,
   DEFAULT_GOAL_THRESHOLDS,
   DEFAULT_SCORE_CONVERSION,
   type GoalThreshold,
   type ScoreConversion,
 } from "./scoring";
+
+/** Tetto assoluto alle sostituzioni automatiche per assenti/sv, a prescindere
+ * da cosa sia impostato in LeagueSettings (vedi anche il clamp in
+ * saveLeagueSettings — questo è la seconda linea di difesa, a valori già
+ * salvati prima che il limite esistesse). */
+const HARD_MAX_SUBSTITUTIONS = 5;
 
 export interface ImportResult {
   matched: number;
@@ -230,7 +237,7 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
       args: [seasonId],
     });
     if (settingsRes.rows.length > 0) {
-      maxSubstitutions = settingsRes.rows[0].maxSubstitutions as number;
+      maxSubstitutions = Math.min(settingsRes.rows[0].maxSubstitutions as number, HARD_MAX_SUBSTITUTIONS);
       homeAdvantage = (settingsRes.rows[0].homeAdvantage as number) ?? 0;
       defenseModifierEnabled = Boolean(settingsRes.rows[0].defenseModifierEnabled);
       try {
@@ -301,8 +308,19 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
       if (starter.fantavoto !== null) {
         base += starter.fantavoto as number;
       } else if (subsUsed < maxSubstitutions) {
+        // Sostituzione automatica "ruolo per ruolo": la riserva che entra deve
+        // avere lo stesso bucket di ruolo del titolare assente (portiere con
+        // portiere, difensore con difensore TER/DC, centrocampista M/OFF con
+        // centrocampista, attaccante con attaccante) — così il modulo
+        // schierato resta sempre valido. Se non c'è nessuna riserva
+        // compatibile con un voto, quel titolare conta 0 (nessuna
+        // sostituzione "fuori modulo").
+        const starterBucket = roleBucket(starter.mantraRole as string);
         const rIdx = reserveRows.findIndex(
-          (_, i) => !usedReserveIdxs.has(i) && reserveRows[i].fantavoto !== null
+          (_, i) =>
+            !usedReserveIdxs.has(i) &&
+            reserveRows[i].fantavoto !== null &&
+            roleBucket(reserveRows[i].mantraRole as string) === starterBucket
         );
         if (rIdx !== -1) {
           usedReserveIdxs.add(rIdx);

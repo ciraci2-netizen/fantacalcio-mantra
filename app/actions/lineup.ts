@@ -4,10 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { log } from "@/app/lib/logger";
-
-const DEF_ROLES = new Set(["DC", "TER"]);
-const MID_ROLES = new Set(["M", "OFF"]);
-const ATT_ROLES = new Set(["ATT"]);
+import { DEF_ROLES, ATT_ROLES } from "@/app/lib/scoring";
 
 /** Validates that starters satisfy the minimum module requirements */
 function validateFormation(

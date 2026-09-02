@@ -121,11 +121,14 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
                 name="maxSubstitutions"
                 type="number"
                 min={0}
-                max={11}
+                max={5}
                 defaultValue={settings.maxSubstitutions}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
               />
-              <p className="text-xs text-gray-400 mt-1">Quante riserve possono entrare automaticamente per titolari senza voto (es. 3)</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Quante riserve possono entrare automaticamente per titolari senza voto, sempre ruolo per ruolo
+                rispettando il modulo (max 5)
+              </p>
             </div>
           </div>
         </div>
