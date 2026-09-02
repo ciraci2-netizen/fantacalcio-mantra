@@ -38,7 +38,7 @@ export default async function MatchDetailPage({
                    m.homeDefenseAvg, m.homeDefenseMalus, m.awayDefenseAvg, m.awayDefenseMalus,
                    hu.teamName as homeTeamName, hu.username as homeUsername,
                    au.teamName as awayTeamName, au.username as awayUsername,
-                   md.number as matchdayNumber, md.id as matchdayId
+                   md.number as matchdayNumber, md.id as matchdayId, md.seasonId as seasonId
             FROM "Match" m
             JOIN "User" hu ON hu.id = m.homeUserId
             JOIN "User" au ON au.id = m.awayUserId
@@ -55,7 +55,7 @@ export default async function MatchDetailPage({
                    m.homeGoals, m.awayGoals,
                    hu.teamName as homeTeamName, hu.username as homeUsername,
                    au.teamName as awayTeamName, au.username as awayUsername,
-                   md.number as matchdayNumber, md.id as matchdayId
+                   md.number as matchdayNumber, md.id as matchdayId, md.seasonId as seasonId
             FROM "Match" m
             JOIN "User" hu ON hu.id = m.homeUserId
             JOIN "User" au ON au.id = m.awayUserId
@@ -81,6 +81,21 @@ export default async function MatchDetailPage({
   const homeUserId = match.homeUserId as number;
   const awayUserId = match.awayUserId as number;
   const matchdayId = match.matchdayId as number;
+
+  // Vantaggio campo configurato per la stagione (mostrato nel tabellino sotto,
+  // se diverso da zero) - vedi calculateScoresCore in app/lib/voteImporter.ts,
+  // dove viene sommato al punteggio della squadra di casa prima del confronto.
+  let homeAdvantage = 0;
+  try {
+    const seasonId = match.seasonId as number | undefined;
+    if (seasonId) {
+      const settingsRes = await db.execute({
+        sql: `SELECT homeAdvantage FROM "LeagueSettings" WHERE seasonId = ?`,
+        args: [seasonId],
+      });
+      homeAdvantage = (settingsRes.rows[0]?.homeAdvantage as number) ?? 0;
+    }
+  } catch { /* tabella impostazioni non ancora migrata */ }
 
   // Head-to-head history (past matches between same two teams)
   const h2hRes = await db.execute({
@@ -247,6 +262,23 @@ export default async function MatchDetailPage({
                 </span>
               </p>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Vantaggio campo */}
+      {played && homeAdvantage !== 0 && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="px-5 py-3 border-b bg-amber-50 flex items-center gap-2">
+            <span className="font-semibold text-gray-700 text-sm">Vantaggio campo</span>
+          </div>
+          <div className="p-4 text-sm text-gray-600">
+            <strong>{match.homeTeamName as string}</strong> gioca in casa:{" "}
+            <span className={`font-semibold ${homeAdvantage > 0 ? "text-green-600" : "text-red-600"}`}>
+              {homeAdvantage > 0 ? "+" : ""}
+              {homeAdvantage} pt
+            </span>{" "}
+            applicati al punteggio prima del confronto con {match.awayTeamName as string}.
           </div>
         </div>
       )}
