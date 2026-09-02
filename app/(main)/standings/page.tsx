@@ -21,6 +21,7 @@ type StandingRow = {
   gf: number;
   ga: number;
   gd: number;
+  totalFantapoints: number;
   form: ("W" | "D" | "L")[];
 };
 
@@ -39,7 +40,8 @@ async function getStandings(seasonId: number): Promise<StandingRow[]> {
             COALESCE(SUM(CASE WHEN (m.homeUserId = u.id AND m.homePoints = 0) OR (m.awayUserId = u.id AND m.awayPoints = 0) THEN 1 ELSE 0 END), 0) as losses,
             COALESCE(COUNT(m.id), 0) as played,
             COALESCE(ROUND(SUM(CASE WHEN m.homeUserId = u.id THEN COALESCE(m.homeGoals, m.homeScore) ELSE COALESCE(m.awayGoals, m.awayScore) END), 1), 0) as gf,
-            COALESCE(ROUND(SUM(CASE WHEN m.homeUserId = u.id THEN COALESCE(m.awayGoals, m.awayScore) ELSE COALESCE(m.homeGoals, m.homeScore) END), 1), 0) as ga
+            COALESCE(ROUND(SUM(CASE WHEN m.homeUserId = u.id THEN COALESCE(m.awayGoals, m.awayScore) ELSE COALESCE(m.homeGoals, m.homeScore) END), 1), 0) as ga,
+            COALESCE(ROUND(SUM(CASE WHEN m.homeUserId = u.id THEN m.homeScore ELSE m.awayScore END), 1), 0) as totalFantapoints
           FROM "User" u
           LEFT JOIN (
             SELECT m2.* FROM "Match" m2
@@ -104,6 +106,7 @@ async function getStandings(seasonId: number): Promise<StandingRow[]> {
     gf: r.gf as number,
     ga: r.ga as number,
     gd: Math.round(((r.gf as number) - (r.ga as number)) * 10) / 10,
+    totalFantapoints: r.totalFantapoints as number,
     form: formMap[r.id as number] ?? [],
   }));
 }

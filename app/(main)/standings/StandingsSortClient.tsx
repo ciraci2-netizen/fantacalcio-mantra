@@ -16,6 +16,7 @@ type StandingRow = {
   gf: number;
   ga: number;
   gd: number;
+  totalFantapoints: number;
   form: ("W" | "D" | "L")[];
 };
 
@@ -76,7 +77,7 @@ export default function StandingsSortClient({
         <div className="text-center text-gray-400">G-</div>
         <div className="text-center"><SortBtn k="gd" label="DR" /></div>
         <div className="text-center"><SortBtn k="points" label="PT" /></div>
-        <div className="text-center text-gray-400">tot</div>
+        <div className="text-center text-gray-400">tot fp</div>
       </div>
 
       <div className="divide-y">
@@ -113,7 +114,7 @@ export default function StandingsSortClient({
                 <div className="flex items-center justify-center">{s.ga}</div>
                 <div className="flex items-center justify-center">{s.gd > 0 ? `+${s.gd}` : s.gd}</div>
                 <div className="flex items-center justify-center font-bold text-blue-600 text-base">{s.points}</div>
-                <div className="flex items-center justify-center text-gray-500 text-xs font-medium">{s.gf}</div>
+                <div className="flex items-center justify-center text-gray-500 text-xs font-medium">{s.totalFantapoints}</div>
               </div>
               <div className="sm:hidden ml-auto flex items-center gap-2">
                 {/* Gol fatti/subiti e differenza reti, visibili anche su
@@ -135,7 +136,7 @@ export default function StandingsSortClient({
       </div>
 
       <div className="px-4 py-2 border-t bg-gray-50 text-xs text-gray-400 flex flex-wrap gap-x-4 gap-y-1">
-        <span>g=giocate · v=vinte · n=nulle · p=perse · dr=differenza · <strong className="text-gray-500">pt=punti lega</strong></span>
+        <span>g=giocate - v=vinte - n=nulle - p=perse - dr=differenza - <strong className="text-gray-500">pt=punti lega</strong> - tot fp=fantapunti totali</span>
         <span className="text-blue-500">Clicca V, G+, DR, PT per ordinare</span>
       </div>
     </div>
