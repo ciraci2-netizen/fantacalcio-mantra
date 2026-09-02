@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/app/lib/db";
-import { importVotesCore, calculateScoresCore } from "@/app/lib/voteImporter";
+import { importVotesCore, calculateScoresCore, MISMATCH_PREFIX } from "@/app/lib/voteImporter";
 import { sendPushToAll } from "@/app/lib/pushNotification";
 import { revalidatePath } from "next/cache";
 
@@ -98,6 +98,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+
+    // fantapiu3 mostra ancora una giornata diversa da quella attesa: non è un
+    // errore, è normale finché il sito non pubblica quella giusta — nessuna
+    // scrittura è avvenuta (votesImported resta 0), il cron riproverà al
+    // prossimo giro senza bisogno di alcun intervento.
+    if (message.startsWith(MISMATCH_PREFIX)) {
+      const detected = message.slice(MISMATCH_PREFIX.length);
+      log("info", "Giornata su fantapiu3 non ancora corrispondente — riprovo più tardi", {
+        matchdayNumber,
+        detectedOnSite: detected,
+      });
+      return NextResponse.json({
+        skipped: `fantapiu3 mostra la Giornata ${detected}, non la ${matchdayNumber} — riproverà più tardi`,
+      });
+    }
+
     log("error", "Auto-import failed", { error: message });
     return NextResponse.json({ error: message }, { status: 500 });
   }

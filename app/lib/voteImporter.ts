@@ -6,7 +6,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getDb } from "./db";
-import { scrapeVotes } from "./scraper";
+import { scrapeVotesWithMeta } from "./scraper";
 import {
   calculateFantavoto,
   calculateGoalBonus,
@@ -23,14 +23,35 @@ export interface ImportResult {
   matchdayNumber: number;
 }
 
+/**
+ * Prefisso dell'errore lanciato quando la giornata mostrata da fantapiu3 non
+ * corrisponde alla giornata che si sta importando. Il chiamante (server
+ * action / cron) lo riconosce da questo prefisso per offrire una scelta
+ * esplicita ("importa comunque") invece di un errore generico — vedi
+ * `force` sotto.
+ */
+export const MISMATCH_PREFIX = "MISMATCH_GIORNATA:";
+
 // ── Import scraped votes for a matchday ────────────────────────────────────
 export async function importVotesCore(
   matchdayId: number,
-  matchdayNumber: number
+  matchdayNumber: number,
+  options?: { force?: boolean }
 ): Promise<ImportResult> {
-  const scraped = await scrapeVotes(matchdayNumber);
+  const { votes: scraped, detectedMatchday } = await scrapeVotesWithMeta();
   if (scraped.length === 0) {
     throw new Error("Nessun voto trovato sul sito. Riprova più tardi.");
+  }
+
+  // Il sito fantapiu3 mostra sempre e solo l'ultima giornata disponibile (non
+  // permette di consultarne di precedenti): se non corrisponde alla giornata
+  // che si sta importando, i voti sarebbero abbinati alla giornata sbagliata.
+  // Di default blocchiamo qui (nessuna scrittura è ancora avvenuta) invece di
+  // salvare dati sbagliati silenziosamente — ma chi importa può scegliere
+  // esplicitamente di procedere comunque (es. numerazione delle giornate
+  // diversa tra il proprio campionato e quello ufficiale) passando force:true.
+  if (!options?.force && detectedMatchday !== null && detectedMatchday !== matchdayNumber) {
+    throw new Error(`${MISMATCH_PREFIX}${detectedMatchday}`);
   }
 
   const db = getDb();

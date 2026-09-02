@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/app/lib/session";
-import { importVotesCore, calculateScoresCore } from "@/app/lib/voteImporter";
+import { importVotesCore, calculateScoresCore, MISMATCH_PREFIX } from "@/app/lib/voteImporter";
 import { log } from "@/app/lib/logger";
 import { sendPushToAll } from "@/app/lib/pushNotification";
 import { getDb } from "@/app/lib/db";
@@ -14,6 +14,7 @@ export async function importVotes(prevState: string | null, formData: FormData) 
 
   const matchdayId = parseInt(formData.get("matchdayId") as string);
   const matchdayNumber = parseInt(formData.get("matchdayNumber") as string);
+  const force = formData.get("force") === "1";
 
   const db = getDb();
   const check = await db.execute({
@@ -30,8 +31,8 @@ export async function importVotes(prevState: string | null, formData: FormData) 
 
   const start = Date.now();
   try {
-    const result = await importVotesCore(matchdayId, matchdayNumber);
-    log("import_votes", { matchdayId, matchdayNumber, matched: result.matched, unmatched: result.unmatched, ms: Date.now() - start });
+    const result = await importVotesCore(matchdayId, matchdayNumber, { force });
+    log("import_votes", { matchdayId, matchdayNumber, matched: result.matched, unmatched: result.unmatched, forced: force, ms: Date.now() - start });
 
     revalidatePath("/admin/votes");
     revalidatePath("/standings");
@@ -48,7 +49,11 @@ export async function importVotes(prevState: string | null, formData: FormData) 
 
     return `Voti importati: ${result.matched} trovati, ${result.unmatched} non abbinati.${alreadyImported ? " (re-import, nessuna push inviata)" : ""}`;
   } catch (err) {
-    return `Errore durante l'importazione: ${err instanceof Error ? err.message : "Errore sconosciuto"}`;
+    const message = err instanceof Error ? err.message : "Errore sconosciuto";
+    // Prefisso riconosciuto dal client per mostrare la scelta "importa comunque"
+    // invece di un errore generico — vedi MISMATCH_PREFIX in voteImporter.ts.
+    if (message.startsWith(MISMATCH_PREFIX)) return message;
+    return `Errore durante l'importazione: ${message}`;
   }
 }
 

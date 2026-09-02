@@ -67,6 +67,10 @@ export default function VotesAdminClient({
   allPlayers: Player[];
 }) {
   const [importResult, importAction, importPending] = useActionState(importVotes, null);
+  // Riconosce l'esito "giornata fantapiu3 diversa da quella importata" (vedi
+  // MISMATCH_PREFIX in app/lib/voteImporter.ts) per offrire la scelta esplicita
+  // di importare comunque, invece di un messaggio d'errore generico.
+  const mismatchDetected = importResult?.match(/^MISMATCH_GIORNATA:(\d+)$/)?.[1] ?? null;
   const [calcResult, calcAction, calcPending] = useActionState(calculateAllScores, null);
   const [advanceResult, advanceAction, advancePending] = useActionState(lockAndAdvanceMatchday, null);
   const [, statusAction] = useActionState(setPlayerStatus, null);
@@ -354,7 +358,31 @@ export default function VotesAdminClient({
               )}
             </div>
 
-            {importResult && (
+            {mismatchDetected && (
+              <div className="px-4 py-3 rounded-lg text-sm bg-amber-50 border border-amber-200 text-amber-800 space-y-2">
+                <p>
+                  ⚠️ Il sito fantapiu3 mostra al momento la <strong>Giornata {mismatchDetected}</strong>, non
+                  la Giornata {selectedMatchday.number}. Il sito non permette di consultare giornate passate:
+                  puoi aspettare che mostri la Giornata {selectedMatchday.number}, oppure importare comunque
+                  i dati della Giornata {mismatchDetected} come Giornata {selectedMatchday.number}.
+                </p>
+                <form action={importAction}>
+                  <input type="hidden" name="matchdayId" value={selectedMatchday.id} />
+                  <input type="hidden" name="matchdayNumber" value={selectedMatchday.number} />
+                  <input type="hidden" name="force" value="1" />
+                  <button
+                    type="submit"
+                    disabled={importPending}
+                    className="bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                  >
+                    {importPending
+                      ? "⏳ Importazione..."
+                      : `Importa comunque Giornata ${mismatchDetected} → G${selectedMatchday.number}`}
+                  </button>
+                </form>
+              </div>
+            )}
+            {importResult && !mismatchDetected && (
               <div className={`px-4 py-3 rounded-lg text-sm ${importResult.startsWith("Errore") || importResult.startsWith("Non") ? "bg-red-50 border border-red-200 text-red-700" : "bg-green-50 border border-green-200 text-green-700"}`}>
                 {importResult}
               </div>

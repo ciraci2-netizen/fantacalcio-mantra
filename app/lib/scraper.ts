@@ -170,15 +170,32 @@ export function parseVotesFromHtml(html: string): ScrapedVote[] {
   return results;
 }
 
-export async function scrapeVotes(_matchday: number): Promise<ScrapedVote[]> {
+/**
+ * Legge il numero di giornata che la pagina fantapiu3 sta mostrando in
+ * questo momento (es. il testo "Giornata 02ª CRYSTAL Palace..." → 2).
+ * La pagina non permette di scegliere la giornata (mostra sempre l'ultima
+ * disponibile — vedi NB2 sotto): questo serve per VERIFICARE che corrisponda
+ * davvero alla giornata che si sta importando, invece di fidarsi alla cieca
+ * e rischiare di salvare i voti della giornata sbagliata.
+ */
+export function detectFantapiuMatchday(html: string): number | null {
+  const $ = cheerio.load(html);
+  const title = $(".widget-item").first().find(".section-title-wrap p.section-title").first().text();
+  const match = title.match(/Giornata\s+(\d+)/i);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+async function fetchVotesHtml(): Promise<string> {
   // NB: la vecchia URL "voti-globali/...premier-league.php" è una pagina
   // di fantapiu3.com abbandonata, ferma alla stagione 23/24 — non contiene
   // MAI i voti della stagione corrente, da cui "0 abbinati" ad ogni import.
   // Quella viva e aggiornata è sotto /voti/ (senza "-globali").
   // NB2: questa pagina NON supporta la selezione giornata via query string
   // (mostra sempre l'ultima giornata disponibile — verificato: nessun
-  // parametro/link d'archivio presente sulla pagina), quindi il parametro
-  // `matchday` qui non è utilizzabile per richiedere giornate passate.
+  // parametro/link d'archivio presente sulla pagina, nemmeno nella sezione
+  // "Storico"), quindi non è possibile richiedere giornate passate: si può
+  // solo verificare (vedi detectFantapiuMatchday) che quella mostrata ora
+  // sia quella giusta.
   const url = `https://www.fantapiu3.com/voti/voti-fantapiu3-fantacalcio-premier-league.php`;
 
   const res = await fetchWithRetry(url, {
@@ -190,8 +207,24 @@ export async function scrapeVotes(_matchday: number): Promise<ScrapedVote[]> {
     cache: "no-store",
   });
 
-  const html = await res.text();
+  return res.text();
+}
+
+export async function scrapeVotes(_matchday: number): Promise<ScrapedVote[]> {
+  const html = await fetchVotesHtml();
   return parseVotesFromHtml(html);
+}
+
+export interface ScrapeResult {
+  votes: ScrapedVote[];
+  /** Giornata che la pagina fantapiu3 sta mostrando ora (null se non rilevabile). */
+  detectedMatchday: number | null;
+}
+
+/** Come scrapeVotes(), ma restituisce anche la giornata rilevata sulla pagina. */
+export async function scrapeVotesWithMeta(): Promise<ScrapeResult> {
+  const html = await fetchVotesHtml();
+  return { votes: parseVotesFromHtml(html), detectedMatchday: detectFantapiuMatchday(html) };
 }
 
 // Mappa ruolo fantapiu3 (P/D/C/A) a ruolo Mantra
