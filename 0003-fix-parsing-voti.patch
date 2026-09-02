@@ -1,0 +1,263 @@
+From 8c26cf2ea5b8135eda5f3fa3c5f248ffdf636195 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 2 Sep 2026 10:02:15 +0000
+Subject: [PATCH 1/2] Riscrive il parsing dei voti: la pagina fantapiu3 usa
+ icone, non testo
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+I valori (voto, gol, cartellini, assist...) sulla pagina
+/voti/voti-fantapiu3-fantacalcio-premier-league.php non sono testo in
+celle <td>, ma icone <img src=".../voti/XXX.png">: da qui il precedente
+"0 abbinati" ad ogni import anche dopo il fix dell'URL. Decodifica ora
+i nomi dei file icona (es. "v55.png" = voto 5.5, "gs4.png" = 4 gol
+subiti, "giallo.png" = ammonizione, "tr.png" = nessun evento) e la
+reale struttura a div (.widget-item > .layout-content-full + due
+.table.lineups per partita, righe .table-row con celle .table-row-item
+identificate da data-title) invece del vecchio selettore "table tr".
+
+Il voto importato è quello base di Fantapiu3 (pre bonus/malus): il
+fantavoto finale resta calcolato dall'app da voto + eventi con le
+regole della lega, per non sommare i bonus due volte.
+
+Verificato contro un frammento HTML reale della pagina live (Giornata 2,
+2026/27): nomi, squadre (casa/trasferta correttamente assegnate), voti
+e tutti gli eventi (gol fatti/subiti, autogol, ammonizioni, assist
+singoli/doppi) decodificati correttamente.
+
+La logica di parsing è ora isolata in parseVotesFromHtml() (esportata),
+separata dal fetch di rete, per poter essere testata contro un HTML
+salvato senza richiamare il sito ad ogni verifica.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014b1sN91ccrMwyrjH8mBkxx
+---
+ app/lib/scraper.ts | 195 ++++++++++++++++++++++++++++++---------------
+ 1 file changed, 130 insertions(+), 65 deletions(-)
+
+diff --git a/app/lib/scraper.ts b/app/lib/scraper.ts
+index bf2fad4..a157fe5 100644
+--- a/app/lib/scraper.ts
++++ b/app/lib/scraper.ts
+@@ -40,25 +40,144 @@ export interface ScrapedVote {
+   adf: number;
+ }
+ 
+-function parseNum(val: string): number {
+-  const n = parseFloat(val.replace(",", ".").trim());
+-  return isNaN(n) ? 0 : n;
++// ── Decodifica valori dalle icone della pagina fantapiu3 ───────────────────
++// La pagina /voti/ NON scrive i valori come testo in celle <td>: ogni voto,
++// gol, cartellino ecc. è un'icona <img src=".../voti/XXX.png">. Un parsing
++// testuale (cells.text()) trova quindi sempre celle vuote — da qui il
++// precedente "0 abbinati" ad ogni import, anche a pagina corretta.
++//
++// Convenzioni osservate (verificate su Giornata 2, 2026/27 — 312 righe,
++// 276 con voto, eventi reali: gol, autogol, ammonizioni, rigori, assist...):
++//   voto:  "vsv.png" = SV (non ha giocato) → null
++//          "v6.png"/"v7.png"/... (1 cifra)  → voto intero (6, 7, ...)
++//          "v55.png"/"v65.png"/... (2 cifre) → parte intera + decimale (5.5, 6.5, ...)
++//   eventi ("BONUS/MALUS PORTIERE", "GOAL FATTO", "GOAL SU RIGORE",
++//           "AMMONIZIONE", "ESPULSIONE", "RIGORE" [sbagliato/parato],
++//           "AUTOGOAL", "ASSIST", "ASSIST DA FERMO"):
++//          "tr.png" o "gk.png" (nessun evento / portiere imbattuto) → 0
++//          "gs4.png", "gf2.png", "assisx2.png" ecc. → il numero nel nome (4, 2, 2)
++//          "giallo.png", "gri.png", "autogo.png", "assis.png" ecc. (senza numero) → 1
++
++function iconFile(src: string | undefined): string {
++  return (src?.split("/").pop() || "").replace(/\.png$/i, "").toLowerCase();
+ }
+ 
+-function parseVote(val: string): number | null {
+-  const cleaned = val.replace(",", ".").trim();
+-  if (!cleaned || cleaned === "-" || cleaned === "sv" || cleaned === "SV") return null;
+-  const n = parseFloat(cleaned);
+-  return isNaN(n) ? null : n;
++/** Decodifica l'icona voto (es. "v55.png" → 5.5, "vsv.png" → null). */
++function parseVoteIcon(src: string | undefined): number | null {
++  const file = iconFile(src);
++  if (!file.startsWith("v")) return null;
++  const code = file.slice(1);
++  if (!code || code === "sv") return null;
++  if (code === "10") return 10;
++  if (/^\d$/.test(code)) return parseInt(code, 10);
++  if (/^\d{2}$/.test(code)) return parseInt(code[0], 10) + parseInt(code[1], 10) / 10;
++  return null;
+ }
+ 
+-export async function scrapeVotes(matchday: number): Promise<ScrapedVote[]> {
++/** Decodifica un'icona-evento in un conteggio (es. "gs4.png" → 4, "tr.png" → 0). */
++function parseIconCount(src: string | undefined): number {
++  const file = iconFile(src);
++  if (!file || file === "tr" || file === "gk") return 0;
++  const doubled = file.match(/x(\d+)$/i);
++  if (doubled) return parseInt(doubled[1], 10);
++  const trailingDigits = file.match(/(\d+)$/);
++  if (trailingDigits) return parseInt(trailingDigits[1], 10);
++  return 1;
++}
++
++/**
++ * Estrae i voti dall'HTML già scaricato della pagina /voti/ di fantapiu3.
++ * Separata da scrapeVotes() per poter essere testata contro un HTML salvato,
++ * senza dover rifare la richiesta di rete ogni volta.
++ */
++export function parseVotesFromHtml(html: string): ScrapedVote[] {
++  const $ = cheerio.load(html);
++
++  const results: ScrapedVote[] = [];
++
++  // Il widget dei voti (c'è un solo ".widget-item" per pagina): al suo
++  // interno, ogni partita è un blocco ".layout-content-full" (intestazione
++  // con le due squadre) seguito da due ".table.lineups" (formazione casa,
++  // poi formazione trasferta). Scopiamo la ricerca a questo widget per non
++  // raccogliere righe di altri componenti della pagina (es. mini-calendario)
++  // che riusano le stesse classi CSS.
++  const widget = $(".widget-item").first();
++
++  widget.find(".layout-content-full").each((_i, headerEl) => {
++    const header = $(headerEl);
++    const teamNames = header
++      .find(".team-name .highlight")
++      .map((_j, el) => $(el).text().trim().toUpperCase())
++      .get();
++    if (teamNames.length < 2) return;
++
++    const tables = header.nextAll(".table.lineups").slice(0, 2);
++
++    tables.each((tableIdx, tableEl) => {
++      const team = teamNames[tableIdx] ?? "";
++
++      $(tableEl)
++        .find(".table-rows .table-row")
++        .each((_k, rowEl) => {
++          const row = $(rowEl);
++          const items = row.find(".table-row-item");
++          if (items.length < 11) return; // riga inattesa, non un giocatore
++
++          const nameCell = items.eq(0);
++          const role = iconFile(nameCell.find("img").attr("src")).toUpperCase();
++          const name = nameCell
++            .find(".table-text")
++            .first()
++            .text()
++            .replace(/\s+/g, " ")
++            .trim();
++          if (!name) return;
++
++          const eventIcon = (dataTitle: string): string | undefined =>
++            row.find(`.table-row-item[data-title="${dataTitle}"]`).find("img").attr("src");
++
++          const vote = parseVoteIcon(items.eq(1).find("img").attr("src"));
++
++          const goalsConceded = parseIconCount(eventIcon("BONUS/MALUS PORTIERE"));
++          const goalsScored = parseIconCount(eventIcon("GOAL FATTO"));
++          // Un solo campo firmato per gol fatti (+) / subiti (-): sulla pagina
++          // sono due colonne separate (GF per chi segna, GS/PI per i portieri),
++          // ma non si sovrappongono mai sullo stesso giocatore.
++          const gfGs = goalsScored > 0 ? goalsScored : goalsConceded > 0 ? -goalsConceded : 0;
++
++          results.push({
++            name: name.toUpperCase(),
++            team,
++            role,
++            // "Voto F+3" = voto base secondo Fantapiu3 (pre bonus/malus).
++            // fantavoto resta null: è l'app a calcolarlo da vote + eventi,
++            // con le regole/soglie della lega — sommarlo qui raddoppierebbe i bonus.
++            vote,
++            fantavoto: null,
++            gfGs,
++            gsr: parseIconCount(eventIcon("GOAL SU RIGORE")),
++            amm: parseIconCount(eventIcon("AMMONIZIONE")),
++            esp: parseIconCount(eventIcon("ESPULSIONE")),
++            rpRs: parseIconCount(eventIcon("RIGORE")),
++            aut: parseIconCount(eventIcon("AUTOGOAL")),
++            ass: parseIconCount(eventIcon("ASSIST")),
++            adf: parseIconCount(eventIcon("ASSIST DA FERMO")),
++          });
++        });
++    });
++  });
++
++  return results;
++}
++
++export async function scrapeVotes(_matchday: number): Promise<ScrapedVote[]> {
+   // NB: la vecchia URL "voti-globali/...premier-league.php" è una pagina
+   // di fantapiu3.com abbandonata, ferma alla stagione 23/24 — non contiene
+   // MAI i voti della stagione corrente, da cui "0 abbinati" ad ogni import.
+   // Quella viva e aggiornata è sotto /voti/ (senza "-globali").
+   // NB2: questa pagina NON supporta la selezione giornata via query string
+-  // (mostra sempre l'ultima giornata disponibile), quindi il parametro
++  // (mostra sempre l'ultima giornata disponibile — verificato: nessun
++  // parametro/link d'archivio presente sulla pagina), quindi il parametro
+   // `matchday` qui non è utilizzabile per richiedere giornate passate.
+   const url = `https://www.fantapiu3.com/voti/voti-fantapiu3-fantacalcio-premier-league.php`;
+ 
+@@ -72,61 +191,7 @@ export async function scrapeVotes(matchday: number): Promise<ScrapedVote[]> {
+   });
+ 
+   const html = await res.text();
+-  const $ = cheerio.load(html);
+-
+-  const results: ScrapedVote[] = [];
+-
+-  // Cerca il contenuto della giornata selezionata
+-  // La pagina contiene tutte le giornate, bisogna trovare quella giusta
+-  // Ogni sezione giornata è identificata da un tab/div con id o classe
+-
+-  // Prova a trovare le righe della tabella voti
+-  // La struttura tipica: table con righe tr, ogni riga ha td con nome, squadra-ruolo, FV, V, GF/GS, ...
+-  $("table tr").each((_i, row) => {
+-    const cells = $(row).find("td");
+-    if (cells.length < 10) return;
+-
+-    const nameCell = $(cells[0]).text().trim();
+-    const teamRoleCell = $(cells[1]).text().trim();
+-
+-    if (!nameCell || !teamRoleCell) return;
+-
+-    // teamRoleCell formato: "LIVERPOOL - P" o "INTER - D"
+-    const parts = teamRoleCell.split(" - ");
+-    if (parts.length < 2) return;
+-
+-    const team = parts[0].trim();
+-    const role = parts[parts.length - 1].trim();
+-
+-    const fv = parseVote($(cells[2]).text());
+-    const v = parseVote($(cells[3]).text());
+-    const gfGs = parseNum($(cells[4]).text());
+-    const gsr = parseNum($(cells[5]).text());
+-    const amm = parseNum($(cells[6]).text());
+-    const esp = parseNum($(cells[7]).text());
+-    const rpRs = parseNum($(cells[8]).text());
+-    const aut = parseNum($(cells[9]).text());
+-    const ass = cells.length > 10 ? parseNum($(cells[10]).text()) : 0;
+-    const adf = cells.length > 11 ? parseNum($(cells[11]).text()) : 0;
+-
+-    results.push({
+-      name: nameCell.toUpperCase(),
+-      team,
+-      role,
+-      vote: v,
+-      fantavoto: fv,
+-      gfGs,
+-      gsr,
+-      amm,
+-      esp,
+-      rpRs,
+-      aut,
+-      ass,
+-      adf,
+-    });
+-  });
+-
+-  return results;
++  return parseVotesFromHtml(html);
+ }
+ 
+ // Mappa ruolo fantapiu3 (P/D/C/A) a ruolo Mantra
+-- 
+2.43.0
+

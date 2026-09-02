@@ -1,0 +1,189 @@
+From 4d56cf12c6e854d3559e9ef1f97a4e4b254a489c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 2 Sep 2026 14:25:24 +0000
+Subject: [PATCH 2/2] Sostituzioni adattate: entra il primo in panchina se il
+ modulo resta valido
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+In precedenza (patch 10) una riserva poteva sostituire un titolare assente
+solo se aveva lo stesso ruolo (bucket). Ora si prova la panchina
+nell'ordine schierato, anche fuori ruolo: la prima riserva disponibile
+entra se, sostituendola, la squadra resta in un modulo consentito (1
+portiere, almeno 3 difensori, almeno 1 attaccante — stessa regola di
+validateFormation, ora condivisa via isValidRoleComposition in
+scoring.ts). Se il primo in panchina romperebbe il modulo si passa al
+successivo; il portiere resta sostituibile solo da un altro portiere,
+dato che il modulo richiede sempre esattamente 1 portiere.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014b1sN91ccrMwyrjH8mBkxx
+---
+ app/(main)/admin/settings/SettingsClient.tsx |  5 +-
+ app/lib/scoring.ts                           | 21 +++++
+ app/lib/voteImporter.ts                      | 80 +++++++++++++++-----
+ 3 files changed, 85 insertions(+), 21 deletions(-)
+
+diff --git a/app/(main)/admin/settings/SettingsClient.tsx b/app/(main)/admin/settings/SettingsClient.tsx
+index 47985be..db467e7 100644
+--- a/app/(main)/admin/settings/SettingsClient.tsx
++++ b/app/(main)/admin/settings/SettingsClient.tsx
+@@ -126,8 +126,9 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
+                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+               />
+               <p className="text-xs text-gray-400 mt-1">
+-                Quante riserve possono entrare automaticamente per titolari senza voto, sempre ruolo per ruolo
+-                rispettando il modulo (max 5)
++                Quante riserve possono entrare automaticamente per titolari senza voto. Entra la prima riserva
++                disponibile in panchina (anche di ruolo diverso) purché il modulo risultante resti tra quelli
++                consentiti (max 5)
+               </p>
+             </div>
+           </div>
+diff --git a/app/lib/scoring.ts b/app/lib/scoring.ts
+index 8dfa084..1cdc200 100644
+--- a/app/lib/scoring.ts
++++ b/app/lib/scoring.ts
+@@ -117,6 +117,27 @@ export function roleBucket(role: string): RoleBucket {
+   return null;
+ }
+ 
++export interface RoleBucketCounts {
++  gk: number;
++  def: number;
++  mid: number;
++  att: number;
++}
++
++/**
++ * Verifica se una composizione di ruoli (conteggio per bucket) rispetta i
++ * requisiti minimi di un modulo Mantra consentito: esattamente 1 portiere,
++ * almeno 3 difensori, almeno 1 attaccante. È la stessa regola applicata da
++ * validateFormation (app/actions/lineup.ts) alla formazione schierata, e
++ * viene riusata anche per le "sostituzioni adattate" a giornata giocata
++ * (app/lib/voteImporter.ts): un cambio è permesso solo se la composizione
++ * risultante resta un modulo consentito secondo questa stessa regola —
++ * unica fonte di verità condivisa dai due file.
++ */
++export function isValidRoleComposition(counts: RoleBucketCounts): boolean {
++  return counts.gk === 1 && counts.def >= 3 && counts.att >= 1;
++}
++
+ // Modificatori fuori ruolo: quale ruolo può giocare in quale posizione e con quale malus
+ export const ROLE_MODIFIERS: Record<string, Record<string, number>> = {
+   POR: { POR: 0 },
+diff --git a/app/lib/voteImporter.ts b/app/lib/voteImporter.ts
+index 8607310..7bdfa80 100644
+--- a/app/lib/voteImporter.ts
++++ b/app/lib/voteImporter.ts
+@@ -13,10 +13,12 @@ import {
+   calculateDefenseModifier,
+   convertScoreToGoals,
+   roleBucket,
++  isValidRoleComposition,
+   DEFAULT_GOAL_THRESHOLDS,
+   DEFAULT_SCORE_CONVERSION,
+   type GoalThreshold,
+   type ScoreConversion,
++  type RoleBucketCounts,
+ } from "./scoring";
+ 
+ /** Tetto assoluto alle sostituzioni automatiche per assenti/sv, a prescindere
+@@ -296,6 +298,17 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
+       }))
+     );
+ 
++    // Conteggio ruoli (per bucket) della formazione titolare originale, punto
++    // di partenza per validare le sostituzioni "adattate" qui sotto.
++    const roleCounts: RoleBucketCounts = { gk: 0, def: 0, mid: 0, att: 0 };
++    for (const s of starterRows) {
++      const b = roleBucket(s.mantraRole as string);
++      if (b === "GK") roleCounts.gk++;
++      else if (b === "DEF") roleCounts.def++;
++      else if (b === "MID") roleCounts.mid++;
++      else if (b === "ATT") roleCounts.att++;
++    }
++
+     let base = 0;
+     let subsUsed = 0;
+     let totalGoals = 0;
+@@ -307,27 +320,56 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
+ 
+       if (starter.fantavoto !== null) {
+         base += starter.fantavoto as number;
+-      } else if (subsUsed < maxSubstitutions) {
+-        // Sostituzione automatica "ruolo per ruolo": la riserva che entra deve
+-        // avere lo stesso bucket di ruolo del titolare assente (portiere con
+-        // portiere, difensore con difensore TER/DC, centrocampista M/OFF con
+-        // centrocampista, attaccante con attaccante) — così il modulo
+-        // schierato resta sempre valido. Se non c'è nessuna riserva
+-        // compatibile con un voto, quel titolare conta 0 (nessuna
+-        // sostituzione "fuori modulo").
+-        const starterBucket = roleBucket(starter.mantraRole as string);
+-        const rIdx = reserveRows.findIndex(
+-          (_, i) =>
+-            !usedReserveIdxs.has(i) &&
+-            reserveRows[i].fantavoto !== null &&
+-            roleBucket(reserveRows[i].mantraRole as string) === starterBucket
+-        );
+-        if (rIdx !== -1) {
+-          usedReserveIdxs.add(rIdx);
+-          base += reserveRows[rIdx].fantavoto as number;
+-          subsUsed++;
++        continue;
++      }
++      if (subsUsed >= maxSubstitutions) continue;
++
++      // Sostituzione automatica "adattata": si prova la panchina nell'ordine
++      // in cui è stata schierata (non necessariamente lo stesso ruolo del
++      // titolare assente) — entra la PRIMA riserva disponibile con un voto
++      // tale per cui, sostituendola al titolare assente, la composizione
++      // della squadra resta un modulo consentito (stessa regola di
++      // validateFormation/isValidRoleComposition: 1 portiere, almeno 3
++      // difensori, almeno 1 attaccante). Se il primo in panchina
++      // romperebbe il modulo si passa al successivo; se nessuna riserva va
++      // bene il titolare assente conta 0 (nessun cambio "fuori modulo").
++      const starterBucket = roleBucket(starter.mantraRole as string);
++      let chosenIdx = -1;
++      let chosenCounts: RoleBucketCounts | null = null;
++
++      for (let i = 0; i < reserveRows.length; i++) {
++        if (usedReserveIdxs.has(i)) continue;
++        const reserve = reserveRows[i];
++        if (reserve.fantavoto === null) continue;
++
++        const reserveBucket = roleBucket(reserve.mantraRole as string);
++        const nextCounts: RoleBucketCounts = { ...roleCounts };
++        if (starterBucket === "GK") nextCounts.gk--;
++        else if (starterBucket === "DEF") nextCounts.def--;
++        else if (starterBucket === "MID") nextCounts.mid--;
++        else if (starterBucket === "ATT") nextCounts.att--;
++
++        if (reserveBucket === "GK") nextCounts.gk++;
++        else if (reserveBucket === "DEF") nextCounts.def++;
++        else if (reserveBucket === "MID") nextCounts.mid++;
++        else if (reserveBucket === "ATT") nextCounts.att++;
++
++        if (isValidRoleComposition(nextCounts)) {
++          chosenIdx = i;
++          chosenCounts = nextCounts;
++          break;
+         }
+       }
++
++      if (chosenIdx !== -1 && chosenCounts) {
++        usedReserveIdxs.add(chosenIdx);
++        base += reserveRows[chosenIdx].fantavoto as number;
++        subsUsed++;
++        roleCounts.gk = chosenCounts.gk;
++        roleCounts.def = chosenCounts.def;
++        roleCounts.mid = chosenCounts.mid;
++        roleCounts.att = chosenCounts.att;
++      }
+     }
+ 
+     const goalBonus = calculateGoalBonus(totalGoals, goalThresholds);
+-- 
+2.43.0
+

@@ -1,0 +1,445 @@
+From a21183f0becaa005a34de12748b6de03465c67d3 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 2 Sep 2026 13:54:08 +0000
+Subject: [PATCH] =?UTF-8?q?Permette=20di=20correggere=20manualmente=20voti?=
+ =?UTF-8?q?/malus/bonus=20gi=C3=A0=20importati?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Nuova sezione "Voti importati" in Admin → Voti: elenco dei voti della
+giornata selezionata, con modifica inline per giocatore di voto,
+fantavoto (se sv), gol fatti/subiti, gol su rigore, ammonizioni,
+espulsioni, rigore parato/sbagliato, autogol, assist e assist da
+fermo. Il fantavoto viene ricalcolato server-side con la stessa
+logica usata in fase di import (calculateFantavoto), quindi resta
+coerente. Utile sia per correggere un voto sbagliato sia per
+inserire a mano il voto di un giocatore non abbinato durante lo
+scraping (vedi elenco "non abbinati" già mostrato dopo l'import).
+
+Dopo una correzione va rilanciato "Calcola punteggi" per propagare
+il cambiamento a rose/classifica, come per un import normale.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014b1sN91ccrMwyrjH8mBkxx
+---
+ app/(main)/admin/votes/VotesAdminClient.tsx | 240 +++++++++++++++++++-
+ app/actions/votes.ts                        |  62 +++++
+ app/api/admin/votes/route.ts                |  36 +++
+ 3 files changed, 335 insertions(+), 3 deletions(-)
+ create mode 100644 app/api/admin/votes/route.ts
+
+diff --git a/app/(main)/admin/votes/VotesAdminClient.tsx b/app/(main)/admin/votes/VotesAdminClient.tsx
+index 1f6723c..01df1e7 100644
+--- a/app/(main)/admin/votes/VotesAdminClient.tsx
++++ b/app/(main)/admin/votes/VotesAdminClient.tsx
+@@ -1,8 +1,8 @@
+ "use client";
+ 
+-import { useActionState, useState } from "react";
++import { useActionState, useState, useEffect, useCallback, useRef } from "react";
+ import Link from "next/link";
+-import { importVotes, calculateAllScores } from "@/app/actions/votes";
++import { importVotes, calculateAllScores, updatePlayerVote } from "@/app/actions/votes";
+ import { lockAndAdvanceMatchday, setMatchdayDeadline } from "@/app/actions/schedule";
+ import { setPlayerStatus } from "@/app/actions/settings";
+ import DeadlineTimer from "@/app/components/DeadlineTimer";
+@@ -37,6 +37,23 @@ interface Player {
+   mantraRole: string;
+ }
+ 
++interface VoteRow {
++  playerId: number;
++  name: string;
++  realTeam: string;
++  mantraRole: string;
++  vote: number | null;
++  fantavoto: number | null;
++  gfGs: number;
++  gsr: number;
++  amm: number;
++  esp: number;
++  rpRs: number;
++  aut: number;
++  ass: number;
++  adf: number;
++}
++
+ const STATUS_LABELS: Record<string, { label: string; color: string; icon: string }> = {
+   ok: { label: "Disponibile", color: "bg-green-100 text-green-700", icon: "✓" },
+   inj: { label: "Infortunato", color: "bg-red-100 text-red-700", icon: "🤕" },
+@@ -82,6 +99,38 @@ export default function VotesAdminClient({
+   const [playerSearch, setPlayerSearch] = useState("");
+   const [showAvailability, setShowAvailability] = useState(false);
+ 
++  /* ── Correzione manuale voti importati ────────────────────── */
++  const [showVotesEdit, setShowVotesEdit] = useState(false);
++  const [votesData, setVotesData] = useState<VoteRow[] | null>(null);
++  const [votesLoading, setVotesLoading] = useState(false);
++  const [votesFetchError, setVotesFetchError] = useState("");
++  const [voteSearch, setVoteSearch] = useState("");
++  const [editingVotePlayerId, setEditingVotePlayerId] = useState<number | null>(null);
++
++  const fetchVotes = useCallback(async (matchdayId: number) => {
++    setEditingVotePlayerId(null);
++    setVotesLoading(true);
++    setVotesFetchError("");
++    try {
++      const res = await fetch(`/api/admin/votes?matchdayId=${matchdayId}`);
++      if (!res.ok) throw new Error();
++      const data = await res.json();
++      setVotesData(data.votes ?? []);
++    } catch {
++      setVotesFetchError("Impossibile caricare i voti. Riprova.");
++    } finally {
++      setVotesLoading(false);
++    }
++  }, []);
++
++  // Ricarica se l'admin cambia giornata mentre il pannello voti è aperto
++  // (agganciato al click del selettore giornata più sotto, non a un effect,
++  // per non ri-fetchare a ogni render)
++  const selectMatchday = (md: Matchday) => {
++    setSelectedMatchday(md);
++    if (showVotesEdit) fetchVotes(md.id);
++  };
++
+   const submitted = lineupSubmissions.filter((l) => l.submitted).length;
+   const canAdvance = currentMatchdayId !== null && currentMatchday < currentMatchdayTotal;
+ 
+@@ -302,7 +351,7 @@ export default function VotesAdminClient({
+             <button
+               key={md.id}
+               type="button"
+-              onClick={() => setSelectedMatchday(md)}
++              onClick={() => selectMatchday(md)}
+               className={`text-center p-2 rounded-lg border text-xs font-medium transition-colors ${
+                 selectedMatchday?.id === md.id
+                   ? "bg-green-600 text-white border-green-600"
+@@ -396,12 +445,101 @@ export default function VotesAdminClient({
+         )}
+       </div>
+ 
++      {/* ── Correzione manuale voti importati ─────────────────── */}
++      {selectedMatchday?.votesImported && (
++        <div className="bg-white rounded-xl border shadow-sm p-5">
++          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
++            <div>
++              <h2 className="font-semibold text-gray-700">
++                📝 Voti importati G{selectedMatchday.number} — correggi voto/malus/bonus
++              </h2>
++              <p className="text-xs text-gray-400 mt-0.5">
++                Utile se un voto è sbagliato o un evento (gol, ammonizione, ecc.) manca. Dopo aver corretto,
++                ricorda di rilanciare <strong>Calcola punteggi</strong> qui sopra per aggiornare rose e classifica.
++              </p>
++            </div>
++            <button
++              type="button"
++              onClick={() => {
++                const next = !showVotesEdit;
++                setShowVotesEdit(next);
++                if (next) fetchVotes(selectedMatchday.id);
++              }}
++              className="text-sm text-green-600 hover:underline shrink-0"
++            >
++              {showVotesEdit ? "Chiudi" : "Mostra/Modifica"}
++            </button>
++          </div>
++
++          {showVotesEdit && (
++            <div className="border-t pt-3 space-y-3">
++              <input
++                type="text"
++                placeholder="Cerca giocatore o squadra..."
++                value={voteSearch}
++                onChange={(e) => setVoteSearch(e.target.value)}
++                className="border rounded-lg px-3 py-2 text-sm w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-green-500"
++              />
++
++              {votesLoading && <p className="text-sm text-gray-400">Caricamento voti...</p>}
++              {votesFetchError && <p className="text-sm text-red-600">{votesFetchError}</p>}
++
++              {votesData && !votesLoading && (
++                <div className="max-h-[32rem] overflow-y-auto divide-y border rounded-lg">
++                  {votesData
++                    .filter(
++                      (v) =>
++                        v.name.includes(voteSearch.toUpperCase()) ||
++                        v.realTeam.includes(voteSearch.toUpperCase())
++                    )
++                    .map((v) =>
++                      editingVotePlayerId === v.playerId ? (
++                        <VoteEditRow
++                          key={v.playerId}
++                          matchdayId={selectedMatchday.id}
++                          row={v}
++                          onDone={() => fetchVotes(selectedMatchday.id)}
++                        />
++                      ) : (
++                        <div key={v.playerId} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
++                          <span className="text-xs text-gray-400 w-8 shrink-0">{v.mantraRole}</span>
++                          <span className="flex-1 min-w-0 truncate">{v.name}</span>
++                          <span className="text-xs text-gray-400 w-24 shrink-0 truncate">{v.realTeam}</span>
++                          <span className="w-14 text-center shrink-0 tabular-nums text-gray-600">
++                            {v.vote !== null ? v.vote.toFixed(1) : <span className="text-gray-300">sv</span>}
++                          </span>
++                          <span className="w-16 text-center shrink-0 tabular-nums font-semibold text-gray-700">
++                            {v.fantavoto !== null ? v.fantavoto.toFixed(2) : "—"}
++                          </span>
++                          <button
++                            type="button"
++                            onClick={() => setEditingVotePlayerId(v.playerId)}
++                            className="text-blue-600 hover:text-blue-800 text-xs shrink-0"
++                          >
++                            ✏️
++                          </button>
++                        </div>
++                      )
++                    )}
++                  {votesData.length === 0 && (
++                    <p className="text-sm text-gray-400 px-3 py-4 text-center">
++                      Nessun voto importato per questa giornata.
++                    </p>
++                  )}
++                </div>
++              )}
++            </div>
++          )}
++        </div>
++      )}
++
+       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+         <strong>Flusso giornata:</strong>
+         <ol className="mt-2 space-y-1 list-decimal list-inside">
+           <li>Segna giocatori infortunati/squalificati nel pannello Disponibilità</li>
+           <li>Verifica che le formazioni siano state inviate</li>
+           <li>Seleziona la giornata e clicca <strong>Importa voti</strong></li>
++          <li>Se qualche voto manca o è sbagliato, correggilo in <strong>Voti importati</strong> qui sopra</li>
+           <li>Clicca <strong>Calcola punteggi</strong> — auto-genera formazioni mancanti + applica soglie gol</li>
+           <li>Clicca <strong>Blocca G{currentMatchday}</strong> per passare alla giornata successiva</li>
+         </ol>
+@@ -409,3 +547,99 @@ export default function VotesAdminClient({
+     </div>
+   );
+ }
++
++function VoteEditRow({
++  matchdayId,
++  row,
++  onDone,
++}: {
++  matchdayId: number;
++  row: VoteRow;
++  onDone: () => void;
++}) {
++  const [error, action, pending] = useActionState(updatePlayerVote, null);
++  const submittedRef = useRef(false);
++
++  // Quando il submit in corso finisce (pending torna false) e non c'è
++  // errore, l'azione ha salvato con successo: chiudiamo la riga e
++  // ricarichiamo i dati aggiornati (fantavoto ricalcolato) dal server.
++  useEffect(() => {
++    if (submittedRef.current && !pending) {
++      submittedRef.current = false;
++      if (!error) onDone();
++    }
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [pending, error]);
++
++  const [vote, setVote] = useState(row.vote !== null ? String(row.vote) : "");
++  const [fantavoto, setFantavoto] = useState(row.fantavoto !== null ? String(row.fantavoto) : "");
++  const [gfGs, setGfGs] = useState(String(row.gfGs));
++  const [gsr, setGsr] = useState(String(row.gsr));
++  const [amm, setAmm] = useState(String(row.amm));
++  const [esp, setEsp] = useState(String(row.esp));
++  const [rpRs, setRpRs] = useState(String(row.rpRs));
++  const [aut, setAut] = useState(String(row.aut));
++  const [ass, setAss] = useState(String(row.ass));
++  const [adf, setAdf] = useState(String(row.adf));
++
++  const num = (label: string, name: string, value: string, setValue: (v: string) => void, step = 1) => (
++    <div>
++      <label className="text-[10px] font-medium text-gray-400 block">{label}</label>
++      <input
++        name={name}
++        type="number"
++        step={step}
++        value={value}
++        onChange={(e) => setValue(e.target.value)}
++        className="w-full border rounded px-1.5 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
++      />
++    </div>
++  );
++
++  return (
++    <div className="px-3 py-3 bg-blue-50/40">
++      <form action={action} onSubmit={() => { submittedRef.current = true; }}>
++        <input type="hidden" name="matchdayId" value={matchdayId} />
++        <input type="hidden" name="playerId" value={row.playerId} />
++        <div className="flex items-center gap-2 mb-2">
++          <span className="text-xs text-gray-400 w-8 shrink-0">{row.mantraRole}</span>
++          <span className="text-sm font-medium flex-1 min-w-0 truncate">{row.name}</span>
++          <span className="text-xs text-gray-400 shrink-0">{row.realTeam}</span>
++        </div>
++        <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
++          {num("Voto", "vote", vote, setVote, 0.5)}
++          {num("Fantavoto (se sv)", "fantavoto", fantavoto, setFantavoto, 0.5)}
++          {num("Gol +/-", "gfGs", gfGs, setGfGs)}
++          {num("Gol rig.", "gsr", gsr, setGsr)}
++          {num("Ammon.", "amm", amm, setAmm)}
++          {num("Espuls.", "esp", esp, setEsp)}
++          {num("Rigore p/s", "rpRs", rpRs, setRpRs)}
++          {num("Autogol", "aut", aut, setAut)}
++          {num("Assist", "ass", ass, setAss)}
++        </div>
++        <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 mt-2">
++          {num("Assist fermo", "adf", adf, setAdf)}
++        </div>
++
++        {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
++
++        <div className="flex items-center gap-3 mt-2">
++          <button
++            type="submit"
++            disabled={pending}
++            className="bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white px-3 py-1.5 rounded text-xs font-medium"
++          >
++            {pending ? "Salvataggio..." : "💾 Salva"}
++          </button>
++          <button
++            type="button"
++            onClick={onDone}
++            className="text-gray-500 hover:text-gray-700 text-xs"
++          >
++            Annulla
++          </button>
++        </div>
++      </form>
++    </div>
++  );
++}
+diff --git a/app/actions/votes.ts b/app/actions/votes.ts
+index 3e63450..43daba3 100644
+--- a/app/actions/votes.ts
++++ b/app/actions/votes.ts
+@@ -3,6 +3,7 @@
+ import { revalidatePath } from "next/cache";
+ import { getSession } from "@/app/lib/session";
+ import { importVotesCore, calculateScoresCore, MISMATCH_PREFIX } from "@/app/lib/voteImporter";
++import { calculateFantavoto } from "@/app/lib/scoring";
+ import { log } from "@/app/lib/logger";
+ import { sendPushToAll } from "@/app/lib/pushNotification";
+ import { getDb } from "@/app/lib/db";
+@@ -64,6 +65,67 @@ export async function importVotes(prevState: string | null, formData: FormData)
+   }
+ }
+ 
++// ── Admin: correggi manualmente un voto già importato (o inseriscine uno
++// nuovo per un giocatore non abbinato durante lo scraping) ─────────────────
++export async function updatePlayerVote(prevState: string | null, formData: FormData) {
++  const session = await getSession();
++  if (!session?.isAdmin) return "Non autorizzato.";
++
++  const matchdayId = parseInt(formData.get("matchdayId") as string);
++  const playerId = parseInt(formData.get("playerId") as string);
++  if (!matchdayId || !playerId) return "Dati mancanti.";
++
++  const voteRaw = ((formData.get("vote") as string) ?? "").trim();
++  const fantavotoRaw = ((formData.get("fantavoto") as string) ?? "").trim();
++  const vote = voteRaw === "" ? null : parseFloat(voteRaw);
++  const manualFantavoto = fantavotoRaw === "" ? null : parseFloat(fantavotoRaw);
++  if (voteRaw !== "" && Number.isNaN(vote)) return "Voto non valido.";
++  if (fantavotoRaw !== "" && Number.isNaN(manualFantavoto)) return "Fantavoto non valido.";
++
++  // Eventi (gol, ammonizioni, ecc.): interi, 0 se lasciati vuoti
++  const intField = (name: string) => {
++    const raw = ((formData.get(name) as string) ?? "").trim();
++    if (raw === "") return 0;
++    const n = parseInt(raw, 10);
++    return Number.isFinite(n) ? n : 0;
++  };
++  const gfGs = intField("gfGs");
++  const gsr = intField("gsr");
++  const amm = intField("amm");
++  const esp = intField("esp");
++  const rpRs = intField("rpRs");
++  const aut = intField("aut");
++  const ass = intField("ass");
++  const adf = intField("adf");
++
++  const db = getDb();
++  const playerRes = await db.execute({ sql: `SELECT mantraRole FROM "Player" WHERE id = ?`, args: [playerId] });
++  const mantraRole = playerRes.rows[0]?.mantraRole as string | undefined;
++  if (!mantraRole) return "Giocatore non trovato.";
++
++  // Stessa logica usata in fase di import: se manca il voto (sv) si usa
++  // direttamente il fantavoto inserito a mano; altrimenti si ricalcola dal
++  // voto + eventi, ignorando un eventuale fantavoto digitato per errore.
++  const fantavoto = calculateFantavoto(
++    { vote, fantavoto: manualFantavoto, gfGs, gsr, amm, esp, rpRs, aut, ass, adf },
++    mantraRole
++  );
++
++  await db.execute({
++    sql: `INSERT OR REPLACE INTO "PlayerVote"
++          (playerId, matchdayId, vote, fantavoto, gfGs, gsr, amm, esp, rpRs, aut, ass, adf)
++          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
++    args: [playerId, matchdayId, vote, fantavoto, gfGs, gsr, amm, esp, rpRs, aut, ass, adf],
++  });
++
++  // Segna la giornata come "voti importati" nel caso si stia inserendo il
++  // primo voto manuale prima di un import (es. giornata mai scaricata).
++  await db.execute({ sql: `UPDATE "Matchday" SET votesImported = 1 WHERE id = ?`, args: [matchdayId] });
++
++  revalidatePath("/admin/votes");
++  return null;
++}
++
+ // ── Admin: calculate all scores for a matchday ───────────────────────────
+ export async function calculateAllScores(prevState: string | null, formData: FormData) {
+   const session = await getSession();
+diff --git a/app/api/admin/votes/route.ts b/app/api/admin/votes/route.ts
+new file mode 100644
+index 0000000..61451e0
+--- /dev/null
++++ b/app/api/admin/votes/route.ts
+@@ -0,0 +1,36 @@
++import { NextRequest, NextResponse } from "next/server";
++import { getDb } from "@/app/lib/db";
++import { getSession } from "@/app/lib/session";
++
++export const dynamic = "force-dynamic";
++
++/**
++ * GET /api/admin/votes?matchdayId=X
++ *
++ * Admin-only: elenco dei voti già importati per una giornata (uniti ai dati
++ * del giocatore), usato dal pannello di correzione manuale in /admin/votes.
++ */
++export async function GET(req: NextRequest) {
++  const session = await getSession();
++  if (!session?.isAdmin) {
++    return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
++  }
++
++  const matchdayId = Number(req.nextUrl.searchParams.get("matchdayId"));
++  if (!matchdayId) {
++    return NextResponse.json({ error: "matchdayId mancante" }, { status: 400 });
++  }
++
++  const db = getDb();
++  const res = await db.execute({
++    sql: `SELECT pv.playerId, p.name, p.realTeam, p.mantraRole,
++                 pv.vote, pv.fantavoto, pv.gfGs, pv.gsr, pv.amm, pv.esp, pv.rpRs, pv.aut, pv.ass, pv.adf
++          FROM "PlayerVote" pv
++          JOIN "Player" p ON p.id = pv.playerId
++          WHERE pv.matchdayId = ?
++          ORDER BY p.mantraRole ASC, p.name ASC`,
++    args: [matchdayId],
++  });
++
++  return NextResponse.json({ votes: res.rows });
++}
+-- 
+2.43.0
+

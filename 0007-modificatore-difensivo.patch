@@ -1,0 +1,489 @@
+From 0ae5c2a0b224d7fe4d56f6c912c1343a8c2434c5 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 2 Sep 2026 11:16:40 +0000
+Subject: [PATCH] Aggiunge modificatore difensivo nei tabellini partita
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Si prende il voto (non il fantavoto) del portiere titolare e dei 3
+migliori difensori (terzini/centrali) titolari; in base alla media si
+toglie un malus al punteggio finale della squadra avversaria (media
+6→-1, 6.5→-2, 7→-3, 7.5→-4). Scatta solo se portiere e TUTTI i
+difensori titolari sono andati regolarmente a voto (nessuno sv).
+
+Il modificatore agisce sul punteggio di partita nel tabellino (Match),
+non sul punteggio individuale della formazione (Lineup.totalScore
+resta "quanto ha fatto la tua rosa"). Attivabile/disattivabile per
+stagione da Admin → Impostazioni; il dettaglio (media + malus
+applicato) è visibile nella pagina della partita per trasparenza.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014b1sN91ccrMwyrjH8mBkxx
+---
+ app/(main)/admin/settings/SettingsClient.tsx | 56 ++++++++++++++
+ app/(main)/admin/settings/page.tsx           |  4 +-
+ app/(main)/calendar/[matchId]/page.tsx       | 81 ++++++++++++++++----
+ app/actions/dbMigrate.ts                     | 12 +++
+ app/actions/settings.ts                      | 24 +++---
+ app/lib/scoring.ts                           | 56 ++++++++++++++
+ app/lib/voteImporter.ts                      | 52 +++++++++++--
+ 7 files changed, 252 insertions(+), 33 deletions(-)
+
+diff --git a/app/(main)/admin/settings/SettingsClient.tsx b/app/(main)/admin/settings/SettingsClient.tsx
+index 43a4344..d5fcd44 100644
+--- a/app/(main)/admin/settings/SettingsClient.tsx
++++ b/app/(main)/admin/settings/SettingsClient.tsx
+@@ -27,6 +27,7 @@ type Props = {
+       minScore: number;
+       step: number;
+     };
++    defenseModifierEnabled: boolean;
+   };
+   users: User[];
+ };
+@@ -47,6 +48,9 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
+   const [minScore, setMinScore] = useState<number>(settings.scoreConversion.minScore);
+   const [convStep, setConvStep] = useState<number>(settings.scoreConversion.step);
+ 
++  /* ── Modificatore difensivo ────────────────────────────────── */
++  const [defenseModEnabled, setDefenseModEnabled] = useState<boolean>(settings.defenseModifierEnabled);
++
+   /** Anteprima: [etichetta range, gol] */
+   const scoreConvPreview = useMemo(() => {
+     const rows: [string, number][] = [];
+@@ -87,6 +91,8 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
+         <input type="hidden" name="scoreConvEnabled" value={scoreConvEnabled ? "1" : "0"} />
+         <input type="hidden" name="scoreConvMinScore" value={minScore} />
+         <input type="hidden" name="scoreConvStep" value={convStep} />
++        {/* Modificatore difensivo */}
++        <input type="hidden" name="defenseModifierEnabled" value={defenseModEnabled ? "1" : "0"} />
+ 
+         {/* ── Card 1: Impostazioni base ──────────────────────── */}
+         <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+@@ -365,6 +371,56 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
+           </div>
+         </div>
+ 
++        {/* ── Card 4: Modificatore Difensivo ──────────────────── */}
++        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
++          <div className="bg-cyan-50 border-b border-cyan-100 px-5 py-3 flex items-center gap-2">
++            <span className="text-lg">🛡️</span>
++            <h2 className="font-semibold text-gray-700">Modificatore Difensivo</h2>
++          </div>
++          <div className="p-5 space-y-5">
++            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
++              <p className="font-semibold mb-1">Come funziona</p>
++              <p>
++                Si prende il <strong>voto</strong> (non il fantavoto) del <strong>portiere titolare</strong> e dei{" "}
++                <strong>3 migliori difensori</strong> (terzini/centrali) titolari, e se ne fa la media. In base alla
++                media, la squadra avversaria subisce un malus sul punteggio finale:
++              </p>
++              <ul className="mt-2 space-y-0.5 font-mono text-xs">
++                <li>media 6 – 6.49 → <strong>-1</strong> alla squadra avversaria</li>
++                <li>media 6.5 – 6.99 → <strong>-2</strong> alla squadra avversaria</li>
++                <li>media 7 – 7.49 → <strong>-3</strong> alla squadra avversaria</li>
++                <li>media 7.5+ → <strong>-4</strong> alla squadra avversaria</li>
++              </ul>
++              <p className="mt-2 text-xs text-blue-600">
++                Scatta solo se portiere e TUTTI i difensori titolari sono andati regolarmente a voto (nessuno sv/assente).
++              </p>
++            </div>
++
++            {/* Toggle attivazione */}
++            <div className="flex items-center gap-3">
++              <button
++                type="button"
++                onClick={() => setDefenseModEnabled(!defenseModEnabled)}
++                className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${
++                  defenseModEnabled ? "bg-green-500" : "bg-gray-300"
++                }`}
++                aria-label="Attiva/disattiva modificatore difensivo"
++              >
++                <span
++                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
++                    defenseModEnabled ? "translate-x-6" : "translate-x-0"
++                  }`}
++                />
++              </button>
++              <span className="text-sm font-medium text-gray-700">
++                {defenseModEnabled
++                  ? "✅ Attivo — le difese solide tolgono punti all'avversario"
++                  : "❌ Disattivo — nessun modificatore applicato"}
++              </span>
++            </div>
++          </div>
++        </div>
++
+         {/* ── Submit ────────────────────────────────────────────── */}
+         {settingsResult && settingsResult !== "ok" && (
+           <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+diff --git a/app/(main)/admin/settings/page.tsx b/app/(main)/admin/settings/page.tsx
+index 0ce73ec..2a7a910 100644
+--- a/app/(main)/admin/settings/page.tsx
++++ b/app/(main)/admin/settings/page.tsx
+@@ -25,11 +25,12 @@ export default async function AdminSettingsPage() {
+     scoreConversion: DEFAULT_SCORE_CONVERSION,
+     numPortieri: DEFAULT_PORTIERI,
+     numMovimento: DEFAULT_MOVIMENTO,
++    defenseModifierEnabled: false,
+   };
+   if (season) {
+     try {
+       const settingsRes = await db.execute({
+-        sql: `SELECT initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento FROM "LeagueSettings" WHERE seasonId = ?`,
++        sql: `SELECT initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento, defenseModifierEnabled FROM "LeagueSettings" WHERE seasonId = ?`,
+         args: [season.id],
+       });
+       const raw = settingsRes.rows[0];
+@@ -40,6 +41,7 @@ export default async function AdminSettingsPage() {
+           homeAdvantage: (raw.homeAdvantage as number) ?? 0,
+           numPortieri: (raw.numPortieri as number) ?? DEFAULT_PORTIERI,
+           numMovimento: (raw.numMovimento as number) ?? DEFAULT_MOVIMENTO,
++          defenseModifierEnabled: Boolean(raw.defenseModifierEnabled),
+           goalThresholds: raw.goalThresholds
+             ? (() => { try { return JSON.parse(raw.goalThresholds as string); } catch { return DEFAULT_GOAL_THRESHOLDS; } })()
+             : DEFAULT_GOAL_THRESHOLDS,
+diff --git a/app/(main)/calendar/[matchId]/page.tsx b/app/(main)/calendar/[matchId]/page.tsx
+index 5bff220..819f78c 100644
+--- a/app/(main)/calendar/[matchId]/page.tsx
++++ b/app/(main)/calendar/[matchId]/page.tsx
+@@ -29,21 +29,42 @@ export default async function MatchDetailPage({
+   const db = getDb();
+ 
+   // Get match with both team names and matchday info
+-  const matchRes = await db.execute({
+-    sql: `SELECT m.id, m.homeUserId, m.awayUserId,
+-                 m.homeScore, m.awayScore, m.homePoints, m.awayPoints,
+-                 m.homeGoals, m.awayGoals,
+-                 hu.teamName as homeTeamName, hu.username as homeUsername,
+-                 au.teamName as awayTeamName, au.username as awayUsername,
+-                 md.number as matchdayNumber, md.id as matchdayId
+-          FROM "Match" m
+-          JOIN "User" hu ON hu.id = m.homeUserId
+-          JOIN "User" au ON au.id = m.awayUserId
+-          JOIN "Matchday" md ON md.id = m.matchdayId
+-          WHERE m.id = ?
+-          LIMIT 1`,
+-    args: [id],
+-  });
++  let matchRes;
++  try {
++    matchRes = await db.execute({
++      sql: `SELECT m.id, m.homeUserId, m.awayUserId,
++                   m.homeScore, m.awayScore, m.homePoints, m.awayPoints,
++                   m.homeGoals, m.awayGoals,
++                   m.homeDefenseAvg, m.homeDefenseMalus, m.awayDefenseAvg, m.awayDefenseMalus,
++                   hu.teamName as homeTeamName, hu.username as homeUsername,
++                   au.teamName as awayTeamName, au.username as awayUsername,
++                   md.number as matchdayNumber, md.id as matchdayId
++            FROM "Match" m
++            JOIN "User" hu ON hu.id = m.homeUserId
++            JOIN "User" au ON au.id = m.awayUserId
++            JOIN "Matchday" md ON md.id = m.matchdayId
++            WHERE m.id = ?
++            LIMIT 1`,
++      args: [id],
++    });
++  } catch {
++    // Colonne del modificatore difensivo non ancora migrate
++    matchRes = await db.execute({
++      sql: `SELECT m.id, m.homeUserId, m.awayUserId,
++                   m.homeScore, m.awayScore, m.homePoints, m.awayPoints,
++                   m.homeGoals, m.awayGoals,
++                   hu.teamName as homeTeamName, hu.username as homeUsername,
++                   au.teamName as awayTeamName, au.username as awayUsername,
++                   md.number as matchdayNumber, md.id as matchdayId
++            FROM "Match" m
++            JOIN "User" hu ON hu.id = m.homeUserId
++            JOIN "User" au ON au.id = m.awayUserId
++            JOIN "Matchday" md ON md.id = m.matchdayId
++            WHERE m.id = ?
++            LIMIT 1`,
++      args: [id],
++    });
++  }
+ 
+   // Load logos
+   const logoMap: Record<number, string | null> = {};
+@@ -200,6 +221,36 @@ export default async function MatchDetailPage({
+         </div>
+       </div>
+ 
++      {/* Modificatore difensivo */}
++      {played && (match.homeDefenseMalus != null || match.awayDefenseMalus != null) && (
++        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
++          <div className="px-5 py-3 border-b bg-cyan-50 flex items-center gap-2">
++            <span className="text-base">🛡️</span>
++            <span className="font-semibold text-gray-700 text-sm">Modificatore difensivo</span>
++          </div>
++          <div className="p-4 space-y-2 text-sm">
++            {match.homeDefenseMalus != null && (
++              <p className="text-gray-600">
++                Difesa <strong>{match.homeTeamName as string}</strong>: media{" "}
++                <strong>{(match.homeDefenseAvg as number).toFixed(2)}</strong> →{" "}
++                <span className="text-red-600 font-semibold">
++                  {match.homeDefenseMalus as number} a {match.awayTeamName as string}
++                </span>
++              </p>
++            )}
++            {match.awayDefenseMalus != null && (
++              <p className="text-gray-600">
++                Difesa <strong>{match.awayTeamName as string}</strong>: media{" "}
++                <strong>{(match.awayDefenseAvg as number).toFixed(2)}</strong> →{" "}
++                <span className="text-red-600 font-semibold">
++                  {match.awayDefenseMalus as number} a {match.homeTeamName as string}
++                </span>
++              </p>
++            )}
++          </div>
++        </div>
++      )}
++
+       {/* Head-to-head history */}
+       {h2h.length > 0 && (
+         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+diff --git a/app/actions/dbMigrate.ts b/app/actions/dbMigrate.ts
+index 2d1e2f4..c19ea73 100644
+--- a/app/actions/dbMigrate.ts
++++ b/app/actions/dbMigrate.ts
+@@ -200,6 +200,18 @@ export async function runMigrations() {
+     UNIQUE(roundId, playerId, userId)
+   )`);
+ 
++  // === Modificatore difensivo (portiere + 3 migliori difensori titolari) ===
++  // Interruttore per stagione, in LeagueSettings.
++  try { await db.execute(`ALTER TABLE "LeagueSettings" ADD COLUMN "defenseModifierEnabled" INTEGER NOT NULL DEFAULT 0`); } catch { /* già presente */ }
++
++  // Dettaglio applicato per partita (media difesa + malus inflitto
++  // all'avversario da ciascuna delle due squadre), per trasparenza nel
++  // tabellino. NULL quando il modificatore non è attivo o non è scattato.
++  try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "homeDefenseAvg" REAL`); } catch { /* già presente */ }
++  try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "homeDefenseMalus" REAL`); } catch { /* già presente */ }
++  try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "awayDefenseAvg" REAL`); } catch { /* già presente */ }
++  try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "awayDefenseMalus" REAL`); } catch { /* già presente */ }
++
+   return { success: true };
+ }
+ 
+diff --git a/app/actions/settings.ts b/app/actions/settings.ts
+index 33a6012..5949093 100644
+--- a/app/actions/settings.ts
++++ b/app/actions/settings.ts
+@@ -46,19 +46,23 @@ export async function saveLeagueSettings(prevState: string | null, formData: For
+     step: scoreConvStep,
+   });
+ 
++  // Modificatore difensivo (portiere + 3 migliori difensori titolari)
++  const defenseModifierEnabled = formData.get("defenseModifierEnabled") === "1" ? 1 : 0;
++
+   const db = getDb();
+   await db.execute({
+-    sql: `INSERT INTO "LeagueSettings" (seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento)
+-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
++    sql: `INSERT INTO "LeagueSettings" (seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento, defenseModifierEnabled)
++          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(seasonId) DO UPDATE SET
+-            initialCredits    = excluded.initialCredits,
+-            maxSubstitutions  = excluded.maxSubstitutions,
+-            goalThresholds    = excluded.goalThresholds,
+-            homeAdvantage     = excluded.homeAdvantage,
+-            scoreConversion   = excluded.scoreConversion,
+-            numPortieri       = excluded.numPortieri,
+-            numMovimento      = excluded.numMovimento`,
+-    args: [seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento],
++            initialCredits          = excluded.initialCredits,
++            maxSubstitutions        = excluded.maxSubstitutions,
++            goalThresholds          = excluded.goalThresholds,
++            homeAdvantage           = excluded.homeAdvantage,
++            scoreConversion         = excluded.scoreConversion,
++            numPortieri             = excluded.numPortieri,
++            numMovimento            = excluded.numMovimento,
++            defenseModifierEnabled  = excluded.defenseModifierEnabled`,
++    args: [seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento, defenseModifierEnabled],
+   });
+ 
+   revalidatePath("/admin/schedule");
+diff --git a/app/lib/scoring.ts b/app/lib/scoring.ts
+index ccee8a6..6450bf2 100644
+--- a/app/lib/scoring.ts
++++ b/app/lib/scoring.ts
+@@ -190,6 +190,62 @@ export function calculateGoalBonus(
+   return match?.b ?? 0;
+ }
+ 
++// ── Modificatore difensivo (portiere + 3 migliori difensori titolari) ────────
++
++export type DefenseThreshold = { m: number; b: number }; // media minima → malus
++
++/**
++ * Soglie ufficiali del modificatore difensivo Mantra: media tra portiere e i
++ * 3 migliori difensori (terzini/centrali) titolari → malus inflitto alla
++ * squadra avversaria.
++ */
++export const DEFAULT_DEFENSE_THRESHOLDS: DefenseThreshold[] = [
++  { m: 6, b: -1 },
++  { m: 6.5, b: -2 },
++  { m: 7, b: -3 },
++  { m: 7.5, b: -4 },
++];
++
++export interface DefenseModifierResult {
++  applies: boolean;       // se il modificatore è scattato (malus != 0)
++  average: number | null; // media portiere + 3 migliori difensori, null se non calcolabile
++  malus: number;          // malus da infliggere alla squadra avversaria (0 o negativo)
++}
++
++/**
++ * Modificatore difensivo: si prende il voto (non il fantavoto) del portiere
++ * titolare e dei 3 migliori difensori (terzini/centrali) titolari. Scatta
++ * SOLO se portiere e TUTTI i difensori titolari (terzini+centrali) sono
++ * andati a voto — se anche uno solo è sv/assente, niente modificatore per
++ * quella squadra in quella giornata.
++ */
++export function calculateDefenseModifier(
++  starters: Array<{ mantraRole: string; vote: number | null }>,
++  thresholds: DefenseThreshold[] = DEFAULT_DEFENSE_THRESHOLDS
++): DefenseModifierResult {
++  const nullResult: DefenseModifierResult = { applies: false, average: null, malus: 0 };
++
++  const gk = starters.find((s) => s.mantraRole === "POR");
++  if (!gk || gk.vote === null) return nullResult;
++
++  const defenders = starters.filter((s) => s.mantraRole === "TER" || s.mantraRole === "DC");
++  if (defenders.length < 3) return nullResult;
++  if (defenders.some((d) => d.vote === null)) return nullResult;
++
++  const bestThree = [...defenders]
++    .sort((a, b) => (b.vote as number) - (a.vote as number))
++    .slice(0, 3);
++
++  const average =
++    Math.round(((gk.vote + bestThree.reduce((sum, d) => sum + (d.vote as number), 0)) / 4) * 100) / 100;
++
++  const sorted = [...thresholds].sort((a, b) => b.m - a.m);
++  const match = sorted.find((t) => average >= t.m);
++  const malus = match?.b ?? 0;
++
++  return { applies: malus !== 0, average, malus };
++}
++
+ // Calcola il punteggio totale di una formazione
+ export function calculateLineupScore(
+   starters: Array<{
+diff --git a/app/lib/voteImporter.ts b/app/lib/voteImporter.ts
+index 4cbf227..d052da7 100644
+--- a/app/lib/voteImporter.ts
++++ b/app/lib/voteImporter.ts
+@@ -10,6 +10,7 @@ import { scrapeVotesWithMeta } from "./scraper";
+ import {
+   calculateFantavoto,
+   calculateGoalBonus,
++  calculateDefenseModifier,
+   convertScoreToGoals,
+   DEFAULT_GOAL_THRESHOLDS,
+   DEFAULT_SCORE_CONVERSION,
+@@ -217,15 +218,17 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
+   let goalThresholds: GoalThreshold[] = DEFAULT_GOAL_THRESHOLDS;
+   let homeAdvantage = 0;
+   let scoreConversion: ScoreConversion = DEFAULT_SCORE_CONVERSION;
++  let defenseModifierEnabled = false;
+ 
+   try {
+     const settingsRes = await db.execute({
+-      sql: `SELECT maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion FROM "LeagueSettings" WHERE seasonId = ?`,
++      sql: `SELECT maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, defenseModifierEnabled FROM "LeagueSettings" WHERE seasonId = ?`,
+       args: [seasonId],
+     });
+     if (settingsRes.rows.length > 0) {
+       maxSubstitutions = settingsRes.rows[0].maxSubstitutions as number;
+       homeAdvantage = (settingsRes.rows[0].homeAdvantage as number) ?? 0;
++      defenseModifierEnabled = Boolean(settingsRes.rows[0].defenseModifierEnabled);
+       try {
+         goalThresholds = JSON.parse(settingsRes.rows[0].goalThresholds as string);
+       } catch { /* usa default */ }
+@@ -245,15 +248,21 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
+ 
+   // Score each lineup
+   const lineupsRes = await db.execute({
+-    sql: `SELECT id FROM "Lineup" WHERE matchdayId = ? AND isSubmitted = 1`,
++    sql: `SELECT id, userId FROM "Lineup" WHERE matchdayId = ? AND isSubmitted = 1`,
+     args: [matchdayId],
+   });
+ 
++  // Titolari (ruolo + voto grezzo, non fantavoto) di ciascun utente, per il
++  // modificatore difensivo calcolato più sotto a livello di partita (serve
++  // conoscere ENTRAMBE le formazioni della partita, non solo la propria).
++  const defenseStartersByUser = new Map<number, Array<{ mantraRole: string; vote: number | null }>>();
++
+   for (const lineup of lineupsRes.rows) {
+     const lineupId = lineup.id as number;
++    const userId = lineup.userId as number;
+     const slotsRes = await db.execute({
+       sql: `SELECT ls.position, ls.isStarter, p.mantraRole,
+-                   pv.fantavoto, COALESCE(pv.gfGs, 0) as goals
++                   pv.vote, pv.fantavoto, COALESCE(pv.gfGs, 0) as goals
+             FROM "LineupSlot" ls
+             JOIN "Player" p ON p.id = ls.playerId
+             LEFT JOIN "PlayerVote" pv ON pv.playerId = ls.playerId AND pv.matchdayId = ?
+@@ -268,6 +277,14 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
+       .filter((s) => Number(s.isStarter) === 0)
+       .sort((a, b) => (a.position as number) - (b.position as number));
+ 
++    defenseStartersByUser.set(
++      userId,
++      starterRows.map((s) => ({
++        mantraRole: s.mantraRole as string,
++        vote: s.vote as number | null,
++      }))
++    );
++
+     let base = 0;
+     let subsUsed = 0;
+     let totalGoals = 0;
+@@ -316,8 +333,23 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
+       args: [match.awayUserId, matchdayId],
+     });
+ 
+-    const homeScore = (homeRes.rows[0]?.totalScore as number) ?? 0;
+-    const awayScore = (awayRes.rows[0]?.totalScore as number) ?? 0;
++    const rawHomeScore = (homeRes.rows[0]?.totalScore as number) ?? 0;
++    const rawAwayScore = (awayRes.rows[0]?.totalScore as number) ?? 0;
++
++    // Modificatore difensivo: la BUONA difesa di una squadra toglie punti al
++    // punteggio finale dell'AVVERSARIA (portiere + 3 migliori difensori
++    // titolari a voto — vedi calculateDefenseModifier). Non tocca il
++    // Lineup.totalScore di nessuno (quello resta "quanto ha fatto la tua
++    // formazione"): si applica solo al punteggio di partita nel tabellino.
++    const homeDefense = defenseModifierEnabled
++      ? calculateDefenseModifier(defenseStartersByUser.get(match.homeUserId as number) ?? [])
++      : { applies: false, average: null, malus: 0 };
++    const awayDefense = defenseModifierEnabled
++      ? calculateDefenseModifier(defenseStartersByUser.get(match.awayUserId as number) ?? [])
++      : { applies: false, average: null, malus: 0 };
++
++    const homeScore = Math.round((rawHomeScore + awayDefense.malus) * 100) / 100;
++    const awayScore = Math.round((rawAwayScore + homeDefense.malus) * 100) / 100;
+ 
+     // Convert scores to goals (Mantra system) — null when conversion disabled
+     const homeGoals = scoreConversion.enabled ? convertScoreToGoals(homeScore, scoreConversion) : null;
+@@ -339,8 +371,14 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
+     }
+ 
+     await db.execute({
+-      sql: `UPDATE "Match" SET homeScore = ?, awayScore = ?, homePoints = ?, awayPoints = ?, homeGoals = ?, awayGoals = ? WHERE id = ?`,
+-      args: [homeScore, awayScore, homePoints, awayPoints, homeGoals, awayGoals, match.id],
++      sql: `UPDATE "Match" SET homeScore = ?, awayScore = ?, homePoints = ?, awayPoints = ?, homeGoals = ?, awayGoals = ?,
++                   homeDefenseAvg = ?, homeDefenseMalus = ?, awayDefenseAvg = ?, awayDefenseMalus = ? WHERE id = ?`,
++      args: [
++        homeScore, awayScore, homePoints, awayPoints, homeGoals, awayGoals,
++        homeDefense.average, homeDefense.applies ? homeDefense.malus : null,
++        awayDefense.average, awayDefense.applies ? awayDefense.malus : null,
++        match.id,
++      ],
+     });
+   }
+ 
+-- 
+2.43.0
+

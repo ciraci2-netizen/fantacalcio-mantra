@@ -1,0 +1,187 @@
+From 4681badf62dad2415074e370fffc50a2e53567fb Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 2 Sep 2026 14:04:38 +0000
+Subject: [PATCH 1/2] Sostituzioni automatiche: ruolo per ruolo, max 5 a
+ giornata
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Le sostituzioni per titolari assenti/senza voto ora entrano solo con
+un compagno di panchina dello stesso ruolo (portiere con portiere,
+difensore TER/DC con difensore, centrocampista M/OFF con
+centrocampista, attaccante con attaccante), rispettando sempre il
+modulo schierato — prima si prendeva semplicemente la prima riserva
+disponibile in ordine di panchina, a prescindere dal ruolo. Se non
+c'è nessuna riserva compatibile con un voto, il titolare conta 0
+anziché essere sostituito fuori ruolo.
+
+Il numero massimo di sostituzioni automatiche (impostabile per
+stagione in Admin → Impostazioni) è ora limitato a un tetto di 5 a
+giornata per squadra, sia lato validazione del form sia
+difensivamente nel calcolo punteggi.
+
+DEF_ROLES/MID_ROLES/ATT_ROLES e il nuovo roleBucket() sono stati
+spostati in app/lib/scoring.ts come fonte unica condivisa da
+validateFormation (submission) e dalla sostituzione automatica
+(calcolo punteggi), così le due regole non possono più divergere.
+
+Nota: il testo di regolamento già seminato nel DB ("sostituito dalla
+prima riserva disponibile con il ruolo compatibile... una
+sostituzione non avviene se comprometterebbe i requisiti minimi di
+modulo") descriveva già questo comportamento — il codice ora lo
+rispetta davvero.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014b1sN91ccrMwyrjH8mBkxx
+---
+ app/(main)/admin/settings/SettingsClient.tsx |  7 +++++--
+ app/actions/lineup.ts                        |  5 +----
+ app/actions/settings.ts                      |  6 +++++-
+ app/lib/scoring.ts                           | 21 +++++++++++++++++++
+ app/lib/voteImporter.ts                      | 22 ++++++++++++++++++--
+ 5 files changed, 52 insertions(+), 9 deletions(-)
+
+diff --git a/app/(main)/admin/settings/SettingsClient.tsx b/app/(main)/admin/settings/SettingsClient.tsx
+index d5fcd44..47985be 100644
+--- a/app/(main)/admin/settings/SettingsClient.tsx
++++ b/app/(main)/admin/settings/SettingsClient.tsx
+@@ -121,11 +121,14 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
+                 name="maxSubstitutions"
+                 type="number"
+                 min={0}
+-                max={11}
++                max={5}
+                 defaultValue={settings.maxSubstitutions}
+                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+               />
+-              <p className="text-xs text-gray-400 mt-1">Quante riserve possono entrare automaticamente per titolari senza voto (es. 3)</p>
++              <p className="text-xs text-gray-400 mt-1">
++                Quante riserve possono entrare automaticamente per titolari senza voto, sempre ruolo per ruolo
++                rispettando il modulo (max 5)
++              </p>
+             </div>
+           </div>
+         </div>
+diff --git a/app/actions/lineup.ts b/app/actions/lineup.ts
+index 40f58c4..ab93e35 100644
+--- a/app/actions/lineup.ts
++++ b/app/actions/lineup.ts
+@@ -4,10 +4,7 @@ import { revalidatePath } from "next/cache";
+ import { getDb } from "@/app/lib/db";
+ import { getSession } from "@/app/lib/session";
+ import { log } from "@/app/lib/logger";
+-
+-const DEF_ROLES = new Set(["DC", "TER"]);
+-const MID_ROLES = new Set(["M", "OFF"]);
+-const ATT_ROLES = new Set(["ATT"]);
++import { DEF_ROLES, ATT_ROLES } from "@/app/lib/scoring";
+ 
+ /** Validates that starters satisfy the minimum module requirements */
+ function validateFormation(
+diff --git a/app/actions/settings.ts b/app/actions/settings.ts
+index 5949093..10a5843 100644
+--- a/app/actions/settings.ts
++++ b/app/actions/settings.ts
+@@ -17,7 +17,11 @@ export async function saveLeagueSettings(prevState: string | null, formData: For
+ 
+   const seasonId = parseInt(formData.get("seasonId") as string);
+   const initialCredits = parseInt(formData.get("initialCredits") as string) || 500;
+-  const maxSubstitutions = parseInt(formData.get("maxSubstitutions") as string) || 3;
++  // Sostituzioni automatiche per assenti/sv: al massimo 5 a giornata (vedi
++  // anche il clamp difensivo in calculateScoresCore, che non si fida di
++  // eventuali valori salvati prima di questo limite).
++  const maxSubstitutionsRaw = parseInt(formData.get("maxSubstitutions") as string);
++  const maxSubstitutions = Math.min(Math.max(isNaN(maxSubstitutionsRaw) ? 3 : maxSubstitutionsRaw, 0), 5);
+   const homeAdvantage = parseFloat(formData.get("homeAdvantage") as string) || 0;
+ 
+   // Slot rosa: portieri e giocatori di movimento (range fissi validati qui)
+diff --git a/app/lib/scoring.ts b/app/lib/scoring.ts
+index 6450bf2..8dfa084 100644
+--- a/app/lib/scoring.ts
++++ b/app/lib/scoring.ts
+@@ -96,6 +96,27 @@ export const VALID_FORMATIONS = [
+   "5-3-2", "5-4-1",
+ ];
+ 
++// Raggruppamento ruoli per la validazione dei moduli (vedi validateFormation
++// in app/actions/lineup.ts) e per le sostituzioni automatiche "ruolo per
++// ruolo" (vedi la sostituzione automatica in app/lib/voteImporter.ts): un
++// modulo Mantra (es. "4-4-2") conta i difensori (TER+DC insieme) e gli
++// attaccanti (ATT) — il centrocampo (M+OFF) riempie il resto senza
++// distinzione tra i due. Unica fonte di verità condivisa dai due file.
++export const DEF_ROLES = new Set(["DC", "TER"]);
++export const MID_ROLES = new Set(["M", "OFF"]);
++export const ATT_ROLES = new Set(["ATT"]);
++
++export type RoleBucket = "GK" | "DEF" | "MID" | "ATT" | null;
++
++/** Bucket di un ruolo Mantra, per confrontare "stesso ruolo ai fini del modulo". */
++export function roleBucket(role: string): RoleBucket {
++  if (role === "POR") return "GK";
++  if (DEF_ROLES.has(role)) return "DEF";
++  if (MID_ROLES.has(role)) return "MID";
++  if (ATT_ROLES.has(role)) return "ATT";
++  return null;
++}
++
+ // Modificatori fuori ruolo: quale ruolo può giocare in quale posizione e con quale malus
+ export const ROLE_MODIFIERS: Record<string, Record<string, number>> = {
+   POR: { POR: 0 },
+diff --git a/app/lib/voteImporter.ts b/app/lib/voteImporter.ts
+index 24ed303..8607310 100644
+--- a/app/lib/voteImporter.ts
++++ b/app/lib/voteImporter.ts
+@@ -12,12 +12,19 @@ import {
+   calculateGoalBonus,
+   calculateDefenseModifier,
+   convertScoreToGoals,
++  roleBucket,
+   DEFAULT_GOAL_THRESHOLDS,
+   DEFAULT_SCORE_CONVERSION,
+   type GoalThreshold,
+   type ScoreConversion,
+ } from "./scoring";
+ 
++/** Tetto assoluto alle sostituzioni automatiche per assenti/sv, a prescindere
++ * da cosa sia impostato in LeagueSettings (vedi anche il clamp in
++ * saveLeagueSettings — questo è la seconda linea di difesa, a valori già
++ * salvati prima che il limite esistesse). */
++const HARD_MAX_SUBSTITUTIONS = 5;
++
+ export interface ImportResult {
+   matched: number;
+   unmatched: number;
+@@ -230,7 +237,7 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
+       args: [seasonId],
+     });
+     if (settingsRes.rows.length > 0) {
+-      maxSubstitutions = settingsRes.rows[0].maxSubstitutions as number;
++      maxSubstitutions = Math.min(settingsRes.rows[0].maxSubstitutions as number, HARD_MAX_SUBSTITUTIONS);
+       homeAdvantage = (settingsRes.rows[0].homeAdvantage as number) ?? 0;
+       defenseModifierEnabled = Boolean(settingsRes.rows[0].defenseModifierEnabled);
+       try {
+@@ -301,8 +308,19 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
+       if (starter.fantavoto !== null) {
+         base += starter.fantavoto as number;
+       } else if (subsUsed < maxSubstitutions) {
++        // Sostituzione automatica "ruolo per ruolo": la riserva che entra deve
++        // avere lo stesso bucket di ruolo del titolare assente (portiere con
++        // portiere, difensore con difensore TER/DC, centrocampista M/OFF con
++        // centrocampista, attaccante con attaccante) — così il modulo
++        // schierato resta sempre valido. Se non c'è nessuna riserva
++        // compatibile con un voto, quel titolare conta 0 (nessuna
++        // sostituzione "fuori modulo").
++        const starterBucket = roleBucket(starter.mantraRole as string);
+         const rIdx = reserveRows.findIndex(
+-          (_, i) => !usedReserveIdxs.has(i) && reserveRows[i].fantavoto !== null
++          (_, i) =>
++            !usedReserveIdxs.has(i) &&
++            reserveRows[i].fantavoto !== null &&
++            roleBucket(reserveRows[i].mantraRole as string) === starterBucket
+         );
+         if (rIdx !== -1) {
+           usedReserveIdxs.add(rIdx);
+-- 
+2.43.0
+

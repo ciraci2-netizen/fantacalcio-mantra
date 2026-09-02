@@ -1,0 +1,199 @@
+From 2f17eb9ded0cb4cc05dda02c7f2af9569dddcc61 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 2 Sep 2026 10:18:36 +0000
+Subject: [PATCH] Aggiunge import giocatori (svincolati) da file Excel/CSV
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+In "Gestisci Giocatori" (admin) ora si può caricare un file .csv o .xlsx
+oltre a incollare il testo a mano — stesso meccanismo di parsing lato
+client già usato in "Gestione Rose" (libreria xlsx, già una dipendenza
+del progetto). I giocatori importati non vengono assegnati a nessuna
+squadra: compaiono come svincolati, pronti per essere messi in rosa da
+"Gestione Rose".
+
+L'import ora riconosce automaticamente sia "," sia ";" come separatore
+riga (utile per i CSV esportati da Excel in locale italiano), come già
+faceva l'import delle rose.
+
+Aggiunto anche un collegamento rapido "Importa/gestisci giocatori" nella
+pagina Svincolati, visibile solo agli admin.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014b1sN91ccrMwyrjH8mBkxx
+---
+ .../admin/players/PlayersAdminClient.tsx      | 59 +++++++++++++++++--
+ app/(main)/svincolati/SvincolatiClient.tsx    | 11 ++++
+ app/(main)/svincolati/page.tsx                |  1 +
+ app/actions/players.ts                        |  5 +-
+ 4 files changed, 70 insertions(+), 6 deletions(-)
+
+diff --git a/app/(main)/admin/players/PlayersAdminClient.tsx b/app/(main)/admin/players/PlayersAdminClient.tsx
+index 9a6b9f3..a3bbdf4 100644
+--- a/app/(main)/admin/players/PlayersAdminClient.tsx
++++ b/app/(main)/admin/players/PlayersAdminClient.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useActionState, useState } from "react";
++import { useActionState, useState, type ChangeEvent } from "react";
+ import { createPlayer, deletePlayer, importPlayersCSV } from "@/app/actions/players";
+ import { MANTRA_ROLES } from "@/app/lib/scoring";
+ 
+@@ -30,6 +30,35 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
+   const [roleFilter, setRoleFilter] = useState("tutti");
+   const [showForm, setShowForm] = useState(false);
+   const [showCsv, setShowCsv] = useState(false);
++  const [csvText, setCsvText] = useState("");
++  const [fileName, setFileName] = useState("");
++  const [parseError, setParseError] = useState("");
++
++  async function handleFile(e: ChangeEvent<HTMLInputElement>) {
++    const file = e.target.files?.[0];
++    if (!file) return;
++    setFileName(file.name);
++    setParseError("");
++
++    try {
++      if (file.name.toLowerCase().endsWith(".csv")) {
++        setCsvText(await file.text());
++      } else {
++        // .xlsx / .xls
++        const XLSX = await import("xlsx");
++        const buf = await file.arrayBuffer();
++        const wb = XLSX.read(buf, { type: "array" });
++        const sheet = wb.Sheets[wb.SheetNames[0]];
++        const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
++        const lines = rows
++          .map((row) => row.map((cell) => (cell ?? "").toString().trim()).join(","))
++          .filter((line) => line.replace(/,/g, "").length > 0);
++        setCsvText(lines.join("\n"));
++      }
++    } catch {
++      setParseError("Impossibile leggere il file. Verifica che sia un .csv o .xlsx valido.");
++    }
++  }
+ 
+   const filtered = players.filter(
+     (p) =>
+@@ -103,16 +132,36 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
+ 
+       {showCsv && (
+         <div className="bg-white rounded-xl border shadow-sm p-5">
+-          <h2 className="font-semibold text-gray-700 mb-3">Import CSV</h2>
++          <h2 className="font-semibold text-gray-700 mb-3">Import giocatori (svincolati)</h2>
+           <p className="text-xs text-gray-500 mb-3">
+-            Formato: <code className="bg-gray-100 px-1 rounded">NOME,SQUADRA,RUOLO,NOME_FANTAPIU3</code> — una riga per giocatore.<br />
++            Formato: <code className="bg-gray-100 px-1 rounded">NOME,SQUADRA,RUOLO,NOME_FANTAPIU3</code> — una riga per giocatore
++            (l&apos;ultima colonna è opzionale). Vengono aggiunti come svincolati, non assegnati a nessuna squadra:
++            per assegnarli usa poi <em>Gestione Rose</em>.<br />
+             Esempio: <code className="bg-gray-100 px-1 rounded">SALAH,LIVERPOOL,OFF,SALAH</code>
+           </p>
+-          <form action={csvAction} className="space-y-3">
++
++          <div className="flex items-center gap-3 flex-wrap mb-3">
++            <label className="inline-flex items-center gap-2 bg-white border rounded-lg px-3 py-2 text-sm cursor-pointer hover:border-blue-400">
++              <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFile} className="hidden" />
++              📂 Scegli file (.csv / .xlsx)
++            </label>
++            {fileName && <span className="text-sm text-gray-600">{fileName}</span>}
++          </div>
++          {parseError && <p className="text-sm text-red-600 mb-3">{parseError}</p>}
++
++          <form
++            action={csvAction}
++            className="space-y-3"
++            onSubmit={() => {
++              setTimeout(() => { setCsvText(""); setFileName(""); }, 0);
++            }}
++          >
+             <textarea
+               name="csv"
+               required
+               rows={10}
++              value={csvText}
++              onChange={(e) => setCsvText(e.target.value)}
+               placeholder={"SALAH,LIVERPOOL,OFF\nHAALAND,MANCITY,ATT,HAALAND"}
+               className="w-full border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+             />
+@@ -123,7 +172,7 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
+             )}
+             <button
+               type="submit"
+-              disabled={csvPending}
++              disabled={csvPending || !csvText.trim()}
+               className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+             >
+               {csvPending ? "Importazione..." : "Importa giocatori"}
+diff --git a/app/(main)/svincolati/SvincolatiClient.tsx b/app/(main)/svincolati/SvincolatiClient.tsx
+index b0af1ca..cf362a2 100644
+--- a/app/(main)/svincolati/SvincolatiClient.tsx
++++ b/app/(main)/svincolati/SvincolatiClient.tsx
+@@ -1,6 +1,7 @@
+ "use client";
+ 
+ import { useState } from "react";
++import Link from "next/link";
+ import { MANTRA_ROLES } from "@/app/lib/scoring";
+ 
+ const ROLE_COLORS: Record<string, string> = {
+@@ -18,10 +19,12 @@ export default function SvincolatiClient({
+   players,
+   countByRole,
+   roleLabel,
++  isAdmin,
+ }: {
+   players: Player[];
+   countByRole: Record<string, number>;
+   roleLabel: Record<string, string>;
++  isAdmin?: boolean;
+ }) {
+   const [search, setSearch] = useState("");
+   const [roleFilter, setRoleFilter] = useState("tutti");
+@@ -50,6 +53,14 @@ export default function SvincolatiClient({
+           <p className="text-gray-500 text-sm mt-0.5">{players.length} giocatori non assegnati a nessuna squadra</p>
+         </div>
+         <div className="flex gap-2">
++          {isAdmin && (
++            <Link
++              href="/admin/players"
++              className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700"
++            >
++              🛠️ Importa/gestisci giocatori
++            </Link>
++          )}
+           <button
+             onClick={() => setView("byRole")}
+             className={`px-3 py-1.5 rounded-lg text-sm font-medium ${view === "byRole" ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+diff --git a/app/(main)/svincolati/page.tsx b/app/(main)/svincolati/page.tsx
+index ba23f5b..d895d86 100644
+--- a/app/(main)/svincolati/page.tsx
++++ b/app/(main)/svincolati/page.tsx
+@@ -42,6 +42,7 @@ export default async function SvincolatiPage() {
+       players={players}
+       countByRole={countByRole}
+       roleLabel={ROLE_LABEL}
++      isAdmin={Boolean(session.isAdmin)}
+     />
+   );
+ }
+diff --git a/app/actions/players.ts b/app/actions/players.ts
+index 49a36e2..1db0bec 100644
+--- a/app/actions/players.ts
++++ b/app/actions/players.ts
+@@ -77,7 +77,10 @@ export async function importPlayersCSV(prevState: string | null, formData: FormD
+   const db = getDb();
+ 
+   for (const line of lines) {
+-    const parts = line.split(",").map((p) => p.trim());
++    // Autodetect separatore: "," per CSV standard, ";" per export Excel
++    // in locale italiano (stesso approccio di importRosterCSV).
++    const sep = line.includes(";") ? ";" : ",";
++    const parts = line.split(sep).map((p) => p.trim());
+     if (parts.length < 3) { errors.push(`Riga non valida: ${line}`); continue; }
+     const [name, realTeam, mantraRoleRaw, fantapiu3Name] = parts;
+     const mantraRole = normalizeMantraRole(mantraRoleRaw);
+-- 
+2.43.0
+

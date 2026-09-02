@@ -1,0 +1,1288 @@
+From c8e7d402fec15079a20305fbe2277e8e7c61fce1 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 2 Sep 2026 10:40:24 +0000
+Subject: [PATCH] Aggiunge asta a buste sugli svincolati
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+L'admin apre un round (data inizio opzionale, data fine obbligatoria);
+ogni squadra fa offerte segrete per giocatore, invisibili alle altre
+finché il round non si chiude. Alla chiusura (automatica alla scadenza,
+o manuale dall'admin) vince l'offerta più alta per ciascun giocatore,
+a parità la più vecchia. Budget crediti e slot rosa (portieri/movimento)
+sono controllati sia quando si fa un'offerta sia in fase di assegnazione,
+con fallback a cascata sull'offerta successiva se il vincitore non può
+più permettersela. Nessun cron dedicato: la risoluzione scatta al primo
+caricamento di /asta o /admin/asta dopo la scadenza.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014b1sN91ccrMwyrjH8mBkxx
+---
+ app/(main)/admin/asta/AdminAstaClient.tsx | 216 ++++++++++++++++++
+ app/(main)/admin/asta/page.tsx            | 107 +++++++++
+ app/(main)/admin/page.tsx                 |   2 +
+ app/(main)/asta/AstaClient.tsx            | 237 +++++++++++++++++++
+ app/(main)/asta/page.tsx                  | 112 +++++++++
+ app/actions/auction.ts                    | 163 +++++++++++++
+ app/actions/dbMigrate.ts                  |  30 +++
+ app/components/DeadlineTimer.tsx          |   8 +-
+ app/components/Navbar.tsx                 |   1 +
+ app/lib/auction.ts                        | 266 ++++++++++++++++++++++
+ 10 files changed, 1140 insertions(+), 2 deletions(-)
+ create mode 100644 app/(main)/admin/asta/AdminAstaClient.tsx
+ create mode 100644 app/(main)/admin/asta/page.tsx
+ create mode 100644 app/(main)/asta/AstaClient.tsx
+ create mode 100644 app/(main)/asta/page.tsx
+ create mode 100644 app/actions/auction.ts
+ create mode 100644 app/lib/auction.ts
+
+diff --git a/app/(main)/admin/asta/AdminAstaClient.tsx b/app/(main)/admin/asta/AdminAstaClient.tsx
+new file mode 100644
+index 0000000..4cd2eff
+--- /dev/null
++++ b/app/(main)/admin/asta/AdminAstaClient.tsx
+@@ -0,0 +1,216 @@
++"use client";
++
++import { useActionState, useState } from "react";
++import { openAuctionRound, closeAuctionRoundNow } from "@/app/actions/auction";
++
++interface CurrentRound {
++  id: number;
++  name: string;
++  startDate: string | null;
++  endDate: string;
++  bidCount: number;
++  notStarted: boolean;
++}
++
++interface PastRoundBid {
++  playerId: number;
++  playerName: string;
++  teamName: string;
++  amount: number;
++  status: string;
++}
++
++interface PastRound {
++  id: number;
++  name: string;
++  startDate: string | null;
++  endDate: string;
++  resolvedAt: string;
++  bids: PastRoundBid[];
++}
++
++function fmt(dt: string | null) {
++  if (!dt) return "—";
++  return new Date(dt).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
++}
++
++export default function AdminAstaClient({
++  seasonName,
++  currentRound,
++  pastRounds,
++  freeCount,
++}: {
++  seasonName: string;
++  currentRound: CurrentRound | null;
++  pastRounds: PastRound[];
++  freeCount: number;
++}) {
++  const [openError, openAction, openPending] = useActionState(openAuctionRound, null);
++  const [closeResult, closeAction, closePending] = useActionState(closeAuctionRoundNow, null);
++  const [expanded, setExpanded] = useState<number | null>(null);
++
++  const notStarted = currentRound?.notStarted ?? false;
++
++  return (
++    <div className="space-y-6">
++      <div>
++        <h1 className="text-2xl font-bold text-gray-800">🔨 Asta a buste — Svincolati</h1>
++        <p className="text-gray-500 text-sm mt-0.5">
++          Stagione: <strong>{seasonName}</strong> · {freeCount} giocatori svincolati disponibili
++        </p>
++      </div>
++
++      {currentRound ? (
++        <div className="bg-white rounded-xl border shadow-sm p-5 space-y-4">
++          <div className="flex items-center justify-between flex-wrap gap-2">
++            <div>
++              <h2 className="font-semibold text-gray-700">{currentRound.name}</h2>
++              <p className="text-sm text-gray-500 mt-1">
++                {currentRound.startDate ? `Dal ${fmt(currentRound.startDate)} ` : ""}
++                al {fmt(currentRound.endDate)}
++              </p>
++            </div>
++            <span
++              className={`px-3 py-1 rounded-full text-sm font-medium ${
++                notStarted ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"
++              }`}
++            >
++              {notStarted ? "⏳ Non ancora iniziata" : "🟢 Aperta"}
++            </span>
++          </div>
++
++          <p className="text-sm text-gray-600">
++            {currentRound.bidCount} offerte pendenti (segrete — vedrai chi ha offerto cosa solo alla chiusura).
++          </p>
++
++          <form action={closeAction}>
++            <input type="hidden" name="roundId" value={currentRound.id} />
++            <button
++              type="submit"
++              disabled={closePending}
++              onClick={(e) => {
++                if (!confirm("Chiudere subito il round e assegnare i giocatori alle offerte più alte?")) e.preventDefault();
++              }}
++              className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
++            >
++              {closePending ? "Chiusura..." : "🔒 Chiudi ora e assegna"}
++            </button>
++          </form>
++
++          {closeResult && (
++            <pre className="text-xs whitespace-pre-wrap bg-gray-50 border rounded-lg p-3 text-gray-700">{closeResult}</pre>
++          )}
++        </div>
++      ) : (
++        <div className="bg-white rounded-xl border shadow-sm p-5">
++          <h2 className="font-semibold text-gray-700 mb-3">Apri un nuovo round</h2>
++          <form action={openAction} className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
++            <div>
++              <label className="text-xs font-medium text-gray-500">Nome (opzionale)</label>
++              <input
++                name="name"
++                placeholder="Asta svincolati"
++                className="w-full border rounded-lg px-3 py-2 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
++              />
++            </div>
++            <div>
++              <label className="text-xs font-medium text-gray-500">Inizio (opzionale — subito se vuoto)</label>
++              <input
++                type="datetime-local"
++                name="startDate"
++                className="w-full border rounded-lg px-3 py-2 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
++              />
++            </div>
++            <div>
++              <label className="text-xs font-medium text-gray-500">Fine *</label>
++              <input
++                type="datetime-local"
++                name="endDate"
++                required
++                className="w-full border rounded-lg px-3 py-2 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
++              />
++            </div>
++            {openError && <div className="col-span-full text-red-600 text-sm">{openError}</div>}
++            <div className="col-span-full">
++              <button
++                type="submit"
++                disabled={openPending}
++                className="bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
++              >
++                {openPending ? "Apertura..." : "Apri round"}
++              </button>
++            </div>
++          </form>
++          <p className="text-xs text-gray-400 mt-3">
++            Ogni partecipante potrà fare un&apos;offerta segreta per gli svincolati che vuole. Alla chiusura (data di
++            fine, o manuale) vince l&apos;offerta più alta per ciascun giocatore — a parità, chi ha offerto per primo.
++          </p>
++        </div>
++      )}
++
++      {pastRounds.length > 0 && (
++        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
++          <div className="px-4 py-3 border-b bg-gray-50">
++            <h2 className="font-semibold text-gray-700">Storico round</h2>
++          </div>
++          <div className="divide-y">
++            {pastRounds.map((r) => {
++              const won = r.bids.filter((b) => b.status === "won");
++              const isOpen = expanded === r.id;
++              return (
++                <div key={r.id}>
++                  <button
++                    onClick={() => setExpanded(isOpen ? null : r.id)}
++                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 text-left"
++                  >
++                    <div>
++                      <p className="text-sm font-medium text-gray-700">{r.name}</p>
++                      <p className="text-xs text-gray-400">
++                        chiuso il {fmt(r.resolvedAt)} · {won.length} giocatori assegnati · {r.bids.length} offerte totali
++                      </p>
++                    </div>
++                    <span className="text-gray-400 text-sm">{isOpen ? "▲" : "▼"}</span>
++                  </button>
++                  {isOpen && (
++                    <div className="px-4 pb-4">
++                      {r.bids.length === 0 ? (
++                        <p className="text-sm text-gray-400">Nessuna offerta ricevuta.</p>
++                      ) : (
++                        <table className="w-full text-sm">
++                          <thead>
++                            <tr className="text-left text-xs text-gray-400 uppercase">
++                              <th className="py-1 pr-2">Giocatore</th>
++                              <th className="py-1 pr-2">Squadra</th>
++                              <th className="py-1 pr-2 text-right">Offerta</th>
++                              <th className="py-1"></th>
++                            </tr>
++                          </thead>
++                          <tbody className="divide-y">
++                            {r.bids.map((b, i) => (
++                              <tr key={i} className={b.status === "won" ? "bg-green-50" : ""}>
++                                <td className="py-1.5 pr-2 font-medium">{b.playerName}</td>
++                                <td className="py-1.5 pr-2 text-gray-500">{b.teamName}</td>
++                                <td className="py-1.5 pr-2 text-right font-mono">{b.amount}</td>
++                                <td className="py-1.5 text-xs">
++                                  {b.status === "won" ? (
++                                    <span className="text-green-700 font-semibold">✓ vinta</span>
++                                  ) : (
++                                    <span className="text-gray-400">persa</span>
++                                  )}
++                                </td>
++                              </tr>
++                            ))}
++                          </tbody>
++                        </table>
++                      )}
++                    </div>
++                  )}
++                </div>
++              );
++            })}
++          </div>
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/app/(main)/admin/asta/page.tsx b/app/(main)/admin/asta/page.tsx
+new file mode 100644
+index 0000000..959dc46
+--- /dev/null
++++ b/app/(main)/admin/asta/page.tsx
+@@ -0,0 +1,107 @@
++import type { Metadata } from "next";
++import { redirect } from "next/navigation";
++import { getSession } from "@/app/lib/session";
++import { getDb } from "@/app/lib/db";
++import { resolveExpiredRounds, isRoundNotStarted } from "@/app/lib/auction";
++import AdminAstaClient from "./AdminAstaClient";
++
++export const metadata: Metadata = { title: "Admin — Asta buste" };
++export const dynamic = "force-dynamic";
++
++export default async function AdminAstaPage() {
++  const session = await getSession();
++  if (!session?.isAdmin) redirect("/");
++
++  const db = getDb();
++
++  const seasonRes = await db.execute(`SELECT id, name FROM "Season" WHERE isActive = 1 LIMIT 1`);
++  const season = seasonRes.rows[0] ?? null;
++
++  if (!season) {
++    return (
++      <div className="text-center py-12 text-gray-500">
++        Nessuna stagione attiva. Crea prima una stagione in Calendario.
++      </div>
++    );
++  }
++
++  const seasonId = season.id as number;
++
++  // Chiude "pigramente" ogni round scaduto prima di mostrare la pagina.
++  await resolveExpiredRounds(seasonId);
++
++  const currentRoundRes = await db.execute({
++    sql: `SELECT id, name, startDate, endDate, createdAt FROM "AuctionRound"
++          WHERE seasonId = ? AND resolvedAt IS NULL ORDER BY id DESC LIMIT 1`,
++    args: [seasonId],
++  });
++  const currentRoundRow = currentRoundRes.rows[0] ?? null;
++
++  let currentRound: {
++    id: number; name: string; startDate: string | null; endDate: string; bidCount: number; notStarted: boolean;
++  } | null = null;
++
++  if (currentRoundRow) {
++    const bidCountRes = await db.execute({
++      sql: `SELECT COUNT(*) as c FROM "SealedBid" WHERE roundId = ? AND status = 'pending'`,
++      args: [currentRoundRow.id],
++    });
++    const startDate = currentRoundRow.startDate as string | null;
++    currentRound = {
++      id: currentRoundRow.id as number,
++      name: currentRoundRow.name as string,
++      startDate,
++      endDate: currentRoundRow.endDate as string,
++      bidCount: bidCountRes.rows[0].c as number,
++      notStarted: isRoundNotStarted(startDate),
++    };
++  }
++
++  // Storico round risolti, con tutte le offerte rivelate (vinte e perse).
++  const pastRoundsRes = await db.execute({
++    sql: `SELECT id, name, startDate, endDate, resolvedAt FROM "AuctionRound"
++          WHERE seasonId = ? AND resolvedAt IS NOT NULL ORDER BY id DESC LIMIT 10`,
++    args: [seasonId],
++  });
++
++  const pastRounds = await Promise.all(
++    pastRoundsRes.rows.map(async (r) => {
++      const bidsRes = await db.execute({
++        sql: `SELECT sb.playerId, sb.userId, sb.amount, sb.status, p.name as playerName, u.teamName
++              FROM "SealedBid" sb
++              JOIN "Player" p ON p.id = sb.playerId
++              JOIN "User" u ON u.id = sb.userId
++              WHERE sb.roundId = ?
++              ORDER BY sb.playerId ASC, sb.amount DESC`,
++        args: [r.id],
++      });
++      return {
++        id: r.id as number,
++        name: r.name as string,
++        startDate: r.startDate as string | null,
++        endDate: r.endDate as string,
++        resolvedAt: r.resolvedAt as string,
++        bids: bidsRes.rows.map((b) => ({
++          playerId: b.playerId as number,
++          playerName: b.playerName as string,
++          teamName: b.teamName as string,
++          amount: b.amount as number,
++          status: b.status as string,
++        })),
++      };
++    })
++  );
++
++  const freeCountRes = await db.execute(
++    `SELECT COUNT(*) as c FROM "Player" WHERE id NOT IN (SELECT playerId FROM "Roster")`
++  );
++
++  return (
++    <AdminAstaClient
++      seasonName={season.name as string}
++      currentRound={currentRound}
++      pastRounds={pastRounds}
++      freeCount={freeCountRes.rows[0].c as number}
++    />
++  );
++}
+diff --git a/app/(main)/admin/page.tsx b/app/(main)/admin/page.tsx
+index b48851f..25369ac 100644
+--- a/app/(main)/admin/page.tsx
++++ b/app/(main)/admin/page.tsx
+@@ -103,6 +103,7 @@ export default async function AdminPage() {
+     { href: "/admin/coppe",    icon: "🏆", title: "Coppe",        desc: "Turni eliminatori",                       color: "yellow" },
+     { href: "/admin/mercato",  icon: "🔄", title: "Mercato",      desc: "Apri/chiudi mercati",                     color: "teal"   },
+     { href: "/admin/roster",   icon: "📋", title: "Rose",         desc: "Assegna giocatori",                       color: "cyan"   },
++    { href: "/admin/asta",    icon: "🔨", title: "Asta buste",   desc: "Round a buste sugli svincolati",          color: "orange" },
+     { href: "/admin/logos",    icon: "🖼️", title: "Loghi",        desc: "Immagini squadre",                        color: "pink"   },
+     { href: "/admin/regolamento", icon: "📖", title: "Regolamento", desc: "Bonus/malus e testi",                  color: "indigo" },
+     { href: "/admin/settings", icon: "⚙️", title: "Impostazioni", desc: "Crediti e soglie",                       color: "slate"  },
+@@ -120,6 +121,7 @@ export default async function AdminPage() {
+     cyan: "bg-cyan-50 border-cyan-200 hover:bg-cyan-100",
+     pink: "bg-pink-50 border-pink-200 hover:bg-pink-100",
+     lime: "bg-lime-50 border-lime-200 hover:bg-lime-100",
++    orange: "bg-orange-50 border-orange-200 hover:bg-orange-100",
+   };
+ 
+   return (
+diff --git a/app/(main)/asta/AstaClient.tsx b/app/(main)/asta/AstaClient.tsx
+new file mode 100644
+index 0000000..2e84963
+--- /dev/null
++++ b/app/(main)/asta/AstaClient.tsx
+@@ -0,0 +1,237 @@
++"use client";
++
++import { useActionState, useState } from "react";
++import { submitBid, withdrawBid } from "@/app/actions/auction";
++import DeadlineTimer from "@/app/components/DeadlineTimer";
++
++const ROLE_COLORS: Record<string, string> = {
++  POR: "bg-yellow-100 text-yellow-800",
++  DC: "bg-blue-100 text-blue-800",
++  TER: "bg-indigo-100 text-indigo-800",
++  M: "bg-green-100 text-green-800",
++  OFF: "bg-teal-100 text-teal-800",
++  ATT: "bg-red-100 text-red-800",
++};
++
++type Player = { id: number; name: string; realTeam: string; mantraRole: string; bidCount: number };
++type MyBid = { bidId: number; amount: number };
++
++function BidRow({
++  roundId,
++  player,
++  myBid,
++  remainingBudget,
++}: {
++  roundId: number;
++  player: Player;
++  myBid: MyBid | undefined;
++  remainingBudget: number;
++}) {
++  const [bidError, bidAction, bidPending] = useActionState(submitBid, null);
++  const [, withdrawAction, withdrawPending] = useActionState(withdrawBid, null);
++  const [amount, setAmount] = useState(myBid ? String(myBid.amount) : "");
++
++  return (
++    <li className="px-4 py-2.5 hover:bg-gray-50">
++      <div className="flex items-center gap-2">
++        <div className="flex-1 min-w-0">
++          <p className="text-sm font-medium text-gray-800">{player.name}</p>
++          <p className="text-xs text-gray-400">
++            {player.realTeam}
++            {player.bidCount > 0 && (
++              <span className="ml-2 text-amber-600">
++                · {player.bidCount} offert{player.bidCount === 1 ? "a" : "e"} ricevut{player.bidCount === 1 ? "a" : "e"}
++              </span>
++            )}
++          </p>
++        </div>
++
++        <form action={bidAction} className="flex items-center gap-1 shrink-0">
++          <input type="hidden" name="roundId" value={roundId} />
++          <input type="hidden" name="playerId" value={player.id} />
++          <input
++            name="amount"
++            type="number"
++            min={1}
++            step={1}
++            value={amount}
++            onChange={(e) => setAmount(e.target.value)}
++            placeholder="crediti"
++            className="w-20 border rounded px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-orange-500"
++          />
++          <button
++            type="submit"
++            disabled={bidPending || !amount}
++            className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-xs px-2 py-1.5 rounded font-medium whitespace-nowrap"
++          >
++            {bidPending ? "..." : myBid ? "Aggiorna" : "Offri"}
++          </button>
++        </form>
++
++        {myBid && (
++          <form action={withdrawAction}>
++            <input type="hidden" name="bidId" value={myBid.bidId} />
++            <button
++              type="submit"
++              disabled={withdrawPending}
++              className="text-red-400 hover:text-red-600 text-xs shrink-0"
++              title="Ritira offerta"
++            >
++              ✕
++            </button>
++          </form>
++        )}
++      </div>
++
++      {myBid && (
++        <p className="text-xs text-green-700 mt-1">
++          ✓ Hai offerto <strong>{myBid.amount}</strong> crediti (segreta, visibile solo a te finché il round è aperto)
++        </p>
++      )}
++      {bidError && <p className="text-xs text-red-600 mt-1">{bidError}</p>}
++      {!myBid && Number(amount) > remainingBudget && (
++        <p className="text-xs text-amber-600 mt-1">⚠ Superi il tuo budget residuo ({remainingBudget})</p>
++      )}
++    </li>
++  );
++}
++
++export default function AstaClient({
++  round,
++  notStarted,
++  players,
++  myBids,
++  remainingBudget,
++  slotsUsed,
++  limits,
++  countByRole,
++  roleLabel,
++  roles,
++}: {
++  round: { id: number; name: string; startDate: string | null; endDate: string };
++  notStarted: boolean;
++  players: Player[];
++  myBids: Record<number, MyBid>;
++  remainingBudget: number;
++  slotsUsed: { por: number; mov: number };
++  limits: { numPortieri: number; numMovimento: number };
++  countByRole: Record<string, number>;
++  roleLabel: Record<string, string>;
++  roles: string[];
++}) {
++  const [search, setSearch] = useState("");
++  const [roleFilter, setRoleFilter] = useState("tutti");
++
++  const filtered = players.filter(
++    (p) =>
++      (roleFilter === "tutti" || p.mantraRole === roleFilter) &&
++      (search === "" ||
++        p.name.toUpperCase().includes(search.toUpperCase()) ||
++        p.realTeam.toUpperCase().includes(search.toUpperCase()))
++  );
++
++  const byRole: Record<string, Player[]> = {};
++  for (const p of filtered) {
++    if (!byRole[p.mantraRole]) byRole[p.mantraRole] = [];
++    byRole[p.mantraRole].push(p);
++  }
++
++  return (
++    <div className="space-y-5">
++      <div>
++        <h1 className="text-2xl font-bold text-gray-800">🔨 {round.name}</h1>
++        <p className="text-gray-500 text-sm mt-0.5">
++          Fai un&apos;offerta segreta per gli svincolati che vuoi — nessuno vedrà quanto hai offerto finché il round
++          non si chiude. Alla chiusura vince l&apos;offerta più alta per ciascun giocatore.
++        </p>
++      </div>
++
++      <DeadlineTimer
++        deadline={notStarted ? round.startDate : round.endDate}
++        isLocked={false}
++        label={notStarted ? "L'asta apre tra:" : "Offerte chiuse tra:"}
++        expiredLabel="Asta in chiusura — aggiorna la pagina"
++      />
++
++      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
++        <div className="bg-white rounded-xl border p-4">
++          <p className="text-xs text-gray-400 uppercase tracking-wide">Budget residuo</p>
++          <p className="text-2xl font-bold text-gray-800">
++            {remainingBudget} <span className="text-sm font-normal text-gray-400">crediti</span>
++          </p>
++          <p className="text-xs text-gray-400 mt-1">Include già le offerte in corso non ancora assegnate.</p>
++        </div>
++        <div className="bg-white rounded-xl border p-4">
++          <p className="text-xs text-gray-400 uppercase tracking-wide">Slot rosa</p>
++          <p className="text-sm text-gray-700 mt-1">
++            Portieri: <strong>{slotsUsed.por}/{limits.numPortieri}</strong> · Movimento:{" "}
++            <strong>{slotsUsed.mov}/{limits.numMovimento}</strong>
++          </p>
++        </div>
++      </div>
++
++      {notStarted ? (
++        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-6 text-center text-sm">
++          L&apos;asta non è ancora iniziata: potrai fare offerte a partire dall&apos;orario indicato sopra.
++        </div>
++      ) : (
++        <>
++          <div className="flex flex-wrap gap-2">
++            <input
++              type="text"
++              placeholder="Cerca per nome o squadra..."
++              value={search}
++              onChange={(e) => setSearch(e.target.value)}
++              className="w-full sm:w-80 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
++            />
++            <select
++              value={roleFilter}
++              onChange={(e) => setRoleFilter(e.target.value)}
++              className="border rounded-lg px-2 py-2 text-sm focus:outline-none"
++            >
++              <option value="tutti">Tutti i ruoli</option>
++              {roles.map((r) => (
++                <option key={r} value={r}>
++                  {r} ({countByRole[r] ?? 0})
++                </option>
++              ))}
++            </select>
++          </div>
++
++          {filtered.length === 0 ? (
++            <div className="bg-white rounded-xl border p-10 text-center text-gray-400">
++              <div className="text-3xl mb-2">🔍</div>
++              <p>Nessun giocatore trovato.</p>
++            </div>
++          ) : (
++            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
++              {roles
++                .filter((r) => byRole[r]?.length > 0)
++                .map((role) => (
++                  <div key={role} className="bg-white rounded-xl shadow-sm border overflow-hidden">
++                    <div className={`px-4 py-2.5 flex items-center justify-between ${ROLE_COLORS[role]} border-b`}>
++                      <span className="font-bold text-sm">{role}</span>
++                      <span className="text-xs opacity-70">
++                        {roleLabel[role]} · {byRole[role].length}
++                      </span>
++                    </div>
++                    <ul className="divide-y">
++                      {byRole[role].map((p) => (
++                        <BidRow
++                          key={p.id}
++                          roundId={round.id}
++                          player={p}
++                          myBid={myBids[p.id]}
++                          remainingBudget={remainingBudget}
++                        />
++                      ))}
++                    </ul>
++                  </div>
++                ))}
++            </div>
++          )}
++        </>
++      )}
++    </div>
++  );
++}
+diff --git a/app/(main)/asta/page.tsx b/app/(main)/asta/page.tsx
+new file mode 100644
+index 0000000..84c1ffe
+--- /dev/null
++++ b/app/(main)/asta/page.tsx
+@@ -0,0 +1,112 @@
++import type { Metadata } from "next";
++import { getSession } from "@/app/lib/session";
++import { getDb } from "@/app/lib/db";
++import { resolveExpiredRounds, remainingBudget, roleSlotsUsed, isRoundNotStarted } from "@/app/lib/auction";
++import { getRosterLimits } from "@/app/lib/leagueSettings";
++import { MANTRA_ROLES } from "@/app/lib/scoring";
++import AstaClient from "./AstaClient";
++
++export const metadata: Metadata = { title: "Asta buste" };
++export const dynamic = "force-dynamic";
++
++const ROLE_LABEL: Record<string, string> = {
++  POR: "Portieri", DC: "Difensori Centrali", TER: "Terzini",
++  M: "Mediani", OFF: "Offensivi", ATT: "Attaccanti",
++};
++
++export default async function AstaPage() {
++  const session = await getSession();
++  if (!session) return null;
++
++  const db = getDb();
++
++  const seasonRes = await db.execute(`SELECT id FROM "Season" WHERE isActive = 1 LIMIT 1`);
++  const seasonId = seasonRes.rows[0]?.id as number | undefined;
++
++  if (!seasonId) {
++    return <div className="text-center py-12 text-gray-500">Nessuna stagione attiva al momento.</div>;
++  }
++
++  await resolveExpiredRounds(seasonId);
++
++  const roundRes = await db.execute({
++    sql: `SELECT id, name, startDate, endDate FROM "AuctionRound"
++          WHERE seasonId = ? AND resolvedAt IS NULL ORDER BY id DESC LIMIT 1`,
++    args: [seasonId],
++  });
++  const roundRow = roundRes.rows[0] ?? null;
++
++  if (!roundRow) {
++    return (
++      <div className="text-center py-16 text-gray-400">
++        <div className="text-4xl mb-3">🔨</div>
++        <p className="font-medium text-gray-500">Nessuna asta aperta al momento.</p>
++        <p className="text-sm mt-1">L&apos;admin aprirà un nuovo round quando ci saranno svincolati da assegnare.</p>
++      </div>
++    );
++  }
++
++  const round = {
++    id: roundRow.id as number,
++    name: roundRow.name as string,
++    startDate: roundRow.startDate as string | null,
++    endDate: roundRow.endDate as string,
++  };
++  const notStarted = isRoundNotStarted(round.startDate);
++
++  const [playersRes, myBidsRes, limits, slotsUsed] = await Promise.all([
++    db.execute(
++      `SELECT p.id, p.name, p.realTeam, p.mantraRole
++       FROM "Player" p
++       WHERE p.id NOT IN (SELECT playerId FROM "Roster")
++       ORDER BY p.mantraRole ASC, p.name ASC`
++    ),
++    db.execute({
++      sql: `SELECT id, playerId, amount FROM "SealedBid" WHERE roundId = ? AND userId = ? AND status = 'pending'`,
++      args: [round.id, session.userId],
++    }),
++    getRosterLimits(db),
++    roleSlotsUsed(db, session.userId),
++  ]);
++
++  const remaining = await remainingBudget(db, session.userId);
++
++  // Conteggio offerte per giocatore (nessun importo, nessun nome — solo "quante" per dare un'idea della concorrenza)
++  const bidCountsRes = await db.execute({
++    sql: `SELECT playerId, COUNT(*) as c FROM "SealedBid" WHERE roundId = ? AND status = 'pending' GROUP BY playerId`,
++    args: [round.id],
++  });
++  const bidCounts: Record<number, number> = {};
++  for (const r of bidCountsRes.rows) bidCounts[r.playerId as number] = r.c as number;
++
++  const players = playersRes.rows.map((r) => ({
++    id: r.id as number,
++    name: r.name as string,
++    realTeam: r.realTeam as string,
++    mantraRole: r.mantraRole as string,
++    bidCount: bidCounts[r.id as number] ?? 0,
++  }));
++
++  const myBids: Record<number, { bidId: number; amount: number }> = {};
++  for (const b of myBidsRes.rows) {
++    myBids[b.playerId as number] = { bidId: b.id as number, amount: b.amount as number };
++  }
++
++  const countByRole: Record<string, number> = {};
++  for (const p of players) countByRole[p.mantraRole] = (countByRole[p.mantraRole] ?? 0) + 1;
++
++  return (
++    <AstaClient
++      round={round}
++      notStarted={notStarted}
++      players={players}
++      myBids={myBids}
++      remainingBudget={remaining}
++      slotsUsed={slotsUsed}
++      limits={limits}
++      countByRole={countByRole}
++      roleLabel={ROLE_LABEL}
++      roles={MANTRA_ROLES as unknown as string[]}
++    />
++  );
++}
+diff --git a/app/actions/auction.ts b/app/actions/auction.ts
+new file mode 100644
+index 0000000..e9e4b1f
+--- /dev/null
++++ b/app/actions/auction.ts
+@@ -0,0 +1,163 @@
++"use server";
++
++import { revalidatePath } from "next/cache";
++import { getDb } from "@/app/lib/db";
++import { getSession } from "@/app/lib/session";
++import { remainingBudget, resolveRound, roleSlotsUsed } from "@/app/lib/auction";
++import { getRosterLimits } from "@/app/lib/leagueSettings";
++
++function revalidateAuctionPaths() {
++  revalidatePath("/asta");
++  revalidatePath("/admin/asta");
++  revalidatePath("/svincolati");
++  revalidatePath("/admin/roster");
++  revalidatePath("/admin/players");
++}
++
++// ── Admin: apre un nuovo round (fallisce se ce n'è già uno non risolto) ───
++export async function openAuctionRound(prevState: string | null, formData: FormData) {
++  const session = await getSession();
++  if (!session?.isAdmin) return "Non autorizzato.";
++
++  const name = ((formData.get("name") as string) || "").trim() || "Asta svincolati";
++  const startDate = (formData.get("startDate") as string) || null;
++  const endDate = formData.get("endDate") as string;
++  if (!endDate) return "Imposta almeno una data di fine.";
++  if (startDate && new Date(startDate).getTime() >= new Date(endDate).getTime()) {
++    return "La data di fine deve essere dopo la data di inizio.";
++  }
++
++  const db = getDb();
++  const seasonRes = await db.execute(`SELECT id FROM "Season" WHERE isActive = 1 LIMIT 1`);
++  const seasonId = seasonRes.rows[0]?.id as number | undefined;
++  if (!seasonId) return "Nessuna stagione attiva.";
++
++  const openRes = await db.execute({
++    sql: `SELECT id FROM "AuctionRound" WHERE seasonId = ? AND resolvedAt IS NULL LIMIT 1`,
++    args: [seasonId],
++  });
++  if (openRes.rows.length > 0) return "C'è già un round non ancora chiuso: chiudilo prima di aprirne uno nuovo.";
++
++  await db.execute({
++    sql: `INSERT INTO "AuctionRound" (seasonId, name, startDate, endDate) VALUES (?, ?, ?, ?)`,
++    args: [seasonId, name, startDate, endDate],
++  });
++
++  revalidateAuctionPaths();
++  return null;
++}
++
++// ── Admin: chiude un round subito (a prescindere dalla data di fine) ──────
++export async function closeAuctionRoundNow(prevState: string | null, formData: FormData) {
++  const session = await getSession();
++  if (!session?.isAdmin) return "Non autorizzato.";
++
++  const roundId = parseInt(formData.get("roundId") as string);
++  if (!roundId) return "Round non valido.";
++
++  const result = await resolveRound(roundId);
++  revalidateAuctionPaths();
++
++  const parts: string[] = [];
++  if (result.winners.length > 0) {
++    parts.push(
++      `✅ Assegnati ${result.winners.length}: ` +
++        result.winners.map((w) => `${w.playerName} → ${w.teamName} (${w.amount})`).join(", ")
++    );
++  }
++  if (result.unsold.length > 0) {
++    parts.push(`⚠️ Non assegnati per fondi insufficienti: ${result.unsold.map((u) => u.playerName).join(", ")}`);
++  }
++  if (parts.length === 0) parts.push("Round chiuso: nessuna offerta ricevuta.");
++  return parts.join("\n");
++}
++
++// ── Utente: fa (o aggiorna) un'offerta segreta su uno svincolato ─────────
++export async function submitBid(prevState: string | null, formData: FormData) {
++  const session = await getSession();
++  if (!session) return "Non autenticato.";
++
++  const roundId = parseInt(formData.get("roundId") as string);
++  const playerId = parseInt(formData.get("playerId") as string);
++  const amount = parseInt(formData.get("amount") as string);
++
++  if (!roundId || !playerId) return "Dati mancanti.";
++  if (!Number.isFinite(amount) || amount <= 0) return "Inserisci un'offerta valida (maggiore di zero).";
++
++  const db = getDb();
++
++  const roundRes = await db.execute({
++    sql: `SELECT id, startDate, endDate, resolvedAt FROM "AuctionRound" WHERE id = ?`,
++    args: [roundId],
++  });
++  const round = roundRes.rows[0];
++  if (!round || round.resolvedAt) return "Questo round non è più aperto.";
++  const now = Date.now();
++  if (round.startDate && new Date(round.startDate as string).getTime() > now) return "L'asta non è ancora iniziata.";
++  if (new Date(round.endDate as string).getTime() <= now) return "L'asta è scaduta.";
++
++  const playerRes = await db.execute({ sql: `SELECT mantraRole FROM "Player" WHERE id = ?`, args: [playerId] });
++  const mantraRole = playerRes.rows[0]?.mantraRole as string | undefined;
++  if (!mantraRole) return "Giocatore non trovato.";
++
++  const takenRes = await db.execute({ sql: `SELECT id FROM "Roster" WHERE playerId = ?`, args: [playerId] });
++  if (takenRes.rows.length > 0) return "Questo giocatore non è più svincolato.";
++
++  const existingRes = await db.execute({
++    sql: `SELECT id FROM "SealedBid" WHERE roundId = ? AND playerId = ? AND userId = ?`,
++    args: [roundId, playerId, session.userId],
++  });
++  const existingBidId = existingRes.rows[0]?.id as number | undefined;
++
++  const remaining = await remainingBudget(db, session.userId, existingBidId);
++  if (amount > remaining) return `Offerta troppo alta: ti restano ${remaining} crediti disponibili (contando le altre offerte in corso).`;
++
++  // Non ha senso fare un'offerta per un ruolo per cui non c'è più posto in
++  // rosa, contando anche le altre offerte pendenti (vedi roleSlotsUsed).
++  if (!existingBidId) {
++    const limits = await getRosterLimits(db);
++    const used = await roleSlotsUsed(db, session.userId);
++    const isPor = mantraRole === "POR";
++    if (isPor ? used.por >= limits.numPortieri : used.mov >= limits.numMovimento) {
++      return isPor
++        ? `Slot portieri già al completo (${limits.numPortieri}), contando anche le offerte in corso.`
++        : `Slot giocatori di movimento già al completo (${limits.numMovimento}), contando anche le offerte in corso.`;
++    }
++  }
++
++  if (existingBidId) {
++    await db.execute({ sql: `UPDATE "SealedBid" SET amount = ? WHERE id = ?`, args: [amount, existingBidId] });
++  } else {
++    await db.execute({
++      sql: `INSERT INTO "SealedBid" (roundId, playerId, userId, amount) VALUES (?, ?, ?, ?)`,
++      args: [roundId, playerId, session.userId, amount],
++    });
++  }
++
++  revalidatePath("/asta");
++  return null;
++}
++
++// ── Utente: ritira una propria offerta pendente ───────────────────────────
++export async function withdrawBid(prevState: string | null, formData: FormData) {
++  const session = await getSession();
++  if (!session) return "Non autenticato.";
++
++  const bidId = parseInt(formData.get("bidId") as string);
++  const db = getDb();
++
++  const res = await db.execute({
++    sql: `SELECT sb.userId, sb.status, ar.resolvedAt
++          FROM "SealedBid" sb JOIN "AuctionRound" ar ON ar.id = sb.roundId
++          WHERE sb.id = ?`,
++    args: [bidId],
++  });
++  const bid = res.rows[0];
++  if (!bid) return "Offerta non trovata.";
++  if (Number(bid.userId) !== session.userId && !session.isAdmin) return "Non autorizzato.";
++  if (bid.resolvedAt || bid.status !== "pending") return "Il round è già chiuso.";
++
++  await db.execute({ sql: `DELETE FROM "SealedBid" WHERE id = ?`, args: [bidId] });
++  revalidatePath("/asta");
++  return null;
++}
+diff --git a/app/actions/dbMigrate.ts b/app/actions/dbMigrate.ts
+index 9ca8f16..2d1e2f4 100644
+--- a/app/actions/dbMigrate.ts
++++ b/app/actions/dbMigrate.ts
+@@ -170,6 +170,36 @@ export async function runMigrations() {
+     await db.execute(`UPDATE "User" SET isParticipant = 0 WHERE username = 'admin'`);
+   } catch { /* colonna non ancora presente al primo giro, riprovare eseguendo di nuovo */ }
+ 
++  // === Asta a buste sugli svincolati ===
++  // Un round alla volta per stagione: l'admin imposta inizio/fine, ogni
++  // partecipante fa un'offerta segreta per giocatore (invisibile agli altri
++  // finché il round non si chiude), alla chiusura vince l'offerta più alta
++  // (a parità, la più vecchia — cioè chi ha offerto per primo).
++  await db.execute(`CREATE TABLE IF NOT EXISTS "AuctionRound" (
++    id INTEGER PRIMARY KEY AUTOINCREMENT,
++    seasonId INTEGER NOT NULL,
++    name TEXT NOT NULL DEFAULT 'Asta svincolati',
++    startDate TEXT,
++    endDate TEXT NOT NULL,
++    resolvedAt TEXT,
++    createdAt TEXT NOT NULL DEFAULT (datetime('now')),
++    FOREIGN KEY (seasonId) REFERENCES "Season"(id)
++  )`);
++
++  await db.execute(`CREATE TABLE IF NOT EXISTS "SealedBid" (
++    id INTEGER PRIMARY KEY AUTOINCREMENT,
++    roundId INTEGER NOT NULL,
++    playerId INTEGER NOT NULL,
++    userId INTEGER NOT NULL,
++    amount INTEGER NOT NULL,
++    status TEXT NOT NULL DEFAULT 'pending',
++    createdAt TEXT NOT NULL DEFAULT (datetime('now')),
++    FOREIGN KEY (roundId) REFERENCES "AuctionRound"(id),
++    FOREIGN KEY (playerId) REFERENCES "Player"(id),
++    FOREIGN KEY (userId) REFERENCES "User"(id),
++    UNIQUE(roundId, playerId, userId)
++  )`);
++
+   return { success: true };
+ }
+ 
+diff --git a/app/components/DeadlineTimer.tsx b/app/components/DeadlineTimer.tsx
+index 0d75e2b..1d2fb3d 100644
+--- a/app/components/DeadlineTimer.tsx
++++ b/app/components/DeadlineTimer.tsx
+@@ -29,9 +29,13 @@ function pad(n: number) {
+ export default function DeadlineTimer({
+   deadline,
+   isLocked,
++  label = "Scadenza consegna:",
++  expiredLabel = "Scadenza raggiunta — formazione non più inviabile",
+ }: {
+   deadline: string | null;
+   isLocked: boolean;
++  label?: string;
++  expiredLabel?: string;
+ }) {
+   const [tl, setTl] = useState<TimeLeft | null>(null);
+   const [mounted, setMounted] = useState(false);
+@@ -71,7 +75,7 @@ export default function DeadlineTimer({
+     return (
+       <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-600 text-white text-sm font-bold">
+         <span className="text-base">⏰</span>
+-        <span>Scadenza raggiunta — formazione non più inviabile</span>
++        <span>{expiredLabel}</span>
+       </div>
+     );
+   }
+@@ -88,7 +92,7 @@ export default function DeadlineTimer({
+   return (
+     <div className={`${bg} ${pulse} text-white rounded-xl px-4 py-3 flex flex-wrap items-center gap-3`}>
+       <span className="text-base shrink-0">⏰</span>
+-      <span className="text-sm font-medium shrink-0">Scadenza consegna:</span>
++      <span className="text-sm font-medium shrink-0">{label}</span>
+ 
+       {/* Countdown blocks */}
+       <div className="flex items-center gap-1.5 font-mono">
+diff --git a/app/components/Navbar.tsx b/app/components/Navbar.tsx
+index d19328b..315d56e 100644
+--- a/app/components/Navbar.tsx
++++ b/app/components/Navbar.tsx
+@@ -25,6 +25,7 @@ const BASE_LINKS = [
+   { href: "/coppe",       label: "Coppe",       icon: "🏅" },
+   { href: "/svincolati",  label: "Svincolati",  icon: "🆓" },
+   { href: "/mercato",     label: "Mercato",     icon: "🔄" },
++  { href: "/asta",        label: "Asta",        icon: "🔨" },
+   { href: "/scambi",      label: "Scambi",      icon: "🤝" },
+   { href: "/bacheca",     label: "Bacheca",     icon: "💬" },
+   { href: "/regolamento", label: "Regolamento", icon: "📖" },
+diff --git a/app/lib/auction.ts b/app/lib/auction.ts
+new file mode 100644
+index 0000000..f34e771
+--- /dev/null
++++ b/app/lib/auction.ts
+@@ -0,0 +1,266 @@
++import type { Client } from "@libsql/client/http";
++import { getDb } from "./db";
++import { getRosterLimits } from "./leagueSettings";
++
++/**
++ * Asta a buste sugli svincolati.
++ *
++ * Un solo round aperto per stagione: l'admin imposta inizio/fine, ogni
++ * partecipante può fare UNA offerta segreta per giocatore (invisibile agli
++ * altri finché il round non si chiude — vedi app/actions/auction.ts per la
++ * sottomissione). Alla chiusura vince l'offerta più alta per ciascun
++ * giocatore; a parità vince la più vecchia (chi ha offerto per primo).
++ *
++ * Non c'è un cron dedicato: la chiusura/assegnazione scatta "pigramente" al
++ * primo caricamento di /asta o /admin/asta dopo la scadenza (vedi
++ * resolveExpiredRounds), oppure subito se l'admin chiude il round a mano.
++ */
++
++export interface AuctionWinner {
++  playerId: number;
++  playerName: string;
++  userId: number;
++  teamName: string;
++  amount: number;
++}
++
++export interface AuctionUnsold {
++  playerId: number;
++  playerName: string;
++  reason: "fondi insufficienti" | "slot rosa pieni";
++}
++
++export interface ResolveResult {
++  winners: AuctionWinner[];
++  unsold: AuctionUnsold[];
++}
++
++/** Vero se un round con questa startDate non è ancora iniziato (o non ne ha una). */
++export function isRoundNotStarted(startDate: string | null): boolean {
++  return Boolean(startDate && new Date(startDate).getTime() > Date.now());
++}
++
++/**
++ * Budget residuo di un utente: crediti totali meno quanto già speso in rosa
++ * meno quanto già "impegnato" in offerte pendenti su round non ancora
++ * chiusi (così non si possono promettere più crediti di quanti se ne hanno,
++ * sommando più offerte contemporanee). `excludeBidId` esclude la propria
++ * offerta quando la si sta modificando.
++ */
++export async function remainingBudget(db: Client, userId: number, excludeBidId?: number): Promise<number> {
++  const [creditsRes, rosterRes, pendingRes] = await Promise.all([
++    db.execute({ sql: `SELECT credits FROM "User" WHERE id = ?`, args: [userId] }),
++    db.execute({ sql: `SELECT COALESCE(SUM(purchasePrice),0) as s FROM "Roster" WHERE userId = ?`, args: [userId] }),
++    db.execute({
++      sql: `SELECT COALESCE(SUM(sb.amount),0) as s
++            FROM "SealedBid" sb JOIN "AuctionRound" ar ON ar.id = sb.roundId
++            WHERE sb.userId = ? AND sb.status = 'pending' AND ar.resolvedAt IS NULL AND sb.id != ?`,
++      args: [userId, excludeBidId ?? -1],
++    }),
++  ]);
++  const credits = (creditsRes.rows[0]?.credits as number) ?? 0;
++  const rosterSpent = (rosterRes.rows[0]?.s as number) ?? 0;
++  const pendingSpent = (pendingRes.rows[0]?.s as number) ?? 0;
++  return credits - rosterSpent - pendingSpent;
++}
++
++/**
++ * Slot di rosa (portieri / movimento) già occupati da un utente, contando
++ * sia la rosa attuale sia le proprie offerte pendenti su round non ancora
++ * chiusi (così non si può fare offerte per più portieri di quanti slot
++ * liberi si abbiano, sommando più offerte contemporanee). `excludeBidId`
++ * esclude la propria offerta quando la si sta modificando.
++ */
++export async function roleSlotsUsed(
++  db: Client,
++  userId: number,
++  excludeBidId?: number
++): Promise<{ por: number; mov: number }> {
++  const [rosterRes, pendingRes] = await Promise.all([
++    db.execute({
++      sql: `SELECT p.mantraRole FROM "Roster" r JOIN "Player" p ON p.id = r.playerId WHERE r.userId = ?`,
++      args: [userId],
++    }),
++    db.execute({
++      sql: `SELECT p.mantraRole
++            FROM "SealedBid" sb
++            JOIN "AuctionRound" ar ON ar.id = sb.roundId
++            JOIN "Player" p ON p.id = sb.playerId
++            WHERE sb.userId = ? AND sb.status = 'pending' AND ar.resolvedAt IS NULL AND sb.id != ?`,
++      args: [userId, excludeBidId ?? -1],
++    }),
++  ]);
++  let por = 0;
++  let mov = 0;
++  for (const row of [...rosterRes.rows, ...pendingRes.rows]) {
++    if ((row.mantraRole as string) === "POR") por++;
++    else mov++;
++  }
++  return { por, mov };
++}
++
++/** Id dei round scaduti (endDate passata) ma non ancora risolti, per una stagione. */
++export async function findExpiredOpenRoundIds(db: Client, seasonId: number): Promise<number[]> {
++  const res = await db.execute({
++    sql: `SELECT id FROM "AuctionRound" WHERE seasonId = ? AND resolvedAt IS NULL AND endDate <= datetime('now')`,
++    args: [seasonId],
++  });
++  return res.rows.map((r) => r.id as number);
++}
++
++/**
++ * Risolve tutti i round scaduti di una stagione. Va chiamata a ogni
++ * caricamento di /asta e /admin/asta: se non c'è nulla di scaduto non fa
++ * nulla, quindi è sicura ed economica da richiamare spesso.
++ */
++export async function resolveExpiredRounds(seasonId: number): Promise<void> {
++  const db = getDb();
++  const ids = await findExpiredOpenRoundIds(db, seasonId);
++  for (const id of ids) {
++    await resolveRound(id);
++  }
++}
++
++/**
++ * Chiude e assegna un round: per ogni giocatore con almeno un'offerta
++ * pendente, vince l'offerta più alta (a parità la più vecchia) fra quelle
++ * che il vincitore può davvero permettersi — se anche la migliore offerta
++ * supera il budget residuo di chi l'ha fatta (caso limite: è già successo
++ * qualcos'altro nel frattempo), si passa alla successiva.
++ * Idempotente: un round già risolto (resolvedAt valorizzato) non viene
++ * ritoccato e ritorna risultati vuoti.
++ */
++export async function resolveRound(roundId: number): Promise<ResolveResult> {
++  const db = getDb();
++
++  const roundRes = await db.execute({ sql: `SELECT id, resolvedAt FROM "AuctionRound" WHERE id = ?`, args: [roundId] });
++  const round = roundRes.rows[0];
++  if (!round || round.resolvedAt) return { winners: [], unsold: [] };
++
++  const bidsRes = await db.execute({
++    sql: `SELECT sb.id, sb.playerId, sb.userId, sb.amount, p.name as playerName, p.mantraRole, u.teamName, u.credits
++          FROM "SealedBid" sb
++          JOIN "Player" p ON p.id = sb.playerId
++          JOIN "User" u ON u.id = sb.userId
++          WHERE sb.roundId = ? AND sb.status = 'pending'
++          ORDER BY sb.playerId ASC, sb.amount DESC, sb.createdAt ASC`,
++    args: [roundId],
++  });
++
++  const limits = await getRosterLimits(db);
++
++  // Giocatori già assegnati nel frattempo (es. l'admin li ha messi in rosa a
++  // mano da "Gestione Rose" mentre il round era aperto): le offerte relative
++  // decadono, il giocatore non è più uno svincolato da assegnare qui.
++  const takenRes = await db.execute(`SELECT playerId FROM "Roster"`);
++  const taken = new Set(takenRes.rows.map((r) => r.playerId as number));
++
++  const rosterSpentRes = await db.execute(
++    `SELECT userId, COALESCE(SUM(purchasePrice),0) as s FROM "Roster" GROUP BY userId`
++  );
++  const rosterSpent = new Map<number, number>();
++  for (const r of rosterSpentRes.rows) rosterSpent.set(r.userId as number, r.s as number);
++
++  const rosterRolesRes = await db.execute(
++    `SELECT r.userId, p.mantraRole FROM "Roster" r JOIN "Player" p ON p.id = r.playerId`
++  );
++  const slotsUsed = new Map<number, { por: number; mov: number }>();
++  for (const r of rosterRolesRes.rows) {
++    const uid = r.userId as number;
++    const cur = slotsUsed.get(uid) ?? { por: 0, mov: 0 };
++    if ((r.mantraRole as string) === "POR") cur.por++; else cur.mov++;
++    slotsUsed.set(uid, cur);
++  }
++
++  // Quanto ciascun utente sta già "spendendo"/occupando fra i giocatori
++  // assegnati in QUESTO stesso round, mano a mano che si procede — evita che
++  // qualcuno vinca più giocatori di quanti crediti o slot di rosa abbia.
++  const spentThisRound = new Map<number, number>();
++
++  type Bid = {
++    id: number; playerId: number; userId: number; amount: number;
++    playerName: string; mantraRole: string; teamName: string; credits: number;
++  };
++  const byPlayer = new Map<number, Bid[]>();
++  for (const row of bidsRes.rows) {
++    const bid: Bid = {
++      id: row.id as number,
++      playerId: row.playerId as number,
++      userId: row.userId as number,
++      amount: row.amount as number,
++      playerName: row.playerName as string,
++      mantraRole: row.mantraRole as string,
++      teamName: row.teamName as string,
++      credits: row.credits as number,
++    };
++    if (!byPlayer.has(bid.playerId)) byPlayer.set(bid.playerId, []);
++    byPlayer.get(bid.playerId)!.push(bid);
++  }
++
++  const winners: AuctionWinner[] = [];
++  const unsold: AuctionUnsold[] = [];
++  const winningBidIds: number[] = [];
++  const losingBidIds: number[] = [];
++
++  for (const [playerId, bids] of byPlayer) {
++    if (taken.has(playerId)) {
++      for (const b of bids) losingBidIds.push(b.id);
++      continue;
++    }
++
++    // bids è già ordinato per amount DESC, poi createdAt ASC (pareggio → prima offerta)
++    let winner: Bid | null = null;
++    let skippedForSlots = false;
++    for (const b of bids) {
++      const already = spentThisRound.get(b.userId) ?? 0;
++      const remaining = b.credits - (rosterSpent.get(b.userId) ?? 0) - already;
++      if (b.amount > remaining) continue;
++
++      const used = slotsUsed.get(b.userId) ?? { por: 0, mov: 0 };
++      const isPor = b.mantraRole === "POR";
++      const full = isPor ? used.por >= limits.numPortieri : used.mov >= limits.numMovimento;
++      if (full) { skippedForSlots = true; continue; }
++
++      winner = b;
++      break;
++    }
++
++    if (!winner) {
++      for (const b of bids) losingBidIds.push(b.id);
++      unsold.push({
++        playerId, playerName: bids[0].playerName,
++        reason: skippedForSlots ? "slot rosa pieni" : "fondi insufficienti",
++      });
++      continue;
++    }
++
++    for (const b of bids) (b.id === winner.id ? winningBidIds : losingBidIds).push(b.id);
++    spentThisRound.set(winner.userId, (spentThisRound.get(winner.userId) ?? 0) + winner.amount);
++    {
++      const used = slotsUsed.get(winner.userId) ?? { por: 0, mov: 0 };
++      if (winner.mantraRole === "POR") used.por++; else used.mov++;
++      slotsUsed.set(winner.userId, used);
++    }
++    taken.add(playerId);
++
++    await db.execute({
++      sql: `INSERT INTO "Roster" (userId, playerId, purchasePrice) VALUES (?, ?, ?)`,
++      args: [winner.userId, playerId, winner.amount],
++    });
++    winners.push({
++      playerId, playerName: winner.playerName,
++      userId: winner.userId, teamName: winner.teamName, amount: winner.amount,
++    });
++  }
++
++  for (const id of winningBidIds) {
++    await db.execute({ sql: `UPDATE "SealedBid" SET status = 'won' WHERE id = ?`, args: [id] });
++  }
++  for (const id of losingBidIds) {
++    await db.execute({ sql: `UPDATE "SealedBid" SET status = 'lost' WHERE id = ?`, args: [id] });
++  }
++
++  await db.execute({ sql: `UPDATE "AuctionRound" SET resolvedAt = datetime('now') WHERE id = ?`, args: [roundId] });
++
++  return { winners, unsold };
++}
+-- 
+2.43.0
+

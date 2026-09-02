@@ -1,0 +1,271 @@
+From 596b779395d4a09ede6a98bfdcc9c65a605c57ef Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 2 Sep 2026 12:15:54 +0000
+Subject: [PATCH] Permette di correggere i giocatori non abbinati durante
+ l'import voti
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+L'azione updatePlayer esisteva già (nome, squadra, ruolo, "Nome su
+Fantapiu3") ma non era raggiungibile dall'interfaccia: aggiunge un
+pulsante "Modifica" per riga in Admin → Giocatori che apre un form
+inline per correggerli, senza dover cancellare e ricreare il
+giocatore.
+
+L'import voti ora elenca anche i NOMI dei giocatori non abbinati (non
+solo il conteggio), così è chiaro chi sistemare — in genere basta
+impostare "Nome su Fantapiu3" uguale a come appare sul sito prima di
+reimportare.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014b1sN91ccrMwyrjH8mBkxx
+---
+ .../admin/players/PlayersAdminClient.tsx      | 154 ++++++++++++++----
+ app/actions/votes.ts                          |   9 +-
+ app/lib/voteImporter.ts                       |   6 +-
+ 3 files changed, 139 insertions(+), 30 deletions(-)
+
+diff --git a/app/(main)/admin/players/PlayersAdminClient.tsx b/app/(main)/admin/players/PlayersAdminClient.tsx
+index a3bbdf4..b876876 100644
+--- a/app/(main)/admin/players/PlayersAdminClient.tsx
++++ b/app/(main)/admin/players/PlayersAdminClient.tsx
+@@ -1,7 +1,7 @@
+ "use client";
+ 
+-import { useActionState, useState, type ChangeEvent } from "react";
+-import { createPlayer, deletePlayer, importPlayersCSV } from "@/app/actions/players";
++import { useActionState, useState, useEffect, useRef, type ChangeEvent } from "react";
++import { createPlayer, deletePlayer, importPlayersCSV, updatePlayer } from "@/app/actions/players";
+ import { MANTRA_ROLES } from "@/app/lib/scoring";
+ 
+ interface Player {
+@@ -33,6 +33,7 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
+   const [csvText, setCsvText] = useState("");
+   const [fileName, setFileName] = useState("");
+   const [parseError, setParseError] = useState("");
++  const [editingId, setEditingId] = useState<number | null>(null);
+ 
+   async function handleFile(e: ChangeEvent<HTMLInputElement>) {
+     const file = e.target.files?.[0];
+@@ -214,32 +215,45 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
+               </tr>
+             </thead>
+             <tbody className="divide-y">
+-              {filtered.map((p) => (
+-                <tr key={p.id} className="hover:bg-gray-50">
+-                  <td className="px-4 py-2 font-medium">{p.name}</td>
+-                  <td className="px-4 py-2 text-gray-500">{p.realTeam}</td>
+-                  <td className="px-4 py-2">
+-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[p.mantraRole] ?? "bg-gray-100"}`}>
+-                      {p.mantraRole}
+-                    </span>
+-                  </td>
+-                  <td className="px-4 py-2 text-gray-400 text-xs">{p.assignedTo ?? "—"}</td>
+-                  <td className="px-4 py-2">
+-                    <form action={deleteAction} className="inline">
+-                      <input type="hidden" name="id" value={p.id} />
+-                      <button
+-                        type="submit"
+-                        className="text-red-500 hover:text-red-700 text-xs"
+-                        onClick={(e) => {
+-                          if (!confirm(`Eliminare ${p.name}?`)) e.preventDefault();
+-                        }}
+-                      >
+-                        Elimina
+-                      </button>
+-                    </form>
+-                  </td>
+-                </tr>
+-              ))}
++              {filtered.map((p) =>
++                editingId === p.id ? (
++                  <EditPlayerRow key={p.id} player={p} onDone={() => setEditingId(null)} />
++                ) : (
++                  <tr key={p.id} className="hover:bg-gray-50">
++                    <td className="px-4 py-2 font-medium">{p.name}</td>
++                    <td className="px-4 py-2 text-gray-500">{p.realTeam}</td>
++                    <td className="px-4 py-2">
++                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[p.mantraRole] ?? "bg-gray-100"}`}>
++                        {p.mantraRole}
++                      </span>
++                    </td>
++                    <td className="px-4 py-2 text-gray-400 text-xs">{p.assignedTo ?? "—"}</td>
++                    <td className="px-4 py-2">
++                      <div className="flex items-center gap-3">
++                        <button
++                          type="button"
++                          onClick={() => setEditingId(p.id)}
++                          className="text-blue-600 hover:text-blue-800 text-xs"
++                        >
++                          ✏️ Modifica
++                        </button>
++                        <form action={deleteAction} className="inline">
++                          <input type="hidden" name="id" value={p.id} />
++                          <button
++                            type="submit"
++                            className="text-red-500 hover:text-red-700 text-xs"
++                            onClick={(e) => {
++                              if (!confirm(`Eliminare ${p.name}?`)) e.preventDefault();
++                            }}
++                          >
++                            Elimina
++                          </button>
++                        </form>
++                      </div>
++                    </td>
++                  </tr>
++                )
++              )}
+             </tbody>
+           </table>
+           {filtered.length === 0 && (
+@@ -250,3 +264,87 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
+     </div>
+   );
+ }
++
++function EditPlayerRow({ player, onDone }: { player: Player; onDone: () => void }) {
++  const [error, action, pending] = useActionState(updatePlayer, null);
++  const wasPending = useRef(false);
++
++  // Il salvataggio ha successo quando l'azione torna null (nessun errore) e
++  // non è più in corso — a quel punto chiudiamo la riga di modifica. Va in
++  // un effect (non nel corpo del render) perché aggiorna lo stato del
++  // genitore (onDone → setEditingId).
++  useEffect(() => {
++    if (wasPending.current && !pending && error === null) {
++      onDone();
++    }
++    wasPending.current = pending;
++  }, [pending, error, onDone]);
++
++  return (
++    <tr className="bg-blue-50/50">
++      <td colSpan={5} className="px-4 py-3">
++        <form
++          action={action}
++          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-end"
++        >
++          <input type="hidden" name="id" value={player.id} />
++          <div>
++            <label className="text-xs font-medium text-gray-500">Nome</label>
++            <input
++              name="name"
++              defaultValue={player.name}
++              required
++              className="w-full border rounded-lg px-2 py-1.5 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
++            />
++          </div>
++          <div>
++            <label className="text-xs font-medium text-gray-500">Squadra reale</label>
++            <input
++              name="realTeam"
++              defaultValue={player.realTeam}
++              required
++              className="w-full border rounded-lg px-2 py-1.5 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
++            />
++          </div>
++          <div>
++            <label className="text-xs font-medium text-gray-500">Ruolo Mantra</label>
++            <select
++              name="mantraRole"
++              defaultValue={player.mantraRole}
++              required
++              className="w-full border rounded-lg px-2 py-1.5 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
++            >
++              {MANTRA_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
++            </select>
++          </div>
++          <div>
++            <label className="text-xs font-medium text-gray-500">Nome su Fantapiu3</label>
++            <input
++              name="fantapiu3Name"
++              defaultValue={player.fantapiu3Name ?? ""}
++              placeholder="(se diverso dal nome)"
++              className="w-full border rounded-lg px-2 py-1.5 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
++            />
++          </div>
++          <div className="flex items-center gap-2">
++            <button
++              type="submit"
++              disabled={pending}
++              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-3 py-1.5 rounded-lg text-xs font-medium"
++            >
++              {pending ? "Salvataggio..." : "Salva"}
++            </button>
++            <button
++              type="button"
++              onClick={onDone}
++              className="text-gray-500 hover:text-gray-700 text-xs px-2 py-1.5"
++            >
++              Annulla
++            </button>
++          </div>
++          {error && <div className="col-span-full text-red-600 text-sm">{error}</div>}
++        </form>
++      </td>
++    </tr>
++  );
++}
+diff --git a/app/actions/votes.ts b/app/actions/votes.ts
+index 0e222cb..3e63450 100644
+--- a/app/actions/votes.ts
++++ b/app/actions/votes.ts
+@@ -47,7 +47,14 @@ export async function importVotes(prevState: string | null, formData: FormData)
+       );
+     }
+ 
+-    return `Voti importati: ${result.matched} trovati, ${result.unmatched} non abbinati.${alreadyImported ? " (re-import, nessuna push inviata)" : ""}`;
++    // Elenca i nomi non abbinati così l'admin sa esattamente quali giocatori
++    // sistemare (nome o "Nome su Fantapiu3") in Admin → Giocatori prima di
++    // ripetere l'import.
++    const unmatchedList = result.unmatchedNames.length > 0
++      ? ` Non trovati: ${result.unmatchedNames.slice(0, 25).join(", ")}${result.unmatchedNames.length > 25 ? `, +${result.unmatchedNames.length - 25} altri` : ""}. Correggili in Admin → Giocatori (campo "Nome su Fantapiu3") e reimporta.`
++      : "";
++
++    return `Voti importati: ${result.matched} trovati, ${result.unmatched} non abbinati.${unmatchedList}${alreadyImported ? " (re-import, nessuna push inviata)" : ""}`;
+   } catch (err) {
+     const message = err instanceof Error ? err.message : "Errore sconosciuto";
+     // Prefisso riconosciuto dal client per mostrare la scelta "importa comunque"
+diff --git a/app/lib/voteImporter.ts b/app/lib/voteImporter.ts
+index d052da7..24ed303 100644
+--- a/app/lib/voteImporter.ts
++++ b/app/lib/voteImporter.ts
+@@ -22,6 +22,8 @@ export interface ImportResult {
+   matched: number;
+   unmatched: number;
+   matchdayNumber: number;
++  /** Nomi (così come mostrati da fantapiu3) dei voti non abbinati a nessun giocatore in rosa. */
++  unmatchedNames: string[];
+ }
+ 
+ /**
+@@ -63,6 +65,7 @@ export async function importVotesCore(
+ 
+   let matched = 0;
+   let unmatched = 0;
++  const unmatchedNames: string[] = [];
+ 
+   for (const vote of scraped) {
+     const player = players.find(
+@@ -73,6 +76,7 @@ export async function importVotesCore(
+ 
+     if (!player) {
+       unmatched++;
++      unmatchedNames.push(vote.name);
+       continue;
+     }
+ 
+@@ -119,7 +123,7 @@ export async function importVotesCore(
+     args: [matchdayId],
+   });
+ 
+-  return { matched, unmatched, matchdayNumber };
++  return { matched, unmatched, matchdayNumber, unmatchedNames };
+ }
+ 
+ // ── Auto-generate best lineup for users who didn't submit ─────────────────
+-- 
+2.43.0
+

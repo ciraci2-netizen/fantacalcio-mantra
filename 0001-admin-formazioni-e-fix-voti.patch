@@ -1,0 +1,603 @@
+From afa929326b977762d40757e1b0729356b3c8b928 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 2 Sep 2026 09:27:55 +0000
+Subject: [PATCH 1/2] Aggiunge inserimento admin formazioni e corregge import
+ voti Serie A
+
+- Nuova pagina /admin/lineup: l'admin puo' inserire/modificare la
+  formazione di qualsiasi squadra (anche a giornata bloccata), con
+  link diretti dalle liste "mancanti" in dashboard e in /admin/votes.
+- Fix scraper voti: l'URL puntava alla pagina Premier League di
+  Fantapiu3 invece che a quella Serie A, quindi nessun giocatore
+  veniva mai abbinato. Ora usa l'URL Serie A corretto e passa
+  correttamente il numero di giornata (?giornata=N), prima ignorato.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_014b1sN91ccrMwyrjH8mBkxx
+---
+ app/(main)/admin/lineup/page.tsx            | 211 ++++++++++++++++++++
+ app/(main)/admin/page.tsx                   |  18 +-
+ app/(main)/admin/votes/VotesAdminClient.tsx |   9 +
+ app/(main)/lineup/LineupForm.tsx            |  26 ++-
+ app/actions/lineup.ts                       | 129 +++++++++---
+ app/lib/logger.ts                           |   1 +
+ app/lib/scraper.ts                          |   5 +-
+ 7 files changed, 362 insertions(+), 37 deletions(-)
+ create mode 100644 app/(main)/admin/lineup/page.tsx
+
+diff --git a/app/(main)/admin/lineup/page.tsx b/app/(main)/admin/lineup/page.tsx
+new file mode 100644
+index 0000000..2740679
+--- /dev/null
++++ b/app/(main)/admin/lineup/page.tsx
+@@ -0,0 +1,211 @@
++import type { Metadata } from "next";
++import { getSession } from "@/app/lib/session";
++import { redirect } from "next/navigation";
++import { getDb } from "@/app/lib/db";
++import LineupForm from "@/app/(main)/lineup/LineupForm";
++
++export const metadata: Metadata = { title: "Admin — Formazioni" };
++export const dynamic = "force-dynamic";
++
++export default async function AdminLineupPage({
++  searchParams,
++}: {
++  searchParams: Promise<{ userId?: string; matchdayId?: string }>;
++}) {
++  const session = await getSession();
++  if (!session?.isAdmin) redirect("/");
++
++  const db = getDb();
++  const { userId: userIdParam, matchdayId: matchdayIdParam } = await searchParams;
++
++  const seasonRes = await db.execute(
++    `SELECT id, name, currentMatchday FROM "Season" WHERE isActive = 1 LIMIT 1`
++  );
++  const season = seasonRes.rows[0] ?? null;
++
++  if (!season) {
++    return (
++      <div className="text-center py-12 text-gray-500">
++        Nessuna stagione attiva. Crea prima una stagione in Calendario.
++      </div>
++    );
++  }
++
++  const matchdaysRes = await db.execute({
++    sql: `SELECT id, number, isLocked, votesImported FROM "Matchday" WHERE seasonId = ? ORDER BY number ASC`,
++    args: [season.id],
++  });
++  const matchdays = matchdaysRes.rows.map((m) => ({
++    id: m.id as number,
++    number: m.number as number,
++    isLocked: Boolean(m.isLocked),
++    votesImported: Boolean(m.votesImported),
++  }));
++
++  const usersRes = await db.execute(
++    `SELECT id, teamName FROM "User" WHERE isParticipant = 1 ORDER BY teamName ASC`
++  );
++  const users = usersRes.rows.map((u) => ({
++    id: u.id as number,
++    teamName: u.teamName as string,
++  }));
++
++  // Giornata selezionata (default: giornata corrente della stagione)
++  const selectedMatchday =
++    matchdays.find((m) => m.id === parseInt(matchdayIdParam ?? "")) ??
++    matchdays.find((m) => m.number === season.currentMatchday) ??
++    matchdays[0] ??
++    null;
++
++  // Squadra selezionata (default: nessuna, l'admin deve scegliere)
++  const selectedUserId = parseInt(userIdParam ?? "");
++  const selectedUser = users.find((u) => u.id === selectedUserId) ?? null;
++
++  // Chi ha già inviato la formazione per la giornata selezionata (per la lista rapida)
++  let submittedIds = new Set<number>();
++  if (selectedMatchday) {
++    const submittedRes = await db.execute({
++      sql: `SELECT userId FROM "Lineup" WHERE matchdayId = ?`,
++      args: [selectedMatchday.id],
++    });
++    submittedIds = new Set(submittedRes.rows.map((r) => r.userId as number));
++  }
++
++  // Dati per il form (rosa + formazione esistente) solo se squadra+giornata selezionate
++  let roster: { id: number; name: string; realTeam: string; mantraRole: string }[] = [];
++  let existingLineupData: { formation: string; starters: number[]; reserves: number[] } | null = null;
++
++  if (selectedUser && selectedMatchday) {
++    const rosterRes = await db.execute({
++      sql: `SELECT p.id, p.name, p.realTeam, p.mantraRole
++            FROM "Roster" r
++            JOIN "Player" p ON p.id = r.playerId
++            WHERE r.userId = ?
++            ORDER BY p.mantraRole ASC, p.name ASC`,
++      args: [selectedUser.id],
++    });
++    roster = rosterRes.rows.map((r) => ({
++      id: r.id as number,
++      name: r.name as string,
++      realTeam: r.realTeam as string,
++      mantraRole: r.mantraRole as string,
++    }));
++
++    const existingLineupRes = await db.execute({
++      sql: `SELECT id, formation FROM "Lineup" WHERE userId = ? AND matchdayId = ? LIMIT 1`,
++      args: [selectedUser.id, selectedMatchday.id],
++    });
++    const existingLineup = existingLineupRes.rows[0] ?? null;
++
++    if (existingLineup) {
++      const slotsRes = await db.execute({
++        sql: `SELECT playerId, isStarter FROM "LineupSlot" WHERE lineupId = ? ORDER BY isStarter DESC, position ASC`,
++        args: [existingLineup.id],
++      });
++      existingLineupData = {
++        formation: existingLineup.formation as string,
++        starters: slotsRes.rows.filter((s) => Number(s.isStarter) === 1).map((s) => s.playerId as number),
++        reserves: slotsRes.rows.filter((s) => Number(s.isStarter) === 0).map((s) => s.playerId as number),
++      };
++    }
++  }
++
++  return (
++    <div className="space-y-4">
++      <div className="flex items-center justify-between">
++        <h1 className="text-xl font-bold text-gray-800">🛠️ Formazioni — Inserimento admin</h1>
++      </div>
++      <p className="text-sm text-gray-500">
++        Usa questa pagina per inserire o correggere manualmente la formazione di una squadra
++        (es. un presidente che non è riuscito ad accedere in tempo). Funziona anche a giornata
++        bloccata.
++      </p>
++
++      {/* ── Selezione giornata + squadra ─────────────────────────── */}
++      <form method="get" className="bg-white rounded-xl border shadow-sm p-4 flex flex-wrap items-end gap-3">
++        <div>
++          <label className="block text-xs font-medium text-gray-500 mb-1">Giornata</label>
++          <select
++            name="matchdayId"
++            defaultValue={selectedMatchday?.id ?? ""}
++            className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
++          >
++            {matchdays.map((m) => (
++              <option key={m.id} value={m.id}>
++                G{m.number} {m.isLocked ? "🔒" : ""}
++              </option>
++            ))}
++          </select>
++        </div>
++        <div>
++          <label className="block text-xs font-medium text-gray-500 mb-1">Squadra</label>
++          <select
++            name="userId"
++            defaultValue={selectedUser?.id ?? ""}
++            className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
++          >
++            <option value="">— seleziona —</option>
++            {users.map((u) => (
++              <option key={u.id} value={u.id}>
++                {submittedIds.has(u.id) ? "✓ " : "✗ "}
++                {u.teamName}
++              </option>
++            ))}
++          </select>
++        </div>
++        <button
++          type="submit"
++          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
++        >
++          Carica
++        </button>
++      </form>
++
++      {/* ── Riepilogo stato invii per la giornata selezionata ────── */}
++      {selectedMatchday && (
++        <div className="bg-white rounded-xl border shadow-sm p-4">
++          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
++            Stato formazioni G{selectedMatchday.number} — {submittedIds.size}/{users.length}
++          </p>
++          <div className="flex flex-wrap gap-1.5">
++            {users.map((u) => (
++              <a
++                key={u.id}
++                href={`?matchdayId=${selectedMatchday.id}&userId=${u.id}`}
++                className={`text-xs px-2 py-1 rounded-full font-medium border ${
++                  submittedIds.has(u.id)
++                    ? "bg-green-50 text-green-700 border-green-200"
++                    : "bg-red-50 text-red-700 border-red-200"
++                } ${selectedUser?.id === u.id ? "ring-2 ring-green-500" : ""}`}
++              >
++                {submittedIds.has(u.id) ? "✓" : "✗"} {u.teamName}
++              </a>
++            ))}
++          </div>
++        </div>
++      )}
++
++      {/* ── Form formazione ──────────────────────────────────────── */}
++      {selectedUser && selectedMatchday ? (
++        roster.length === 0 ? (
++          <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 text-sm">
++            {selectedUser.teamName} non ha ancora una rosa assegnata (vedi Admin → Rose).
++          </div>
++        ) : (
++          <LineupForm
++            matchdayId={selectedMatchday.id}
++            matchdayNumber={selectedMatchday.number}
++            isLocked={selectedMatchday.isLocked}
++            roster={roster}
++            existingLineup={existingLineupData}
++            admin={{ userId: selectedUser.id, teamName: selectedUser.teamName }}
++          />
++        )
++      ) : (
++        <div className="text-center py-8 text-gray-400 text-sm">
++          Seleziona una giornata e una squadra per inserire o modificare la formazione.
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/app/(main)/admin/page.tsx b/app/(main)/admin/page.tsx
+index efacaac..b48851f 100644
+--- a/app/(main)/admin/page.tsx
++++ b/app/(main)/admin/page.tsx
+@@ -22,7 +22,7 @@ export default async function AdminPage() {
+ 
+   // ── Current matchday status ─────────────────────────────────────────────
+   let matchday: { id: number; number: number; isLocked: boolean; votesImported: boolean; deadline: string | null } | null = null;
+-  let lineupStats: { submitted: number; total: number; missing: string[] } = { submitted: 0, total: 0, missing: [] };
++  let lineupStats: { submitted: number; total: number; missing: { id: number; teamName: string }[] } = { submitted: 0, total: 0, missing: [] };
+   let pendingTrades = 0;
+ 
+   if (season) {
+@@ -54,7 +54,9 @@ export default async function AdminPage() {
+       });
+       const submittedIds = new Set(submittedRes.rows.map((r) => r.userId as number));
+       const allUsers = usersRes.rows;
+-      const missing = allUsers.filter((u) => !submittedIds.has(u.id as number)).map((u) => u.teamName as string);
++      const missing = allUsers
++        .filter((u) => !submittedIds.has(u.id as number))
++        .map((u) => ({ id: u.id as number, teamName: u.teamName as string }));
+       lineupStats = {
+         submitted: submittedIds.size,
+         total: allUsers.length,
+@@ -96,6 +98,7 @@ export default async function AdminPage() {
+     { href: "/admin/users",    icon: "👥", title: "Utenti",       desc: `${userCount} / 10 partecipanti`,         color: "purple" },
+     { href: "/admin/players",  icon: "👤", title: "Giocatori",    desc: `${playerCount} nel database`,             color: "blue"   },
+     { href: "/admin/schedule", icon: "📅", title: "Calendario",   desc: season ? `${season.name as string}` : "Nessuna stagione", color: "green" },
++    { href: "/admin/lineup",  icon: "🛠️", title: "Formazioni",   desc: "Inserimento/modifica manuale",            color: "lime"   },
+     { href: "/admin/votes",    icon: "📊", title: "Voti",         desc: `${votesImportedCount} giornate importate`, color: "amber" },
+     { href: "/admin/coppe",    icon: "🏆", title: "Coppe",        desc: "Turni eliminatori",                       color: "yellow" },
+     { href: "/admin/mercato",  icon: "🔄", title: "Mercato",      desc: "Apri/chiudi mercati",                     color: "teal"   },
+@@ -116,6 +119,7 @@ export default async function AdminPage() {
+     slate: "bg-slate-50 border-slate-200 hover:bg-slate-100",
+     cyan: "bg-cyan-50 border-cyan-200 hover:bg-cyan-100",
+     pink: "bg-pink-50 border-pink-200 hover:bg-pink-100",
++    lime: "bg-lime-50 border-lime-200 hover:bg-lime-100",
+   };
+ 
+   return (
+@@ -155,8 +159,14 @@ export default async function AdminPage() {
+             {lineupStats.missing.length > 0 ? (
+               <div className="mt-2">
+                 <p className="text-xs font-semibold text-red-600 mb-1">Mancanti:</p>
+-                {lineupStats.missing.slice(0, 3).map((name) => (
+-                  <p key={name} className="text-xs text-red-500 truncate">• {name}</p>
++                {lineupStats.missing.slice(0, 3).map((u) => (
++                  <Link
++                    key={u.id}
++                    href={`/admin/lineup?matchdayId=${matchday?.id}&userId=${u.id}`}
++                    className="block text-xs text-red-500 hover:text-red-700 hover:underline truncate"
++                  >
++                    • {u.teamName} — inserisci →
++                  </Link>
+                 ))}
+                 {lineupStats.missing.length > 3 && (
+                   <p className="text-xs text-red-400">+ altri {lineupStats.missing.length - 3}</p>
+diff --git a/app/(main)/admin/votes/VotesAdminClient.tsx b/app/(main)/admin/votes/VotesAdminClient.tsx
+index 458774c..02908c3 100644
+--- a/app/(main)/admin/votes/VotesAdminClient.tsx
++++ b/app/(main)/admin/votes/VotesAdminClient.tsx
+@@ -1,6 +1,7 @@
+ "use client";
+ 
+ import { useActionState, useState } from "react";
++import Link from "next/link";
+ import { importVotes, calculateAllScores } from "@/app/actions/votes";
+ import { lockAndAdvanceMatchday, setMatchdayDeadline } from "@/app/actions/schedule";
+ import { setPlayerStatus } from "@/app/actions/settings";
+@@ -146,6 +147,14 @@ export default function VotesAdminClient({
+                 {(l.substitutions ?? 0) > 0 && (
+                   <span className="text-xs text-gray-400">↔{l.substitutions}</span>
+                 )}
++                {currentMatchdayId && (!l.submitted || l.isAutomatic) && (
++                  <Link
++                    href={`/admin/lineup?matchdayId=${currentMatchdayId}&userId=${l.userId}`}
++                    className="text-xs text-blue-600 hover:underline font-medium"
++                  >
++                    🛠️ {l.submitted ? "correggi" : "inserisci"}
++                  </Link>
++                )}
+               </div>
+             </div>
+           ))}
+diff --git a/app/(main)/lineup/LineupForm.tsx b/app/(main)/lineup/LineupForm.tsx
+index 4184d50..3ddd87b 100644
+--- a/app/(main)/lineup/LineupForm.tsx
++++ b/app/(main)/lineup/LineupForm.tsx
+@@ -1,7 +1,7 @@
+ "use client";
+ 
+ import { useActionState, useOptimistic, useState } from "react";
+-import { saveLineup } from "@/app/actions/lineup";
++import { saveLineup, adminSaveLineup } from "@/app/actions/lineup";
+ import { VALID_FORMATIONS, MANTRA_ROLES } from "@/app/lib/scoring";
+ import PitchView, { type PitchPlayer } from "@/app/components/PitchView";
+ 
+@@ -23,6 +23,15 @@ interface Props {
+     starters: number[];
+     reserves: number[];
+   } | null;
++  /**
++   * Admin override: quando presente, il form salva la formazione per conto
++   * di un'altra squadra (adminSaveLineup) invece che per l'utente loggato
++   * (saveLineup), e resta modificabile anche a giornata bloccata.
++   */
++  admin?: {
++    userId: number;
++    teamName: string;
++  };
+ }
+ 
+ const ROLE_COLORS: Record<string, string> = {
+@@ -40,8 +49,9 @@ export default function LineupForm({
+   isLocked,
+   roster,
+   existingLineup,
++  admin,
+ }: Props) {
+-  const [result, formAction, pending] = useActionState(saveLineup, null);
++  const [result, formAction, pending] = useActionState(admin ? adminSaveLineup : saveLineup, null);
+   // Optimistic: show success immediately on submit, reverts on server error
+   const [optimisticResult, setOptimisticResult] = useOptimistic(result);
+ 
+@@ -101,7 +111,7 @@ export default function LineupForm({
+     return { id: p.id, name: p.name, role: p.mantraRole, availability: p.availability };
+   });
+ 
+-  if (isLocked) {
++  if (isLocked && !admin) {
+     return (
+       <div className="text-center py-12">
+         <div className="text-4xl mb-3">🔒</div>
+@@ -117,9 +127,17 @@ export default function LineupForm({
+ 
+   return (
+     <div className="space-y-6">
++      {admin && (
++        <div className="bg-purple-50 border border-purple-200 text-purple-800 rounded-lg px-4 py-3 text-sm font-medium">
++          🛠️ Modalità admin — stai inserendo/modificando la formazione di{" "}
++          <strong>{admin.teamName}</strong> per la giornata {matchdayNumber}
++          {isLocked && " (giornata bloccata: la modifica è comunque consentita solo agli admin)"}.
++        </div>
++      )}
+       <form action={action} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+         <input type="hidden" name="matchdayId" value={matchdayId} />
+         <input type="hidden" name="formation" value={formation} />
++        {admin && <input type="hidden" name="userId" value={admin.userId} />}
+         {starters.map((id, i) => (
+           <input key={`s${i}`} type="hidden" name={`starter_${i + 1}`} value={id ?? ""} />
+         ))}
+@@ -297,6 +315,8 @@ export default function LineupForm({
+               ? "Salvataggio..."
+               : saved && !error
+               ? "✓ Formazione salvata"
++              : admin
++              ? `Salva formazione per ${admin.teamName}`
+               : "Salva formazione"}
+           </button>
+         </div>
+diff --git a/app/actions/lineup.ts b/app/actions/lineup.ts
+index 4fa0bc0..40f58c4 100644
+--- a/app/actions/lineup.ts
++++ b/app/actions/lineup.ts
+@@ -36,24 +36,20 @@ function validateFormation(
+   return null;
+ }
+ 
+-export async function saveLineup(prevState: string | null, formData: FormData) {
+-  const session = await getSession();
+-  if (!session) return "Non autenticato.";
+-
+-  const matchdayId = parseInt(formData.get("matchdayId") as string);
+-  const formation = (formData.get("formation") as string) ?? "4-4-2";
+-
+-  const starterIds: number[] = [];
+-  for (let i = 1; i <= 11; i++) {
+-    const id = formData.get(`starter_${i}`);
+-    if (id) starterIds.push(parseInt(id as string));
+-  }
+-
+-  const reserveIds: number[] = [];
+-  for (let i = 1; i <= 11; i++) {
+-    const id = formData.get(`reserve_${i}`);
+-    if (id) reserveIds.push(parseInt(id as string));
+-  }
++/**
++ * Core save logic, shared by the player-facing action (own lineup only,
++ * blocked once the matchday is locked) and the admin override (any team,
++ * allowed even when locked — that's the whole point of a manual admin fix).
++ */
++async function saveLineupCore(opts: {
++  targetUserId: number;
++  matchdayId: number;
++  formation: string;
++  starterIds: number[];
++  reserveIds: number[];
++  enforceLock: boolean;
++}): Promise<string> {
++  const { targetUserId, matchdayId, formation, starterIds, reserveIds, enforceLock } = opts;
+ 
+   if (starterIds.length !== 11) return "Devi schierare esattamente 11 titolari.";
+   if (new Set(starterIds).size !== 11) return "Hai inserito giocatori duplicati tra i titolari.";
+@@ -74,22 +70,24 @@ export async function saveLineup(prevState: string | null, formData: FormData) {
+ 
+   const rosterRes = await db.execute({
+     sql: `SELECT playerId FROM "Roster" WHERE userId = ?`,
+-    args: [session.userId],
++    args: [targetUserId],
+   });
+   const rosterIds = new Set(rosterRes.rows.map((r) => r.playerId as number));
+   for (const id of [...starterIds, ...reserveIds]) {
+-    if (!rosterIds.has(id)) return "Stai schierando un giocatore non nella tua rosa.";
++    if (!rosterIds.has(id)) return "Stai schierando un giocatore non nella rosa di questa squadra.";
+   }
+ 
+-  const matchdayRes = await db.execute({
+-    sql: `SELECT isLocked FROM "Matchday" WHERE id = ?`,
+-    args: [matchdayId],
+-  });
+-  if (matchdayRes.rows[0]?.isLocked) return "La giornata è bloccata, non puoi modificare la formazione.";
++  if (enforceLock) {
++    const matchdayRes = await db.execute({
++      sql: `SELECT isLocked FROM "Matchday" WHERE id = ?`,
++      args: [matchdayId],
++    });
++    if (matchdayRes.rows[0]?.isLocked) return "La giornata è bloccata, non puoi modificare la formazione.";
++  }
+ 
+   const existingRes = await db.execute({
+     sql: `SELECT id FROM "Lineup" WHERE userId = ? AND matchdayId = ?`,
+-    args: [session.userId, matchdayId],
++    args: [targetUserId, matchdayId],
+   });
+ 
+   let lineupId: number;
+@@ -103,7 +101,7 @@ export async function saveLineup(prevState: string | null, formData: FormData) {
+   } else {
+     const result = await db.execute({
+       sql: `INSERT INTO "Lineup" (userId, matchdayId, formation, isSubmitted) VALUES (?, ?, ?, 1)`,
+-      args: [session.userId, matchdayId, formation],
++      args: [targetUserId, matchdayId, formation],
+     });
+     lineupId = Number(result.lastInsertRowid);
+   }
+@@ -121,7 +119,80 @@ export async function saveLineup(prevState: string | null, formData: FormData) {
+     });
+   }
+ 
+-  log("lineup_save", { userId: session.userId, matchdayId, formation });
+-  revalidatePath("/lineup");
+   return "ok";
+ }
++
++function parseSlots(formData: FormData): { starterIds: number[]; reserveIds: number[] } {
++  const starterIds: number[] = [];
++  for (let i = 1; i <= 11; i++) {
++    const id = formData.get(`starter_${i}`);
++    if (id) starterIds.push(parseInt(id as string));
++  }
++
++  const reserveIds: number[] = [];
++  for (let i = 1; i <= 11; i++) {
++    const id = formData.get(`reserve_${i}`);
++    if (id) reserveIds.push(parseInt(id as string));
++  }
++
++  return { starterIds, reserveIds };
++}
++
++export async function saveLineup(prevState: string | null, formData: FormData) {
++  const session = await getSession();
++  if (!session) return "Non autenticato.";
++
++  const matchdayId = parseInt(formData.get("matchdayId") as string);
++  const formation = (formData.get("formation") as string) ?? "4-4-2";
++  const { starterIds, reserveIds } = parseSlots(formData);
++
++  const outcome = await saveLineupCore({
++    targetUserId: session.userId,
++    matchdayId,
++    formation,
++    starterIds,
++    reserveIds,
++    enforceLock: true,
++  });
++
++  if (outcome === "ok") {
++    log("lineup_save", { userId: session.userId, matchdayId, formation });
++    revalidatePath("/lineup");
++  }
++  return outcome;
++}
++
++// ── Admin: set/edit any team's lineup, even after the deadline ───────────
++// Serve per i casi in cui un utente non ha potuto accedere in tempo (niente
++// account, problemi di connessione, ecc.) e l'admin deve inserire la
++// formazione al posto suo. A differenza di saveLineup, ignora il lock della
++// giornata ma mantiene tutte le altre validazioni (11 titolari, modulo,
++// giocatori devono appartenere alla rosa della squadra selezionata).
++export async function adminSaveLineup(prevState: string | null, formData: FormData) {
++  const session = await getSession();
++  if (!session?.isAdmin) return "Non autorizzato.";
++
++  const targetUserId = parseInt(formData.get("userId") as string);
++  const matchdayId = parseInt(formData.get("matchdayId") as string);
++  const formation = (formData.get("formation") as string) ?? "4-4-2";
++  const { starterIds, reserveIds } = parseSlots(formData);
++
++  if (!targetUserId) return "Seleziona una squadra.";
++
++  const outcome = await saveLineupCore({
++    targetUserId,
++    matchdayId,
++    formation,
++    starterIds,
++    reserveIds,
++    enforceLock: false,
++  });
++
++  if (outcome === "ok") {
++    log("admin_lineup_save", { adminId: session.userId, targetUserId, matchdayId, formation });
++    revalidatePath("/admin/lineup");
++    revalidatePath("/admin/votes");
++    revalidatePath("/lineup");
++  }
++  return outcome;
++}
+diff --git a/app/lib/logger.ts b/app/lib/logger.ts
+index 8fb8f90..17f7f53 100644
+--- a/app/lib/logger.ts
++++ b/app/lib/logger.ts
+@@ -10,6 +10,7 @@ type LogEvent =
+   | "calculate_scores"
+   | "auto_lock"
+   | "lineup_save"
++  | "admin_lineup_save"
+   | "scraper_retry"
+   | "scraper_fail"
+   | "cron_run"
+diff --git a/app/lib/scraper.ts b/app/lib/scraper.ts
+index 224aaa2..424545a 100644
+--- a/app/lib/scraper.ts
++++ b/app/lib/scraper.ts
+@@ -53,7 +53,10 @@ function parseVote(val: string): number | null {
+ }
+ 
+ export async function scrapeVotes(matchday: number): Promise<ScrapedVote[]> {
+-  const url = `https://www.fantapiu3.com/voti-globali/fantacalcio-voti-fantapiu3-premier-league.php`;
++  // NB: la pagina "premier-league" era sbagliata — quella è la Premier League
++  // inglese, non la Serie A italiana usata da questa lega. Fonte corretta:
++  // "voti-globali" Serie A di Fantagazzetta, con selezione giornata via query string.
++  const url = `https://www.fantapiu3.com/voti-globali/fantacalcio-voti-fantagazzetta-serie-a.php?giornata=${matchday}`;
+ 
+   const res = await fetchWithRetry(url, {
+     headers: {
+-- 
+2.43.0
+
