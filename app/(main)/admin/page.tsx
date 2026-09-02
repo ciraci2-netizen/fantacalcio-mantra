@@ -103,6 +103,7 @@ export default async function AdminPage() {
     { href: "/admin/coppe",    icon: "🏆", title: "Coppe",        desc: "Turni eliminatori",                       color: "yellow" },
     { href: "/admin/mercato",  icon: "🔄", title: "Mercato",      desc: "Apri/chiudi mercati",                     color: "teal"   },
     { href: "/admin/roster",   icon: "📋", title: "Rose",         desc: "Assegna giocatori",                       color: "cyan"   },
+    { href: "/admin/asta",    icon: "🔨", title: "Asta buste",   desc: "Round a buste sugli svincolati",          color: "orange" },
     { href: "/admin/logos",    icon: "🖼️", title: "Loghi",        desc: "Immagini squadre",                        color: "pink"   },
     { href: "/admin/regolamento", icon: "📖", title: "Regolamento", desc: "Bonus/malus e testi",                  color: "indigo" },
     { href: "/admin/settings", icon: "⚙️", title: "Impostazioni", desc: "Crediti e soglie",                       color: "slate"  },
@@ -120,6 +121,7 @@ export default async function AdminPage() {
     cyan: "bg-cyan-50 border-cyan-200 hover:bg-cyan-100",
     pink: "bg-pink-50 border-pink-200 hover:bg-pink-100",
     lime: "bg-lime-50 border-lime-200 hover:bg-lime-100",
+    orange: "bg-orange-50 border-orange-200 hover:bg-orange-100",
   };
 
   return (

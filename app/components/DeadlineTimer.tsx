@@ -29,9 +29,13 @@ function pad(n: number) {
 export default function DeadlineTimer({
   deadline,
   isLocked,
+  label = "Scadenza consegna:",
+  expiredLabel = "Scadenza raggiunta — formazione non più inviabile",
 }: {
   deadline: string | null;
   isLocked: boolean;
+  label?: string;
+  expiredLabel?: string;
 }) {
   const [tl, setTl] = useState<TimeLeft | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -71,7 +75,7 @@ export default function DeadlineTimer({
     return (
       <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-600 text-white text-sm font-bold">
         <span className="text-base">⏰</span>
-        <span>Scadenza raggiunta — formazione non più inviabile</span>
+        <span>{expiredLabel}</span>
       </div>
     );
   }
@@ -88,7 +92,7 @@ export default function DeadlineTimer({
   return (
     <div className={`${bg} ${pulse} text-white rounded-xl px-4 py-3 flex flex-wrap items-center gap-3`}>
       <span className="text-base shrink-0">⏰</span>
-      <span className="text-sm font-medium shrink-0">Scadenza consegna:</span>
+      <span className="text-sm font-medium shrink-0">{label}</span>
 
       {/* Countdown blocks */}
       <div className="flex items-center gap-1.5 font-mono">

@@ -25,6 +25,7 @@ const BASE_LINKS = [
   { href: "/coppe",       label: "Coppe",       icon: "🏅" },
   { href: "/svincolati",  label: "Svincolati",  icon: "🆓" },
   { href: "/mercato",     label: "Mercato",     icon: "🔄" },
+  { href: "/asta",        label: "Asta",        icon: "🔨" },
   { href: "/scambi",      label: "Scambi",      icon: "🤝" },
   { href: "/bacheca",     label: "Bacheca",     icon: "💬" },
   { href: "/regolamento", label: "Regolamento", icon: "📖" },

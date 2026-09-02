@@ -170,6 +170,36 @@ export async function runMigrations() {
     await db.execute(`UPDATE "User" SET isParticipant = 0 WHERE username = 'admin'`);
   } catch { /* colonna non ancora presente al primo giro, riprovare eseguendo di nuovo */ }
 
+  // === Asta a buste sugli svincolati ===
+  // Un round alla volta per stagione: l'admin imposta inizio/fine, ogni
+  // partecipante fa un'offerta segreta per giocatore (invisibile agli altri
+  // finché il round non si chiude), alla chiusura vince l'offerta più alta
+  // (a parità, la più vecchia — cioè chi ha offerto per primo).
+  await db.execute(`CREATE TABLE IF NOT EXISTS "AuctionRound" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    seasonId INTEGER NOT NULL,
+    name TEXT NOT NULL DEFAULT 'Asta svincolati',
+    startDate TEXT,
+    endDate TEXT NOT NULL,
+    resolvedAt TEXT,
+    createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (seasonId) REFERENCES "Season"(id)
+  )`);
+
+  await db.execute(`CREATE TABLE IF NOT EXISTS "SealedBid" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    roundId INTEGER NOT NULL,
+    playerId INTEGER NOT NULL,
+    userId INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (roundId) REFERENCES "AuctionRound"(id),
+    FOREIGN KEY (playerId) REFERENCES "Player"(id),
+    FOREIGN KEY (userId) REFERENCES "User"(id),
+    UNIQUE(roundId, playerId, userId)
+  )`);
+
   return { success: true };
 }
 
