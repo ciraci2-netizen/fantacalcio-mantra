@@ -387,8 +387,8 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
     const awayScore = Math.round((rawAwayScore + homeDefense.malus) * 100) / 100;
 
     // Convert scores to goals (Mantra system) — null when conversion disabled
-    const homeGoals = scoreConversion.enabled ? convertScoreToGoals(homeScore, scoreConversion) : null;
-    const awayGoals = scoreConversion.enabled ? convertScoreToGoals(awayScore, scoreConversion) : null;
+    let homeGoals = scoreConversion.enabled ? convertScoreToGoals(homeScore, scoreConversion) : null;
+    let awayGoals = scoreConversion.enabled ? convertScoreToGoals(awayScore, scoreConversion) : null;
 
     let homePoints = 1;
     let awayPoints = 1;
@@ -410,6 +410,19 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
         if (homeScore > awayScore) { homePoints = 3; awayPoints = 0; }
         else if (awayScore > homeScore) { homePoints = 0; awayPoints = 3; }
       }
+    }
+
+    // Il distacco minimo puo forzare un pareggio (rawMargin < minWinMargin)
+    // anche quando i gol convertiti sarebbero diversi (es. 71.5 vs 69.0 pt
+    // -> 2 vs 1 gol, ma sotto la soglia): senza questo allineamento si
+    // vedrebbe "2-1" etichettato "Pareggio", di nuovo un risultato mostrato
+    // che non corrisponde ai punti assegnati. Se il pareggio e stato deciso,
+    // i gol mostrati vengono allineati al piu basso dei due (non si regalano
+    // gol che il distacco minimo non ha confermato).
+    if (homePoints === 1 && awayPoints === 1 && homeGoals !== null && awayGoals !== null && homeGoals !== awayGoals) {
+      const tiedGoals = Math.min(homeGoals, awayGoals);
+      homeGoals = tiedGoals;
+      awayGoals = tiedGoals;
     }
 
     await db.execute({
