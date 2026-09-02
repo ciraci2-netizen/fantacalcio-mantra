@@ -27,6 +27,7 @@ type Props = {
       minScore: number;
       step: number;
     };
+    defenseModifierEnabled: boolean;
   };
   users: User[];
 };
@@ -46,6 +47,9 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
   const [scoreConvEnabled, setScoreConvEnabled] = useState<boolean>(settings.scoreConversion.enabled);
   const [minScore, setMinScore] = useState<number>(settings.scoreConversion.minScore);
   const [convStep, setConvStep] = useState<number>(settings.scoreConversion.step);
+
+  /* ── Modificatore difensivo ────────────────────────────────── */
+  const [defenseModEnabled, setDefenseModEnabled] = useState<boolean>(settings.defenseModifierEnabled);
 
   /** Anteprima: [etichetta range, gol] */
   const scoreConvPreview = useMemo(() => {
@@ -87,6 +91,8 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
         <input type="hidden" name="scoreConvEnabled" value={scoreConvEnabled ? "1" : "0"} />
         <input type="hidden" name="scoreConvMinScore" value={minScore} />
         <input type="hidden" name="scoreConvStep" value={convStep} />
+        {/* Modificatore difensivo */}
+        <input type="hidden" name="defenseModifierEnabled" value={defenseModEnabled ? "1" : "0"} />
 
         {/* ── Card 1: Impostazioni base ──────────────────────── */}
         <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
@@ -362,6 +368,56 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
                 </div>
               </>
             )}
+          </div>
+        </div>
+
+        {/* ── Card 4: Modificatore Difensivo ──────────────────── */}
+        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+          <div className="bg-cyan-50 border-b border-cyan-100 px-5 py-3 flex items-center gap-2">
+            <span className="text-lg">🛡️</span>
+            <h2 className="font-semibold text-gray-700">Modificatore Difensivo</h2>
+          </div>
+          <div className="p-5 space-y-5">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+              <p className="font-semibold mb-1">Come funziona</p>
+              <p>
+                Si prende il <strong>voto</strong> (non il fantavoto) del <strong>portiere titolare</strong> e dei{" "}
+                <strong>3 migliori difensori</strong> (terzini/centrali) titolari, e se ne fa la media. In base alla
+                media, la squadra avversaria subisce un malus sul punteggio finale:
+              </p>
+              <ul className="mt-2 space-y-0.5 font-mono text-xs">
+                <li>media 6 – 6.49 → <strong>-1</strong> alla squadra avversaria</li>
+                <li>media 6.5 – 6.99 → <strong>-2</strong> alla squadra avversaria</li>
+                <li>media 7 – 7.49 → <strong>-3</strong> alla squadra avversaria</li>
+                <li>media 7.5+ → <strong>-4</strong> alla squadra avversaria</li>
+              </ul>
+              <p className="mt-2 text-xs text-blue-600">
+                Scatta solo se portiere e TUTTI i difensori titolari sono andati regolarmente a voto (nessuno sv/assente).
+              </p>
+            </div>
+
+            {/* Toggle attivazione */}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setDefenseModEnabled(!defenseModEnabled)}
+                className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${
+                  defenseModEnabled ? "bg-green-500" : "bg-gray-300"
+                }`}
+                aria-label="Attiva/disattiva modificatore difensivo"
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                    defenseModEnabled ? "translate-x-6" : "translate-x-0"
+                  }`}
+                />
+              </button>
+              <span className="text-sm font-medium text-gray-700">
+                {defenseModEnabled
+                  ? "✅ Attivo — le difese solide tolgono punti all'avversario"
+                  : "❌ Disattivo — nessun modificatore applicato"}
+              </span>
+            </div>
           </div>
         </div>
 

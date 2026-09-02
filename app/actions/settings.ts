@@ -46,19 +46,23 @@ export async function saveLeagueSettings(prevState: string | null, formData: For
     step: scoreConvStep,
   });
 
+  // Modificatore difensivo (portiere + 3 migliori difensori titolari)
+  const defenseModifierEnabled = formData.get("defenseModifierEnabled") === "1" ? 1 : 0;
+
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO "LeagueSettings" (seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    sql: `INSERT INTO "LeagueSettings" (seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento, defenseModifierEnabled)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(seasonId) DO UPDATE SET
-            initialCredits    = excluded.initialCredits,
-            maxSubstitutions  = excluded.maxSubstitutions,
-            goalThresholds    = excluded.goalThresholds,
-            homeAdvantage     = excluded.homeAdvantage,
-            scoreConversion   = excluded.scoreConversion,
-            numPortieri       = excluded.numPortieri,
-            numMovimento      = excluded.numMovimento`,
-    args: [seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento],
+            initialCredits          = excluded.initialCredits,
+            maxSubstitutions        = excluded.maxSubstitutions,
+            goalThresholds          = excluded.goalThresholds,
+            homeAdvantage           = excluded.homeAdvantage,
+            scoreConversion         = excluded.scoreConversion,
+            numPortieri             = excluded.numPortieri,
+            numMovimento            = excluded.numMovimento,
+            defenseModifierEnabled  = excluded.defenseModifierEnabled`,
+    args: [seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento, defenseModifierEnabled],
   });
 
   revalidatePath("/admin/schedule");

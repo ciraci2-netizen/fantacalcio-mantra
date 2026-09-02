@@ -10,6 +10,7 @@ import { scrapeVotesWithMeta } from "./scraper";
 import {
   calculateFantavoto,
   calculateGoalBonus,
+  calculateDefenseModifier,
   convertScoreToGoals,
   DEFAULT_GOAL_THRESHOLDS,
   DEFAULT_SCORE_CONVERSION,
@@ -217,15 +218,17 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
   let goalThresholds: GoalThreshold[] = DEFAULT_GOAL_THRESHOLDS;
   let homeAdvantage = 0;
   let scoreConversion: ScoreConversion = DEFAULT_SCORE_CONVERSION;
+  let defenseModifierEnabled = false;
 
   try {
     const settingsRes = await db.execute({
-      sql: `SELECT maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion FROM "LeagueSettings" WHERE seasonId = ?`,
+      sql: `SELECT maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, defenseModifierEnabled FROM "LeagueSettings" WHERE seasonId = ?`,
       args: [seasonId],
     });
     if (settingsRes.rows.length > 0) {
       maxSubstitutions = settingsRes.rows[0].maxSubstitutions as number;
       homeAdvantage = (settingsRes.rows[0].homeAdvantage as number) ?? 0;
+      defenseModifierEnabled = Boolean(settingsRes.rows[0].defenseModifierEnabled);
       try {
         goalThresholds = JSON.parse(settingsRes.rows[0].goalThresholds as string);
       } catch { /* usa default */ }
@@ -245,15 +248,21 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
 
   // Score each lineup
   const lineupsRes = await db.execute({
-    sql: `SELECT id FROM "Lineup" WHERE matchdayId = ? AND isSubmitted = 1`,
+    sql: `SELECT id, userId FROM "Lineup" WHERE matchdayId = ? AND isSubmitted = 1`,
     args: [matchdayId],
   });
 
+  // Titolari (ruolo + voto grezzo, non fantavoto) di ciascun utente, per il
+  // modificatore difensivo calcolato più sotto a livello di partita (serve
+  // conoscere ENTRAMBE le formazioni della partita, non solo la propria).
+  const defenseStartersByUser = new Map<number, Array<{ mantraRole: string; vote: number | null }>>();
+
   for (const lineup of lineupsRes.rows) {
     const lineupId = lineup.id as number;
+    const userId = lineup.userId as number;
     const slotsRes = await db.execute({
       sql: `SELECT ls.position, ls.isStarter, p.mantraRole,
-                   pv.fantavoto, COALESCE(pv.gfGs, 0) as goals
+                   pv.vote, pv.fantavoto, COALESCE(pv.gfGs, 0) as goals
             FROM "LineupSlot" ls
             JOIN "Player" p ON p.id = ls.playerId
             LEFT JOIN "PlayerVote" pv ON pv.playerId = ls.playerId AND pv.matchdayId = ?
@@ -267,6 +276,14 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
     const reserveRows = slotsRes.rows
       .filter((s) => Number(s.isStarter) === 0)
       .sort((a, b) => (a.position as number) - (b.position as number));
+
+    defenseStartersByUser.set(
+      userId,
+      starterRows.map((s) => ({
+        mantraRole: s.mantraRole as string,
+        vote: s.vote as number | null,
+      }))
+    );
 
     let base = 0;
     let subsUsed = 0;
@@ -316,8 +333,23 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
       args: [match.awayUserId, matchdayId],
     });
 
-    const homeScore = (homeRes.rows[0]?.totalScore as number) ?? 0;
-    const awayScore = (awayRes.rows[0]?.totalScore as number) ?? 0;
+    const rawHomeScore = (homeRes.rows[0]?.totalScore as number) ?? 0;
+    const rawAwayScore = (awayRes.rows[0]?.totalScore as number) ?? 0;
+
+    // Modificatore difensivo: la BUONA difesa di una squadra toglie punti al
+    // punteggio finale dell'AVVERSARIA (portiere + 3 migliori difensori
+    // titolari a voto — vedi calculateDefenseModifier). Non tocca il
+    // Lineup.totalScore di nessuno (quello resta "quanto ha fatto la tua
+    // formazione"): si applica solo al punteggio di partita nel tabellino.
+    const homeDefense = defenseModifierEnabled
+      ? calculateDefenseModifier(defenseStartersByUser.get(match.homeUserId as number) ?? [])
+      : { applies: false, average: null, malus: 0 };
+    const awayDefense = defenseModifierEnabled
+      ? calculateDefenseModifier(defenseStartersByUser.get(match.awayUserId as number) ?? [])
+      : { applies: false, average: null, malus: 0 };
+
+    const homeScore = Math.round((rawHomeScore + awayDefense.malus) * 100) / 100;
+    const awayScore = Math.round((rawAwayScore + homeDefense.malus) * 100) / 100;
 
     // Convert scores to goals (Mantra system) — null when conversion disabled
     const homeGoals = scoreConversion.enabled ? convertScoreToGoals(homeScore, scoreConversion) : null;
@@ -339,8 +371,14 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
     }
 
     await db.execute({
-      sql: `UPDATE "Match" SET homeScore = ?, awayScore = ?, homePoints = ?, awayPoints = ?, homeGoals = ?, awayGoals = ? WHERE id = ?`,
-      args: [homeScore, awayScore, homePoints, awayPoints, homeGoals, awayGoals, match.id],
+      sql: `UPDATE "Match" SET homeScore = ?, awayScore = ?, homePoints = ?, awayPoints = ?, homeGoals = ?, awayGoals = ?,
+                   homeDefenseAvg = ?, homeDefenseMalus = ?, awayDefenseAvg = ?, awayDefenseMalus = ? WHERE id = ?`,
+      args: [
+        homeScore, awayScore, homePoints, awayPoints, homeGoals, awayGoals,
+        homeDefense.average, homeDefense.applies ? homeDefense.malus : null,
+        awayDefense.average, awayDefense.applies ? awayDefense.malus : null,
+        match.id,
+      ],
     });
   }
 

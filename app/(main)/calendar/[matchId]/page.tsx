@@ -29,21 +29,42 @@ export default async function MatchDetailPage({
   const db = getDb();
 
   // Get match with both team names and matchday info
-  const matchRes = await db.execute({
-    sql: `SELECT m.id, m.homeUserId, m.awayUserId,
-                 m.homeScore, m.awayScore, m.homePoints, m.awayPoints,
-                 m.homeGoals, m.awayGoals,
-                 hu.teamName as homeTeamName, hu.username as homeUsername,
-                 au.teamName as awayTeamName, au.username as awayUsername,
-                 md.number as matchdayNumber, md.id as matchdayId
-          FROM "Match" m
-          JOIN "User" hu ON hu.id = m.homeUserId
-          JOIN "User" au ON au.id = m.awayUserId
-          JOIN "Matchday" md ON md.id = m.matchdayId
-          WHERE m.id = ?
-          LIMIT 1`,
-    args: [id],
-  });
+  let matchRes;
+  try {
+    matchRes = await db.execute({
+      sql: `SELECT m.id, m.homeUserId, m.awayUserId,
+                   m.homeScore, m.awayScore, m.homePoints, m.awayPoints,
+                   m.homeGoals, m.awayGoals,
+                   m.homeDefenseAvg, m.homeDefenseMalus, m.awayDefenseAvg, m.awayDefenseMalus,
+                   hu.teamName as homeTeamName, hu.username as homeUsername,
+                   au.teamName as awayTeamName, au.username as awayUsername,
+                   md.number as matchdayNumber, md.id as matchdayId
+            FROM "Match" m
+            JOIN "User" hu ON hu.id = m.homeUserId
+            JOIN "User" au ON au.id = m.awayUserId
+            JOIN "Matchday" md ON md.id = m.matchdayId
+            WHERE m.id = ?
+            LIMIT 1`,
+      args: [id],
+    });
+  } catch {
+    // Colonne del modificatore difensivo non ancora migrate
+    matchRes = await db.execute({
+      sql: `SELECT m.id, m.homeUserId, m.awayUserId,
+                   m.homeScore, m.awayScore, m.homePoints, m.awayPoints,
+                   m.homeGoals, m.awayGoals,
+                   hu.teamName as homeTeamName, hu.username as homeUsername,
+                   au.teamName as awayTeamName, au.username as awayUsername,
+                   md.number as matchdayNumber, md.id as matchdayId
+            FROM "Match" m
+            JOIN "User" hu ON hu.id = m.homeUserId
+            JOIN "User" au ON au.id = m.awayUserId
+            JOIN "Matchday" md ON md.id = m.matchdayId
+            WHERE m.id = ?
+            LIMIT 1`,
+      args: [id],
+    });
+  }
 
   // Load logos
   const logoMap: Record<number, string | null> = {};
@@ -199,6 +220,36 @@ export default async function MatchDetailPage({
           </div>
         </div>
       </div>
+
+      {/* Modificatore difensivo */}
+      {played && (match.homeDefenseMalus != null || match.awayDefenseMalus != null) && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="px-5 py-3 border-b bg-cyan-50 flex items-center gap-2">
+            <span className="text-base">🛡️</span>
+            <span className="font-semibold text-gray-700 text-sm">Modificatore difensivo</span>
+          </div>
+          <div className="p-4 space-y-2 text-sm">
+            {match.homeDefenseMalus != null && (
+              <p className="text-gray-600">
+                Difesa <strong>{match.homeTeamName as string}</strong>: media{" "}
+                <strong>{(match.homeDefenseAvg as number).toFixed(2)}</strong> →{" "}
+                <span className="text-red-600 font-semibold">
+                  {match.homeDefenseMalus as number} a {match.awayTeamName as string}
+                </span>
+              </p>
+            )}
+            {match.awayDefenseMalus != null && (
+              <p className="text-gray-600">
+                Difesa <strong>{match.awayTeamName as string}</strong>: media{" "}
+                <strong>{(match.awayDefenseAvg as number).toFixed(2)}</strong> →{" "}
+                <span className="text-red-600 font-semibold">
+                  {match.awayDefenseMalus as number} a {match.homeTeamName as string}
+                </span>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Head-to-head history */}
       {h2h.length > 0 && (

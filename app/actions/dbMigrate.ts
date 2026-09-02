@@ -200,6 +200,18 @@ export async function runMigrations() {
     UNIQUE(roundId, playerId, userId)
   )`);
 
+  // === Modificatore difensivo (portiere + 3 migliori difensori titolari) ===
+  // Interruttore per stagione, in LeagueSettings.
+  try { await db.execute(`ALTER TABLE "LeagueSettings" ADD COLUMN "defenseModifierEnabled" INTEGER NOT NULL DEFAULT 0`); } catch { /* già presente */ }
+
+  // Dettaglio applicato per partita (media difesa + malus inflitto
+  // all'avversario da ciascuna delle due squadre), per trasparenza nel
+  // tabellino. NULL quando il modificatore non è attivo o non è scattato.
+  try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "homeDefenseAvg" REAL`); } catch { /* già presente */ }
+  try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "homeDefenseMalus" REAL`); } catch { /* già presente */ }
+  try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "awayDefenseAvg" REAL`); } catch { /* già presente */ }
+  try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "awayDefenseMalus" REAL`); } catch { /* già presente */ }
+
   return { success: true };
 }
 

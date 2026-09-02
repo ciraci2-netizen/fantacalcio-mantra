@@ -190,6 +190,62 @@ export function calculateGoalBonus(
   return match?.b ?? 0;
 }
 
+// ── Modificatore difensivo (portiere + 3 migliori difensori titolari) ────────
+
+export type DefenseThreshold = { m: number; b: number }; // media minima → malus
+
+/**
+ * Soglie ufficiali del modificatore difensivo Mantra: media tra portiere e i
+ * 3 migliori difensori (terzini/centrali) titolari → malus inflitto alla
+ * squadra avversaria.
+ */
+export const DEFAULT_DEFENSE_THRESHOLDS: DefenseThreshold[] = [
+  { m: 6, b: -1 },
+  { m: 6.5, b: -2 },
+  { m: 7, b: -3 },
+  { m: 7.5, b: -4 },
+];
+
+export interface DefenseModifierResult {
+  applies: boolean;       // se il modificatore è scattato (malus != 0)
+  average: number | null; // media portiere + 3 migliori difensori, null se non calcolabile
+  malus: number;          // malus da infliggere alla squadra avversaria (0 o negativo)
+}
+
+/**
+ * Modificatore difensivo: si prende il voto (non il fantavoto) del portiere
+ * titolare e dei 3 migliori difensori (terzini/centrali) titolari. Scatta
+ * SOLO se portiere e TUTTI i difensori titolari (terzini+centrali) sono
+ * andati a voto — se anche uno solo è sv/assente, niente modificatore per
+ * quella squadra in quella giornata.
+ */
+export function calculateDefenseModifier(
+  starters: Array<{ mantraRole: string; vote: number | null }>,
+  thresholds: DefenseThreshold[] = DEFAULT_DEFENSE_THRESHOLDS
+): DefenseModifierResult {
+  const nullResult: DefenseModifierResult = { applies: false, average: null, malus: 0 };
+
+  const gk = starters.find((s) => s.mantraRole === "POR");
+  if (!gk || gk.vote === null) return nullResult;
+
+  const defenders = starters.filter((s) => s.mantraRole === "TER" || s.mantraRole === "DC");
+  if (defenders.length < 3) return nullResult;
+  if (defenders.some((d) => d.vote === null)) return nullResult;
+
+  const bestThree = [...defenders]
+    .sort((a, b) => (b.vote as number) - (a.vote as number))
+    .slice(0, 3);
+
+  const average =
+    Math.round(((gk.vote + bestThree.reduce((sum, d) => sum + (d.vote as number), 0)) / 4) * 100) / 100;
+
+  const sorted = [...thresholds].sort((a, b) => b.m - a.m);
+  const match = sorted.find((t) => average >= t.m);
+  const malus = match?.b ?? 0;
+
+  return { applies: malus !== 0, average, malus };
+}
+
 // Calcola il punteggio totale di una formazione
 export function calculateLineupScore(
   starters: Array<{
