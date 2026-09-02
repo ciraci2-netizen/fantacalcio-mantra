@@ -145,14 +145,15 @@ export interface SubCandidate {
  * (il campo position) e, per ciascun titolare senza voto, si scorre la
  * lista riserve nello stesso ordine di priorita scelto in fase di
  * formazione, cercando la PRIMA riserva con voto che, entrando al posto del
- * titolare, mantenga valido il modulo secondo tre soglie: almeno 3
+ * titolare, mantenga valido il modulo secondo queste soglie: almeno 3
  * difensori, al massimo 3 attaccanti, al massimo 5 totali tra
- * centrocampisti offensivi (OFF) e attaccanti (ATT). Il modulo puo quindi
- * cambiare completamente rispetto a quello schierato in origine. Un
- * portiere titolare puo essere sostituito solo da un portiere di riserva
- * (e un portiere di riserva non puo mai entrare per un giocatore di
- * movimento). Se nessuna riserva compatibile e disponibile, il titolare
- * resta a 0 (nessuna sostituzione forzata fuori dai limiti).
+ * centrocampisti offensivi (OFF) e attaccanti (ATT), e almeno 1
+ * centrocampista puro (M) se la formazione originale ne schierava almeno
+ * uno. Il modulo puo quindi cambiare completamente rispetto a quello
+ * schierato in origine. Un portiere titolare puo essere sostituito solo da
+ * un portiere di riserva (e un portiere di riserva non puo mai entrare per
+ * un giocatore di movimento). Se nessuna riserva compatibile e disponibile,
+ * il titolare resta a 0 (nessuna sostituzione forzata fuori dai limiti).
  */
 export function computeAutoSubstitutions(
   starters: SubCandidate[],
@@ -165,6 +166,11 @@ export function computeAutoSubstitutions(
   let currentDef = starterCats.filter((c) => c === "def").length;
   let currentAtt = starterCats.filter((c) => c === "att").length;
   let currentOffAtt = starterCats.filter((c) => c === "off" || c === "att").length;
+  let currentMid = starterCats.filter((c) => c === "mid").length;
+  // Il vincolo "almeno 1 M in campo" si applica solo se la formazione
+  // originale ne schierava gia almeno uno: non forza un centrocampista
+  // puro in formazioni che non lo prevedevano fin dall inizio.
+  const requireMid = currentMid >= 1;
 
   const usedReserveIdxs = new Set<number>();
   const reserveForStarter: (number | null)[] = starters.map(() => null);
@@ -196,18 +202,27 @@ export function computeAutoSubstitutions(
       let newDef = currentDef;
       let newAtt = currentAtt;
       let newOffAtt = currentOffAtt;
+      let newMid = currentMid;
       if (starterCat === "def") newDef--;
       if (starterCat === "att") newAtt--;
       if (starterCat === "off" || starterCat === "att") newOffAtt--;
+      if (starterCat === "mid") newMid--;
       if (rCat === "def") newDef++;
       if (rCat === "att") newAtt++;
       if (rCat === "off" || rCat === "att") newOffAtt++;
+      if (rCat === "mid") newMid++;
 
-      if (newDef >= 3 && newAtt <= 3 && newOffAtt <= 5) {
+      if (
+        newDef >= 3 &&
+        newAtt <= 3 &&
+        newOffAtt <= 5 &&
+        (!requireMid || newMid >= 1)
+      ) {
         chosen = ri;
         currentDef = newDef;
         currentAtt = newAtt;
         currentOffAtt = newOffAtt;
+        currentMid = newMid;
         break;
       }
     }
