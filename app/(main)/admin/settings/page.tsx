@@ -22,6 +22,7 @@ export default async function AdminSettingsPage() {
     maxSubstitutions: 3,
     goalThresholds: DEFAULT_GOAL_THRESHOLDS,
     homeAdvantage: 0,
+    minWinMargin: 0,
     scoreConversion: DEFAULT_SCORE_CONVERSION,
     numPortieri: DEFAULT_PORTIERI,
     numMovimento: DEFAULT_MOVIMENTO,
@@ -30,7 +31,7 @@ export default async function AdminSettingsPage() {
   if (season) {
     try {
       const settingsRes = await db.execute({
-        sql: `SELECT initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento, defenseModifierEnabled FROM "LeagueSettings" WHERE seasonId = ?`,
+        sql: `SELECT initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, minWinMargin, scoreConversion, numPortieri, numMovimento, defenseModifierEnabled FROM "LeagueSettings" WHERE seasonId = ?`,
         args: [season.id],
       });
       const raw = settingsRes.rows[0];
@@ -39,6 +40,7 @@ export default async function AdminSettingsPage() {
           initialCredits: (raw.initialCredits as number) ?? 500,
           maxSubstitutions: (raw.maxSubstitutions as number) ?? 3,
           homeAdvantage: (raw.homeAdvantage as number) ?? 0,
+          minWinMargin: (raw.minWinMargin as number) ?? 0,
           numPortieri: (raw.numPortieri as number) ?? DEFAULT_PORTIERI,
           numMovimento: (raw.numMovimento as number) ?? DEFAULT_MOVIMENTO,
           defenseModifierEnabled: Boolean(raw.defenseModifierEnabled),
@@ -50,7 +52,7 @@ export default async function AdminSettingsPage() {
             : DEFAULT_SCORE_CONVERSION,
         };
       }
-    } catch { /* tabella non ancora creata */ }
+    } catch { /* tabella non ancora creata, o colonna non ancora migrata */ }
   }
 
   // credits column may not exist yet — fail-safe

@@ -228,17 +228,19 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
   let maxSubstitutions = 3;
   let goalThresholds: GoalThreshold[] = DEFAULT_GOAL_THRESHOLDS;
   let homeAdvantage = 0;
+  let minWinMargin = 0;
   let scoreConversion: ScoreConversion = DEFAULT_SCORE_CONVERSION;
   let defenseModifierEnabled = false;
 
   try {
     const settingsRes = await db.execute({
-      sql: `SELECT maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, defenseModifierEnabled FROM "LeagueSettings" WHERE seasonId = ?`,
+      sql: `SELECT maxSubstitutions, goalThresholds, homeAdvantage, minWinMargin, scoreConversion, defenseModifierEnabled FROM "LeagueSettings" WHERE seasonId = ?`,
       args: [seasonId],
     });
     if (settingsRes.rows.length > 0) {
       maxSubstitutions = Math.min(settingsRes.rows[0].maxSubstitutions as number, HARD_MAX_SUBSTITUTIONS);
       homeAdvantage = (settingsRes.rows[0].homeAdvantage as number) ?? 0;
+      minWinMargin = (settingsRes.rows[0].minWinMargin as number) ?? 0;
       defenseModifierEnabled = Boolean(settingsRes.rows[0].defenseModifierEnabled);
       try {
         goalThresholds = JSON.parse(settingsRes.rows[0].goalThresholds as string);
@@ -372,7 +374,16 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
       ? calculateDefenseModifier(defenseStartersByUser.get(match.awayUserId as number) ?? [])
       : { applies: false, average: null, malus: 0 };
 
-    const homeScore = Math.round((rawHomeScore + awayDefense.malus) * 100) / 100;
+    // Punteggio di partita mostrato/salvato: include gia il fattore campo
+    // (bonus alla squadra di casa) e il modificatore difensivo. Da qui in
+    // poi ogni decisione (chi vince, quanti punti in classifica, i gol
+    // convertiti) si basa SOLO su questi due valori - mai su una versione
+    // "nascosta" diversa da quella mostrata nel tabellino. Cosi un
+    // risultato pareggiato o perso a vista (es. 1-1) assegna sempre gli
+    // stessi punti che ci si aspetta dal risultato mostrato (1-1 pareggio
+    // -> 1 punto a testa, non puo mai succedere che chi ha pareggiato
+    // a vista prenda 3 punti).
+    const homeScore = Math.round((rawHomeScore + awayDefense.malus + homeAdvantage) * 100) / 100;
     const awayScore = Math.round((rawAwayScore + homeDefense.malus) * 100) / 100;
 
     // Convert scores to goals (Mantra system) — null when conversion disabled
@@ -382,16 +393,23 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
     let homePoints = 1;
     let awayPoints = 1;
 
-    if (scoreConversion.enabled && homeGoals !== null && awayGoals !== null) {
-      // Win/loss based on goals, with home advantage applied before conversion
-      const effectiveHomeGoals = convertScoreToGoals(homeScore + homeAdvantage, scoreConversion);
-      if (effectiveHomeGoals > awayGoals) { homePoints = 3; awayPoints = 0; }
-      else if (awayGoals > effectiveHomeGoals) { homePoints = 0; awayPoints = 3; }
-    } else {
-      // Classic: compare raw scores with home advantage
-      const effectiveHome = homeScore + homeAdvantage;
-      if (effectiveHome > awayScore) { homePoints = 3; awayPoints = 0; }
-      else if (awayScore > effectiveHome) { homePoints = 0; awayPoints = 3; }
+    // Distacco minimo di fantapunti per vincere (impostazione lega,
+    // minWinMargin): sotto questa soglia il risultato resta pareggio anche
+    // se un punteggio (o i gol da esso derivati) e piu alto dell altro.
+    // Calcolato sugli stessi punteggi mostrati (fattore campo gia incluso),
+    // cosi da coprire anche il caso "69.5 a 70" con margine reale 0.5.
+    const rawMargin = Math.abs(homeScore - awayScore);
+
+    if (rawMargin >= minWinMargin) {
+      if (scoreConversion.enabled && homeGoals !== null && awayGoals !== null) {
+        // Vittoria/sconfitta/pareggio decisi dagli STESSI gol mostrati nel tabellino
+        if (homeGoals > awayGoals) { homePoints = 3; awayPoints = 0; }
+        else if (awayGoals > homeGoals) { homePoints = 0; awayPoints = 3; }
+      } else {
+        // Senza conversione in gol: confronto diretto sugli STESSI punteggi mostrati
+        if (homeScore > awayScore) { homePoints = 3; awayPoints = 0; }
+        else if (awayScore > homeScore) { homePoints = 0; awayPoints = 3; }
+      }
     }
 
     await db.execute({

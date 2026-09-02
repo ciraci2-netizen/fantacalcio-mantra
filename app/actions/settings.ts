@@ -23,6 +23,10 @@ export async function saveLeagueSettings(prevState: string | null, formData: For
   const maxSubstitutionsRaw = parseInt(formData.get("maxSubstitutions") as string);
   const maxSubstitutions = Math.min(Math.max(isNaN(maxSubstitutionsRaw) ? 3 : maxSubstitutionsRaw, 0), 5);
   const homeAdvantage = parseFloat(formData.get("homeAdvantage") as string) || 0;
+  // Distacco minimo di fantapunti per vincere (0 = disabilitato): sotto
+  // questa soglia il risultato e pareggio anche se un punteggio e piu alto.
+  const minWinMarginRaw = parseFloat(formData.get("minWinMargin") as string);
+  const minWinMargin = Math.min(Math.max(isNaN(minWinMarginRaw) ? 0 : minWinMarginRaw, 0), 20);
 
   // Slot rosa: portieri e giocatori di movimento (range fissi validati qui)
   const numPortieriRaw = parseInt(formData.get("numPortieri") as string);
@@ -55,8 +59,8 @@ export async function saveLeagueSettings(prevState: string | null, formData: For
 
   const db = getDb();
   await db.execute({
-    sql: `INSERT INTO "LeagueSettings" (seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento, defenseModifierEnabled)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    sql: `INSERT INTO "LeagueSettings" (seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento, defenseModifierEnabled, minWinMargin)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(seasonId) DO UPDATE SET
             initialCredits          = excluded.initialCredits,
             maxSubstitutions        = excluded.maxSubstitutions,
@@ -65,8 +69,9 @@ export async function saveLeagueSettings(prevState: string | null, formData: For
             scoreConversion         = excluded.scoreConversion,
             numPortieri             = excluded.numPortieri,
             numMovimento            = excluded.numMovimento,
-            defenseModifierEnabled  = excluded.defenseModifierEnabled`,
-    args: [seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento, defenseModifierEnabled],
+            defenseModifierEnabled  = excluded.defenseModifierEnabled,
+            minWinMargin            = excluded.minWinMargin`,
+    args: [seasonId, initialCredits, maxSubstitutions, goalThresholds, homeAdvantage, scoreConversion, numPortieri, numMovimento, defenseModifierEnabled, minWinMargin],
   });
 
   revalidatePath("/admin/schedule");

@@ -212,6 +212,11 @@ export async function runMigrations() {
   try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "awayDefenseAvg" REAL`); } catch { /* già presente */ }
   try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "awayDefenseMalus" REAL`); } catch { /* già presente */ }
 
+  // Distacco minimo (fantapunti) per considerare una partita vinta invece di
+  // pareggiata: 0 = disabilitato (vince chi ha il punteggio piu alto, anche
+  // di poco, come oggi).
+  try { await db.execute(`ALTER TABLE "LeagueSettings" ADD COLUMN "minWinMargin" REAL NOT NULL DEFAULT 0`); } catch { /* gia presente */ }
+
   return { success: true };
 }
 

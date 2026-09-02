@@ -12,19 +12,26 @@ const HARD_MAX_SUBSTITUTIONS = 5;
 // Usa la stessa logica di sostituzione automatica di calculateScoresCore
 // (app/lib/voteImporter.ts) - vedi computeAutoSubstitutions in
 // app/lib/scoring.ts, unica fonte di verita condivisa dai due file. Qui
-// serve solo per capire QUALI riserve sono effettivamente entrate in
-// campo, per evidenziarle nel tabellino.
-function computeSubbedInIds(slots: PlayerSlot[], maxSubstitutions: number): Set<number> {
+// serve solo per capire QUALI riserve sono effettivamente entrate in campo
+// e QUALI titolari sono usciti, per evidenziarli nel tabellino.
+function computeSubstitutionIds(
+  slots: PlayerSlot[],
+  maxSubstitutions: number
+): { inIds: Set<number>; outIds: Set<number> } {
   const starters = slots.filter((s) => s.isStarter);
   const reserves = slots.filter((s) => !s.isStarter);
-  const subbedInIds = new Set<number>();
+  const inIds = new Set<number>();
+  const outIds = new Set<number>();
 
   const reserveForStarter = computeAutoSubstitutions(starters, reserves, maxSubstitutions);
-  reserveForStarter.forEach((rIdx) => {
-    if (rIdx !== null) subbedInIds.add(reserves[rIdx].playerId);
+  reserveForStarter.forEach((rIdx, si) => {
+    if (rIdx !== null) {
+      inIds.add(reserves[rIdx].playerId);
+      outIds.add(starters[si].playerId);
+    }
   });
 
-  return subbedInIds;
+  return { inIds, outIds };
 }
 
 type PlayerSlot = {
@@ -178,10 +185,10 @@ export default async function MatchDetailPage({
     else awaySlots.push(slot);
   }
 
-  // Riserve entrate effettivamente in campo (sostituzione automatica di un
-  // titolare senza voto), da evidenziare nel tabellino.
-  const homeSubbedInIds = computeSubbedInIds(homeSlots, maxSubstitutions);
-  const awaySubbedInIds = computeSubbedInIds(awaySlots, maxSubstitutions);
+  // Riserve entrate e titolari usciti per sostituzione automatica (titolare
+  // senza voto), da evidenziare nel tabellino.
+  const homeSubs = computeSubstitutionIds(homeSlots, maxSubstitutions);
+  const awaySubs = computeSubstitutionIds(awaySlots, maxSubstitutions);
 
   const played = match.homeScore !== null;
   const homeWon = (match.homePoints as number) === 3;
@@ -364,7 +371,8 @@ export default async function MatchDetailPage({
             score={played ? (match.homeScore as number) : null}
             goals={match.homeGoals !== null ? (match.homeGoals as number) : null}
             won={homeWon}
-            subbedInIds={homeSubbedInIds}
+            subbedInIds={homeSubs.inIds}
+            subbedOutIds={homeSubs.outIds}
           />
           <LineupCard
             teamName={match.awayTeamName as string}
@@ -373,7 +381,8 @@ export default async function MatchDetailPage({
             score={played ? (match.awayScore as number) : null}
             goals={match.awayGoals !== null ? (match.awayGoals as number) : null}
             won={awayWon}
-            subbedInIds={awaySubbedInIds}
+            subbedInIds={awaySubs.inIds}
+            subbedOutIds={awaySubs.outIds}
           />
         </div>
       )}
@@ -396,6 +405,7 @@ function LineupCard({
   goals,
   won,
   subbedInIds,
+  subbedOutIds,
 }: {
   teamName: string;
   slots: PlayerSlot[];
@@ -404,6 +414,7 @@ function LineupCard({
   goals: number | null;
   won: boolean;
   subbedInIds: Set<number>;
+  subbedOutIds: Set<number>;
 }) {
   const starters = slots.filter((s) => s.isStarter);
   const reserves = slots.filter((s) => !s.isStarter);
@@ -438,10 +449,15 @@ function LineupCard({
           <>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
               Titolari ({starters.length})
+              {subbedOutIds.size > 0 && (
+                <span className="ml-1.5 text-red-500 normal-case tracking-normal font-medium">
+                  - {subbedOutIds.size} uscit{subbedOutIds.size === 1 ? "o" : "i"} per sostituzione
+                </span>
+              )}
             </p>
             <div className="space-y-1">
               {starters.map((s) => (
-                <SlotRow key={s.playerId} slot={s} />
+                <SlotRow key={s.playerId} slot={s} subbedOut={subbedOutIds.has(s.playerId)} />
               ))}
             </div>
           </>
@@ -471,7 +487,15 @@ function LineupCard({
   );
 }
 
-function SlotRow({ slot, subbedIn = false }: { slot: PlayerSlot; subbedIn?: boolean }) {
+function SlotRow({
+  slot,
+  subbedIn = false,
+  subbedOut = false,
+}: {
+  slot: PlayerSlot;
+  subbedIn?: boolean;
+  subbedOut?: boolean;
+}) {
   const fv = slot.fantavoto;
   const fvColor =
     fv === null ? "text-gray-400" :
@@ -480,10 +504,13 @@ function SlotRow({ slot, subbedIn = false }: { slot: PlayerSlot; subbedIn?: bool
     "text-red-500";
 
   // Riserva entrata effettivamente in campo (sostituzione automatica di un
-  // titolare senza voto): evidenziata e non affievolita come le altre
-  // riserve rimaste in panchina.
+  // titolare senza voto): evidenziata in verde e non affievolita come le
+  // altre riserve rimaste in panchina. Il titolare uscito al posto suo viene
+  // evidenziato in rosso, cosi si vede subito la coppia entrata/uscita.
   const rowClass = subbedIn
     ? "flex items-center gap-2 py-1.5 pl-1.5 -ml-1.5 border-l-2 border-green-500 bg-green-50 rounded-r"
+    : subbedOut
+    ? "flex items-center gap-2 py-1.5 pl-1.5 -ml-1.5 border-l-2 border-red-400 bg-red-50 rounded-r"
     : !slot.isStarter
     ? "flex items-center gap-2 py-1.5 opacity-60"
     : "flex items-center gap-2 py-1.5";
@@ -505,10 +532,18 @@ function SlotRow({ slot, subbedIn = false }: { slot: PlayerSlot; subbedIn?: bool
           IN
         </span>
       )}
+      {subbedOut && (
+        <span
+          title="Uscito, sostituito dalla panchina"
+          className="text-[10px] font-bold text-white bg-red-500 rounded px-1 py-0.5 shrink-0 leading-none"
+        >
+          OUT
+        </span>
+      )}
       <Link
         href={`/giocatore/${slot.playerId}`}
         className={`text-sm flex-1 truncate hover:text-blue-600 hover:underline transition-colors ${
-          subbedIn ? "text-green-800 font-medium" : "text-gray-700"
+          subbedIn ? "text-green-800 font-medium" : subbedOut ? "text-red-700" : "text-gray-700"
         }`}
       >
         {slot.name}

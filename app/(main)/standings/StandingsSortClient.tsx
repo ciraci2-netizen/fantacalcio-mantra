@@ -116,6 +116,12 @@ export default function StandingsSortClient({
                 <div className="flex items-center justify-center text-gray-500 text-xs font-medium">{s.gf}</div>
               </div>
               <div className="sm:hidden ml-auto flex items-center gap-2">
+                {/* Gol fatti/subiti e differenza reti, visibili anche su
+                    mobile (prima erano solo nella tabella "sm:" e in su). */}
+                <div className="flex flex-col items-end text-[10px] leading-tight text-gray-400 shrink-0">
+                  <span className="font-medium text-gray-500">{s.gf}<span className="text-gray-300">-</span>{s.ga}</span>
+                  <span>{s.gd > 0 ? `+${s.gd}` : s.gd} dr</span>
+                </div>
                 <div className="flex gap-0.5">
                   {s.form.slice(0, 3).map((r, idx) => (
                     <span key={idx} className={`w-4 h-4 rounded text-[9px] flex items-center justify-center ${FORM_STYLES[r]}`}>{r}</span>

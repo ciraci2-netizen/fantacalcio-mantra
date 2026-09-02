@@ -20,6 +20,7 @@ type Props = {
     initialCredits: number;
     maxSubstitutions: number;
     homeAdvantage: number;
+    minWinMargin: number;
     numPortieri: number;
     numMovimento: number;
     scoreConversion: {
@@ -42,6 +43,9 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
 
   /* ── Fattore campo ────────────────────────────────────────── */
   const [homeAdv, setHomeAdv] = useState<number>(settings.homeAdvantage);
+
+  /* Distacco minimo per vincere */
+  const [minWinMargin, setMinWinMargin] = useState<number>(settings.minWinMargin);
 
   /* ── Conversione punteggio → gol ──────────────────────────── */
   const [scoreConvEnabled, setScoreConvEnabled] = useState<boolean>(settings.scoreConversion.enabled);
@@ -87,6 +91,8 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
         <input type="hidden" name="numMovimento" value={numMovimento} />
         {/* Fattore campo */}
         <input type="hidden" name="homeAdvantage" value={homeAdv} />
+        {/* Distacco minimo per vincere */}
+        <input type="hidden" name="minWinMargin" value={minWinMargin} />
         {/* Conversione punteggio → gol */}
         <input type="hidden" name="scoreConvEnabled" value={scoreConvEnabled ? "1" : "0"} />
         <input type="hidden" name="scoreConvMinScore" value={minScore} />
@@ -192,8 +198,9 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
           </div>
           <div className="p-5">
             <p className="text-sm text-gray-600 mb-4">
-              La squadra che gioca <strong>in casa</strong> riceve un bonus sul punteggio per il calcolo
-              di vittoria/pareggio/sconfitta. Il punteggio visualizzato rimane invariato.
+              La squadra che gioca <strong>in casa</strong> riceve un bonus sul punteggio. Il bonus si somma
+              al punteggio mostrato nel tabellino (e nel risultato/gol convertiti), cosi che i punti in
+              classifica corrispondano sempre al risultato che si vede.
             </p>
             <div className="flex items-center gap-4 flex-wrap">
               <div>
@@ -219,11 +226,11 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
 
               {homeAdv > 0 && (
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm flex-1 min-w-[240px]">
-                  <p className="font-semibold text-green-700 mb-2">Esempio con fattore campo = {homeAdv}pt:</p>
+                  <p className="font-semibold text-green-700 mb-2">Esempio con fattore campo = {homeAdv}pt (punteggio formazione prima del bonus):</p>
                   <ul className="space-y-1 text-xs text-gray-600">
-                    <li>🏠 Casa 65pt  vs  ✈️ Trasferta 64pt → <strong className="text-green-700">Casa vince</strong> (65 &gt; 64)</li>
-                    <li>🏠 Casa 63pt  vs  ✈️ Trasferta 64pt → <strong className="text-green-700">Casa vince</strong> (63+{homeAdv} &gt; 64)</li>
-                    <li>🏠 Casa {62}pt  vs  ✈️ Trasferta 64pt → {62 + homeAdv > 64 ? <><strong className="text-green-700">Casa vince</strong></> : 62 + homeAdv === 64 ? <strong className="text-amber-600">Pareggio</strong> : <><strong className="text-red-600">Trasferta vince</strong></>} ({62}+{homeAdv}={62 + homeAdv} vs 64)</li>
+                    <li>Casa 65pt  vs  Trasferta 64pt {"->"} tabellino {65 + homeAdv}-64 {"->"} <strong className="text-green-700">Casa vince</strong></li>
+                    <li>Casa 63pt  vs  Trasferta 64pt {"->"} tabellino {63 + homeAdv}-64 {"->"} <strong className="text-green-700">Casa vince</strong> (63+{homeAdv} &gt; 64)</li>
+                    <li>Casa {62}pt  vs  Trasferta 64pt {"->"} tabellino {62 + homeAdv}-64 {"->"} {62 + homeAdv > 64 ? <><strong className="text-green-700">Casa vince</strong></> : 62 + homeAdv === 64 ? <strong className="text-amber-600">Pareggio</strong> : <><strong className="text-red-600">Trasferta vince</strong></>}</li>
                   </ul>
                 </div>
               )}
@@ -231,6 +238,65 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm flex-1 min-w-[200px]">
                   <p className="text-gray-400 text-xs">
                     ⬅️ Inserisci un valore &gt; 0 per attivare il fattore campo
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2b: Distacco minimo per vincere */}
+        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+          <div className="bg-purple-50 border-b border-purple-100 px-5 py-3 flex items-center gap-2">
+            <span className="text-lg">{"\u{1F4CF}"}</span>
+            <h2 className="font-semibold text-gray-700">Distacco minimo per vincere</h2>
+          </div>
+          <div className="p-5">
+            <p className="text-sm text-gray-600 mb-4">
+              Imposta di quanti <strong>fantapunti</strong> una squadra deve staccare l&apos;avversaria per
+              vincere la partita (fattore campo gia applicato). Sotto questa soglia il risultato e
+              considerato <strong>pareggio</strong>, anche se un punteggio e comunque piu alto.
+            </p>
+            <div className="flex items-center gap-4 flex-wrap">
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1">
+                  Distacco minimo
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={0}
+                    max={20}
+                    step={0.5}
+                    value={minWinMargin}
+                    onChange={(e) => setMinWinMargin(parseFloat(e.target.value) || 0)}
+                    className="w-28 border rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <span className="text-sm text-gray-500">punti (es. 1, 2, 3)</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Imposta <strong>0</strong> per disabilitare (vince chi ha il punteggio piu alto, anche di poco)
+                </p>
+              </div>
+
+              {minWinMargin > 0 ? (
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-sm flex-1 min-w-[240px]">
+                  <p className="font-semibold text-purple-700 mb-2">Esempio con distacco minimo = {minWinMargin}pt:</p>
+                  <ul className="space-y-1 text-xs text-gray-600">
+                    <li>
+                      {(70).toFixed(1)}pt vs {(70 + Math.max(minWinMargin - 0.5, 0)).toFixed(1)}pt (distacco {Math.max(minWinMargin - 0.5, 0)}) {"->"}{" "}
+                      <strong className="text-amber-600">Pareggio</strong> (sotto {minWinMargin}pt)
+                    </li>
+                    <li>
+                      {(70).toFixed(1)}pt vs {(70 + minWinMargin).toFixed(1)}pt (distacco {minWinMargin}) {"->"}{" "}
+                      <strong className="text-green-700">Vince chi ha piu punti</strong> (raggiunge il minimo)
+                    </li>
+                  </ul>
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm flex-1 min-w-[200px]">
+                  <p className="text-gray-400 text-xs">
+                    {"<--"} Inserisci un valore &gt; 0 per attivare il distacco minimo
                   </p>
                 </div>
               )}
