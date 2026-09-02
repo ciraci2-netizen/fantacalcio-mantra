@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useState, type ChangeEvent } from "react";
-import { createPlayer, deletePlayer, importPlayersCSV } from "@/app/actions/players";
+import { useActionState, useState, useEffect, useRef, type ChangeEvent } from "react";
+import { createPlayer, deletePlayer, importPlayersCSV, updatePlayer } from "@/app/actions/players";
 import { MANTRA_ROLES } from "@/app/lib/scoring";
 
 interface Player {
@@ -33,6 +33,7 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
   const [csvText, setCsvText] = useState("");
   const [fileName, setFileName] = useState("");
   const [parseError, setParseError] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   async function handleFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -214,32 +215,45 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filtered.map((p) => (
-                <tr key={p.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 font-medium">{p.name}</td>
-                  <td className="px-4 py-2 text-gray-500">{p.realTeam}</td>
-                  <td className="px-4 py-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[p.mantraRole] ?? "bg-gray-100"}`}>
-                      {p.mantraRole}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 text-gray-400 text-xs">{p.assignedTo ?? "—"}</td>
-                  <td className="px-4 py-2">
-                    <form action={deleteAction} className="inline">
-                      <input type="hidden" name="id" value={p.id} />
-                      <button
-                        type="submit"
-                        className="text-red-500 hover:text-red-700 text-xs"
-                        onClick={(e) => {
-                          if (!confirm(`Eliminare ${p.name}?`)) e.preventDefault();
-                        }}
-                      >
-                        Elimina
-                      </button>
-                    </form>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((p) =>
+                editingId === p.id ? (
+                  <EditPlayerRow key={p.id} player={p} onDone={() => setEditingId(null)} />
+                ) : (
+                  <tr key={p.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 font-medium">{p.name}</td>
+                    <td className="px-4 py-2 text-gray-500">{p.realTeam}</td>
+                    <td className="px-4 py-2">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[p.mantraRole] ?? "bg-gray-100"}`}>
+                        {p.mantraRole}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-gray-400 text-xs">{p.assignedTo ?? "—"}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(p.id)}
+                          className="text-blue-600 hover:text-blue-800 text-xs"
+                        >
+                          ✏️ Modifica
+                        </button>
+                        <form action={deleteAction} className="inline">
+                          <input type="hidden" name="id" value={p.id} />
+                          <button
+                            type="submit"
+                            className="text-red-500 hover:text-red-700 text-xs"
+                            onClick={(e) => {
+                              if (!confirm(`Eliminare ${p.name}?`)) e.preventDefault();
+                            }}
+                          >
+                            Elimina
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              )}
             </tbody>
           </table>
           {filtered.length === 0 && (
@@ -248,5 +262,89 @@ export default function PlayersAdminClient({ players }: { players: Player[] }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function EditPlayerRow({ player, onDone }: { player: Player; onDone: () => void }) {
+  const [error, action, pending] = useActionState(updatePlayer, null);
+  const wasPending = useRef(false);
+
+  // Il salvataggio ha successo quando l'azione torna null (nessun errore) e
+  // non è più in corso — a quel punto chiudiamo la riga di modifica. Va in
+  // un effect (non nel corpo del render) perché aggiorna lo stato del
+  // genitore (onDone → setEditingId).
+  useEffect(() => {
+    if (wasPending.current && !pending && error === null) {
+      onDone();
+    }
+    wasPending.current = pending;
+  }, [pending, error, onDone]);
+
+  return (
+    <tr className="bg-blue-50/50">
+      <td colSpan={5} className="px-4 py-3">
+        <form
+          action={action}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-end"
+        >
+          <input type="hidden" name="id" value={player.id} />
+          <div>
+            <label className="text-xs font-medium text-gray-500">Nome</label>
+            <input
+              name="name"
+              defaultValue={player.name}
+              required
+              className="w-full border rounded-lg px-2 py-1.5 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">Squadra reale</label>
+            <input
+              name="realTeam"
+              defaultValue={player.realTeam}
+              required
+              className="w-full border rounded-lg px-2 py-1.5 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">Ruolo Mantra</label>
+            <select
+              name="mantraRole"
+              defaultValue={player.mantraRole}
+              required
+              className="w-full border rounded-lg px-2 py-1.5 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {MANTRA_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-500">Nome su Fantapiu3</label>
+            <input
+              name="fantapiu3Name"
+              defaultValue={player.fantapiu3Name ?? ""}
+              placeholder="(se diverso dal nome)"
+              className="w-full border rounded-lg px-2 py-1.5 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={pending}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-3 py-1.5 rounded-lg text-xs font-medium"
+            >
+              {pending ? "Salvataggio..." : "Salva"}
+            </button>
+            <button
+              type="button"
+              onClick={onDone}
+              className="text-gray-500 hover:text-gray-700 text-xs px-2 py-1.5"
+            >
+              Annulla
+            </button>
+          </div>
+          {error && <div className="col-span-full text-red-600 text-sm">{error}</div>}
+        </form>
+      </td>
+    </tr>
   );
 }

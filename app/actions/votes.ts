@@ -47,7 +47,14 @@ export async function importVotes(prevState: string | null, formData: FormData) 
       );
     }
 
-    return `Voti importati: ${result.matched} trovati, ${result.unmatched} non abbinati.${alreadyImported ? " (re-import, nessuna push inviata)" : ""}`;
+    // Elenca i nomi non abbinati così l'admin sa esattamente quali giocatori
+    // sistemare (nome o "Nome su Fantapiu3") in Admin → Giocatori prima di
+    // ripetere l'import.
+    const unmatchedList = result.unmatchedNames.length > 0
+      ? ` Non trovati: ${result.unmatchedNames.slice(0, 25).join(", ")}${result.unmatchedNames.length > 25 ? `, +${result.unmatchedNames.length - 25} altri` : ""}. Correggili in Admin → Giocatori (campo "Nome su Fantapiu3") e reimporta.`
+      : "";
+
+    return `Voti importati: ${result.matched} trovati, ${result.unmatched} non abbinati.${unmatchedList}${alreadyImported ? " (re-import, nessuna push inviata)" : ""}`;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Errore sconosciuto";
     // Prefisso riconosciuto dal client per mostrare la scelta "importa comunque"

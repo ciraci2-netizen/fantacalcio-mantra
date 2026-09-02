@@ -22,6 +22,8 @@ export interface ImportResult {
   matched: number;
   unmatched: number;
   matchdayNumber: number;
+  /** Nomi (così come mostrati da fantapiu3) dei voti non abbinati a nessun giocatore in rosa. */
+  unmatchedNames: string[];
 }
 
 /**
@@ -63,6 +65,7 @@ export async function importVotesCore(
 
   let matched = 0;
   let unmatched = 0;
+  const unmatchedNames: string[] = [];
 
   for (const vote of scraped) {
     const player = players.find(
@@ -73,6 +76,7 @@ export async function importVotesCore(
 
     if (!player) {
       unmatched++;
+      unmatchedNames.push(vote.name);
       continue;
     }
 
@@ -119,7 +123,7 @@ export async function importVotesCore(
     args: [matchdayId],
   });
 
-  return { matched, unmatched, matchdayNumber };
+  return { matched, unmatched, matchdayNumber, unmatchedNames };
 }
 
 // ── Auto-generate best lineup for users who didn't submit ─────────────────
