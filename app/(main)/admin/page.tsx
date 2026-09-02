@@ -22,7 +22,7 @@ export default async function AdminPage() {
 
   // ── Current matchday status ─────────────────────────────────────────────
   let matchday: { id: number; number: number; isLocked: boolean; votesImported: boolean; deadline: string | null } | null = null;
-  let lineupStats: { submitted: number; total: number; missing: string[] } = { submitted: 0, total: 0, missing: [] };
+  let lineupStats: { submitted: number; total: number; missing: { id: number; teamName: string }[] } = { submitted: 0, total: 0, missing: [] };
   let pendingTrades = 0;
 
   if (season) {
@@ -54,7 +54,9 @@ export default async function AdminPage() {
       });
       const submittedIds = new Set(submittedRes.rows.map((r) => r.userId as number));
       const allUsers = usersRes.rows;
-      const missing = allUsers.filter((u) => !submittedIds.has(u.id as number)).map((u) => u.teamName as string);
+      const missing = allUsers
+        .filter((u) => !submittedIds.has(u.id as number))
+        .map((u) => ({ id: u.id as number, teamName: u.teamName as string }));
       lineupStats = {
         submitted: submittedIds.size,
         total: allUsers.length,
@@ -96,6 +98,7 @@ export default async function AdminPage() {
     { href: "/admin/users",    icon: "👥", title: "Utenti",       desc: `${userCount} / 10 partecipanti`,         color: "purple" },
     { href: "/admin/players",  icon: "👤", title: "Giocatori",    desc: `${playerCount} nel database`,             color: "blue"   },
     { href: "/admin/schedule", icon: "📅", title: "Calendario",   desc: season ? `${season.name as string}` : "Nessuna stagione", color: "green" },
+    { href: "/admin/lineup",  icon: "🛠️", title: "Formazioni",   desc: "Inserimento/modifica manuale",            color: "lime"   },
     { href: "/admin/votes",    icon: "📊", title: "Voti",         desc: `${votesImportedCount} giornate importate`, color: "amber" },
     { href: "/admin/coppe",    icon: "🏆", title: "Coppe",        desc: "Turni eliminatori",                       color: "yellow" },
     { href: "/admin/mercato",  icon: "🔄", title: "Mercato",      desc: "Apri/chiudi mercati",                     color: "teal"   },
@@ -116,6 +119,7 @@ export default async function AdminPage() {
     slate: "bg-slate-50 border-slate-200 hover:bg-slate-100",
     cyan: "bg-cyan-50 border-cyan-200 hover:bg-cyan-100",
     pink: "bg-pink-50 border-pink-200 hover:bg-pink-100",
+    lime: "bg-lime-50 border-lime-200 hover:bg-lime-100",
   };
 
   return (
@@ -155,8 +159,14 @@ export default async function AdminPage() {
             {lineupStats.missing.length > 0 ? (
               <div className="mt-2">
                 <p className="text-xs font-semibold text-red-600 mb-1">Mancanti:</p>
-                {lineupStats.missing.slice(0, 3).map((name) => (
-                  <p key={name} className="text-xs text-red-500 truncate">• {name}</p>
+                {lineupStats.missing.slice(0, 3).map((u) => (
+                  <Link
+                    key={u.id}
+                    href={`/admin/lineup?matchdayId=${matchday?.id}&userId=${u.id}`}
+                    className="block text-xs text-red-500 hover:text-red-700 hover:underline truncate"
+                  >
+                    • {u.teamName} — inserisci →
+                  </Link>
                 ))}
                 {lineupStats.missing.length > 3 && (
                   <p className="text-xs text-red-400">+ altri {lineupStats.missing.length - 3}</p>

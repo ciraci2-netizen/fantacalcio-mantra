@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import Link from "next/link";
 import { importVotes, calculateAllScores } from "@/app/actions/votes";
 import { lockAndAdvanceMatchday, setMatchdayDeadline } from "@/app/actions/schedule";
 import { setPlayerStatus } from "@/app/actions/settings";
@@ -145,6 +146,14 @@ export default function VotesAdminClient({
                 )}
                 {(l.substitutions ?? 0) > 0 && (
                   <span className="text-xs text-gray-400">↔{l.substitutions}</span>
+                )}
+                {currentMatchdayId && (!l.submitted || l.isAutomatic) && (
+                  <Link
+                    href={`/admin/lineup?matchdayId=${currentMatchdayId}&userId=${l.userId}`}
+                    className="text-xs text-blue-600 hover:underline font-medium"
+                  >
+                    🛠️ {l.submitted ? "correggi" : "inserisci"}
+                  </Link>
                 )}
               </div>
             </div>

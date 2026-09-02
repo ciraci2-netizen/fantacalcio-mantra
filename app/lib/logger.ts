@@ -10,6 +10,7 @@ type LogEvent =
   | "calculate_scores"
   | "auto_lock"
   | "lineup_save"
+  | "admin_lineup_save"
   | "scraper_retry"
   | "scraper_fail"
   | "cron_run"

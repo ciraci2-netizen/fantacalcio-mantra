@@ -53,7 +53,10 @@ function parseVote(val: string): number | null {
 }
 
 export async function scrapeVotes(matchday: number): Promise<ScrapedVote[]> {
-  const url = `https://www.fantapiu3.com/voti-globali/fantacalcio-voti-fantapiu3-premier-league.php`;
+  // NB: la pagina "premier-league" era sbagliata — quella è la Premier League
+  // inglese, non la Serie A italiana usata da questa lega. Fonte corretta:
+  // "voti-globali" Serie A di Fantagazzetta, con selezione giornata via query string.
+  const url = `https://www.fantapiu3.com/voti-globali/fantacalcio-voti-fantagazzetta-serie-a.php?giornata=${matchday}`;
 
   const res = await fetchWithRetry(url, {
     headers: {

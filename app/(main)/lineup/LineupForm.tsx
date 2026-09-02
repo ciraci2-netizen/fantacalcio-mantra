@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useOptimistic, useState } from "react";
-import { saveLineup } from "@/app/actions/lineup";
+import { saveLineup, adminSaveLineup } from "@/app/actions/lineup";
 import { VALID_FORMATIONS, MANTRA_ROLES } from "@/app/lib/scoring";
 import PitchView, { type PitchPlayer } from "@/app/components/PitchView";
 
@@ -23,6 +23,15 @@ interface Props {
     starters: number[];
     reserves: number[];
   } | null;
+  /**
+   * Admin override: quando presente, il form salva la formazione per conto
+   * di un'altra squadra (adminSaveLineup) invece che per l'utente loggato
+   * (saveLineup), e resta modificabile anche a giornata bloccata.
+   */
+  admin?: {
+    userId: number;
+    teamName: string;
+  };
 }
 
 const ROLE_COLORS: Record<string, string> = {
@@ -40,8 +49,9 @@ export default function LineupForm({
   isLocked,
   roster,
   existingLineup,
+  admin,
 }: Props) {
-  const [result, formAction, pending] = useActionState(saveLineup, null);
+  const [result, formAction, pending] = useActionState(admin ? adminSaveLineup : saveLineup, null);
   // Optimistic: show success immediately on submit, reverts on server error
   const [optimisticResult, setOptimisticResult] = useOptimistic(result);
 
@@ -101,7 +111,7 @@ export default function LineupForm({
     return { id: p.id, name: p.name, role: p.mantraRole, availability: p.availability };
   });
 
-  if (isLocked) {
+  if (isLocked && !admin) {
     return (
       <div className="text-center py-12">
         <div className="text-4xl mb-3">🔒</div>
@@ -117,9 +127,17 @@ export default function LineupForm({
 
   return (
     <div className="space-y-6">
+      {admin && (
+        <div className="bg-purple-50 border border-purple-200 text-purple-800 rounded-lg px-4 py-3 text-sm font-medium">
+          🛠️ Modalità admin — stai inserendo/modificando la formazione di{" "}
+          <strong>{admin.teamName}</strong> per la giornata {matchdayNumber}
+          {isLocked && " (giornata bloccata: la modifica è comunque consentita solo agli admin)"}.
+        </div>
+      )}
       <form action={action} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <input type="hidden" name="matchdayId" value={matchdayId} />
         <input type="hidden" name="formation" value={formation} />
+        {admin && <input type="hidden" name="userId" value={admin.userId} />}
         {starters.map((id, i) => (
           <input key={`s${i}`} type="hidden" name={`starter_${i + 1}`} value={id ?? ""} />
         ))}
@@ -297,6 +315,8 @@ export default function LineupForm({
               ? "Salvataggio..."
               : saved && !error
               ? "✓ Formazione salvata"
+              : admin
+              ? `Salva formazione per ${admin.teamName}`
               : "Salva formazione"}
           </button>
         </div>
