@@ -14,7 +14,7 @@ function revalidateAuctionPaths() {
   revalidatePath("/admin/players");
 }
 
-// ── Admin: apre un nuovo round (fallisce se ce n'è già uno non risolto) ───
+// --- Admin: apre un nuovo round (fallisce se ce n'e gia uno non risolto) ---
 export async function openAuctionRound(prevState: string | null, formData: FormData) {
   const session = await getSession();
   if (!session?.isAdmin) return "Non autorizzato.";
@@ -36,7 +36,7 @@ export async function openAuctionRound(prevState: string | null, formData: FormD
     sql: `SELECT id FROM "AuctionRound" WHERE seasonId = ? AND resolvedAt IS NULL LIMIT 1`,
     args: [seasonId],
   });
-  if (openRes.rows.length > 0) return "C'è già un round non ancora chiuso: chiudilo prima di aprirne uno nuovo.";
+  if (openRes.rows.length > 0) return "C'e gia un round non ancora chiuso: chiudilo prima di aprirne uno nuovo.";
 
   await db.execute({
     sql: `INSERT INTO "AuctionRound" (seasonId, name, startDate, endDate) VALUES (?, ?, ?, ?)`,
@@ -62,7 +62,9 @@ export async function closeAuctionRoundNow(prevState: string | null, formData: F
   if (result.winners.length > 0) {
     parts.push(
       `✅ Assegnati ${result.winners.length}: ` +
-        result.winners.map((w) => `${w.playerName} → ${w.teamName} (${w.amount})`).join(", ")
+        result.winners
+          .map((w) => `${w.playerName} -> ${w.teamName} (${w.amount})${w.releasedPlayerName ? ` [svincolato ${w.releasedPlayerName}]` : ""}`)
+          .join(", ")
     );
   }
   if (result.unsold.length > 0) {
@@ -80,6 +82,8 @@ export async function submitBid(prevState: string | null, formData: FormData) {
   const roundId = parseInt(formData.get("roundId") as string);
   const playerId = parseInt(formData.get("playerId") as string);
   const amount = parseInt(formData.get("amount") as string);
+  const releaseRaw = (formData.get("releasePlayerId") as string) || "";
+  const releasePlayerId = releaseRaw ? parseInt(releaseRaw) : null;
 
   if (!roundId || !playerId) return "Dati mancanti.";
   if (!Number.isFinite(amount) || amount <= 0) return "Inserisci un'offerta valida (maggiore di zero).";
@@ -91,17 +95,17 @@ export async function submitBid(prevState: string | null, formData: FormData) {
     args: [roundId],
   });
   const round = roundRes.rows[0];
-  if (!round || round.resolvedAt) return "Questo round non è più aperto.";
+  if (!round || round.resolvedAt) return "Questo round non e piu aperto.";
   const now = Date.now();
-  if (round.startDate && new Date(round.startDate as string).getTime() > now) return "L'asta non è ancora iniziata.";
-  if (new Date(round.endDate as string).getTime() <= now) return "L'asta è scaduta.";
+  if (round.startDate && new Date(round.startDate as string).getTime() > now) return "L'asta non e ancora iniziata.";
+  if (new Date(round.endDate as string).getTime() <= now) return "L'asta e scaduta.";
 
   const playerRes = await db.execute({ sql: `SELECT mantraRole FROM "Player" WHERE id = ?`, args: [playerId] });
   const mantraRole = playerRes.rows[0]?.mantraRole as string | undefined;
   if (!mantraRole) return "Giocatore non trovato.";
 
   const takenRes = await db.execute({ sql: `SELECT id FROM "Roster" WHERE playerId = ?`, args: [playerId] });
-  if (takenRes.rows.length > 0) return "Questo giocatore non è più svincolato.";
+  if (takenRes.rows.length > 0) return "Questo giocatore non e piu svincolato.";
 
   const existingRes = await db.execute({
     sql: `SELECT id FROM "SealedBid" WHERE roundId = ? AND playerId = ? AND userId = ?`,
@@ -112,25 +116,54 @@ export async function submitBid(prevState: string | null, formData: FormData) {
   const remaining = await remainingBudget(db, session.userId, existingBidId);
   if (amount > remaining) return `Offerta troppo alta: ti restano ${remaining} crediti disponibili (contando le altre offerte in corso).`;
 
-  // Non ha senso fare un'offerta per un ruolo per cui non c'è più posto in
-  // rosa, contando anche le altre offerte pendenti (vedi roleSlotsUsed).
-  if (!existingBidId) {
+  // Svincolo contestuale: se indicato, deve essere un TUO giocatore in
+  // rosa, dello stesso "pool" del giocatore che stai cercando di prendere
+  // (portiere per portiere, movimento per movimento - i ruoli DC/TER/M/OFF/
+  // ATT condividono lo stesso slot), e non gia promesso a un'altra tua
+  // offerta pendente (non ha senso pensare di svincolare due volte lo
+  // stesso giocatore per due offerte diverse).
+  const isPor = mantraRole === "POR";
+  if (releasePlayerId) {
+    const releaseRes = await db.execute({
+      sql: `SELECT p.mantraRole FROM "Roster" r JOIN "Player" p ON p.id = r.playerId WHERE r.userId = ? AND r.playerId = ?`,
+      args: [session.userId, releasePlayerId],
+    });
+    const releaseRole = releaseRes.rows[0]?.mantraRole as string | undefined;
+    if (!releaseRole) return "Il giocatore da svincolare selezionato non e nella tua rosa.";
+    const releaseIsPor = releaseRole === "POR";
+    if (releaseIsPor !== isPor) {
+      return "Il giocatore da svincolare deve essere dello stesso tipo di slot (portiere/movimento) di quello che stai prendendo.";
+    }
+    const pledgedRes = await db.execute({
+      sql: `SELECT sb.id FROM "SealedBid" sb JOIN "AuctionRound" ar ON ar.id = sb.roundId
+            WHERE sb.userId = ? AND sb.releasePlayerId = ? AND sb.status = 'pending' AND ar.resolvedAt IS NULL AND sb.id != ?`,
+      args: [session.userId, releasePlayerId, existingBidId ?? -1],
+    });
+    if (pledgedRes.rows.length > 0) {
+      return "Hai gia indicato questo giocatore come svincolo per un'altra offerta in corso.";
+    }
+  }
+
+  // Non ha senso fare un'offerta per un ruolo per cui non c'e piu posto in
+  // rosa, contando anche le altre offerte pendenti (vedi roleSlotsUsed) - a
+  // meno che l'offerta non porti con se uno svincolo valido, che libera lo
+  // slot al posto suo.
+  if (!existingBidId && !releasePlayerId) {
     const limits = await getRosterLimits(db);
     const used = await roleSlotsUsed(db, session.userId);
-    const isPor = mantraRole === "POR";
     if (isPor ? used.por >= limits.numPortieri : used.mov >= limits.numMovimento) {
-      return isPor
-        ? `Slot portieri già al completo (${limits.numPortieri}), contando anche le offerte in corso.`
-        : `Slot giocatori di movimento già al completo (${limits.numMovimento}), contando anche le offerte in corso.`;
+      return (isPor
+        ? `Slot portieri gia al completo (${limits.numPortieri}): scegli quale portiere svincolare per fare posto.`
+        : `Slot giocatori di movimento gia al completo (${limits.numMovimento}): scegli quale giocatore svincolare per fare posto.`);
     }
   }
 
   if (existingBidId) {
-    await db.execute({ sql: `UPDATE "SealedBid" SET amount = ? WHERE id = ?`, args: [amount, existingBidId] });
+    await db.execute({ sql: `UPDATE "SealedBid" SET amount = ?, releasePlayerId = ? WHERE id = ?`, args: [amount, releasePlayerId, existingBidId] });
   } else {
     await db.execute({
-      sql: `INSERT INTO "SealedBid" (roundId, playerId, userId, amount) VALUES (?, ?, ?, ?)`,
-      args: [roundId, playerId, session.userId, amount],
+      sql: `INSERT INTO "SealedBid" (roundId, playerId, userId, amount, releasePlayerId) VALUES (?, ?, ?, ?, ?)`,
+      args: [roundId, playerId, session.userId, amount, releasePlayerId],
     });
   }
 
@@ -155,7 +188,7 @@ export async function withdrawBid(prevState: string | null, formData: FormData) 
   const bid = res.rows[0];
   if (!bid) return "Offerta non trovata.";
   if (Number(bid.userId) !== session.userId && !session.isAdmin) return "Non autorizzato.";
-  if (bid.resolvedAt || bid.status !== "pending") return "Il round è già chiuso.";
+  if (bid.resolvedAt || bid.status !== "pending") return "Il round e gia chiuso.";
 
   await db.execute({ sql: `DELETE FROM "SealedBid" WHERE id = ?`, args: [bidId] });
   revalidatePath("/asta");

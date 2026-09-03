@@ -217,6 +217,12 @@ export async function runMigrations() {
   // di poco, come oggi).
   try { await db.execute(`ALTER TABLE "LeagueSettings" ADD COLUMN "minWinMargin" REAL NOT NULL DEFAULT 0`); } catch { /* gia presente */ }
 
+  // Svincolo contestuale all'offerta nell'asta a buste: se lo slot di ruolo
+  // e pieno, l'utente puo indicare gia in fase di offerta quale proprio
+  // giocatore svincolare per fare posto. Lo svincolo scatta da solo, e solo
+  // se l'offerta vince (vedi resolveRound in app/lib/auction.ts).
+  try { await db.execute(`ALTER TABLE "SealedBid" ADD COLUMN "releasePlayerId" INTEGER`); } catch { /* gia presente */ }
+
   return { success: true };
 }
 

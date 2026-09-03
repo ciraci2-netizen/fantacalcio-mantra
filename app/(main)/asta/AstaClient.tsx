@@ -14,26 +14,35 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 type Player = { id: number; name: string; realTeam: string; mantraRole: string; bidCount: number };
-type MyBid = { bidId: number; amount: number };
+type MyBid = { bidId: number; amount: number; releasePlayerId: number | null };
+type RosterPlayer = { id: number; name: string; mantraRole: string };
 
 function BidRow({
   roundId,
   player,
   myBid,
   remainingBudget,
+  poolFull,
+  releaseOptions,
 }: {
   roundId: number;
   player: Player;
   myBid: MyBid | undefined;
   remainingBudget: number;
+  poolFull: boolean;
+  releaseOptions: RosterPlayer[];
 }) {
   const [bidError, bidAction, bidPending] = useActionState(submitBid, null);
   const [, withdrawAction, withdrawPending] = useActionState(withdrawBid, null);
   const [amount, setAmount] = useState(myBid ? String(myBid.amount) : "");
+  const [releasePlayerId, setReleasePlayerId] = useState(myBid?.releasePlayerId ? String(myBid.releasePlayerId) : "");
+
+  const showReleasePicker = poolFull || Boolean(myBid?.releasePlayerId);
+  const releasedName = releaseOptions.find((r) => String(r.id) === releasePlayerId)?.name;
 
   return (
     <li className="px-4 py-2.5 hover:bg-gray-50">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-800">{player.name}</p>
           <p className="text-xs text-gray-400">
@@ -46,9 +55,25 @@ function BidRow({
           </p>
         </div>
 
-        <form action={bidAction} className="flex items-center gap-1 shrink-0">
+        <form action={bidAction} className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
           <input type="hidden" name="roundId" value={roundId} />
           <input type="hidden" name="playerId" value={player.id} />
+          {showReleasePicker && releaseOptions.length > 0 && (
+            <select
+              name="releasePlayerId"
+              value={releasePlayerId}
+              onChange={(e) => setReleasePlayerId(e.target.value)}
+              className="border rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-orange-500 max-w-[9rem]"
+              title="Giocatore da svincolare se l'offerta vince"
+            >
+              <option value="">- nessuno svincolo -</option>
+              {releaseOptions.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          )}
           <input
             name="amount"
             type="number"
@@ -83,14 +108,25 @@ function BidRow({
         )}
       </div>
 
+      {showReleasePicker && releaseOptions.length === 0 && (
+        <p className="text-xs text-amber-600 mt-1">Slot pieni e nessun giocatore disponibile da svincolare in questo ruolo.</p>
+      )}
+      {poolFull && releaseOptions.length > 0 && !releasePlayerId && (
+        <p className="text-xs text-amber-600 mt-1">Slot pieni: scegli chi svincolare per fare posto, altrimenti l&apos;offerta verra rifiutata.</p>
+      )}
       {myBid && (
         <p className="text-xs text-green-700 mt-1">
-          ✓ Hai offerto <strong>{myBid.amount}</strong> crediti (segreta, visibile solo a te finché il round è aperto)
+          Hai offerto <strong>{myBid.amount}</strong> crediti (segreta, visibile solo a te finche il round e aperto)
+          {releasedName && (
+            <>
+              {" "}- se vinci, svincolerai <strong>{releasedName}</strong> per fare posto (promessa: se non vinci, resta in rosa)
+            </>
+          )}
         </p>
       )}
       {bidError && <p className="text-xs text-red-600 mt-1">{bidError}</p>}
       {!myBid && Number(amount) > remainingBudget && (
-        <p className="text-xs text-amber-600 mt-1">⚠ Superi il tuo budget residuo ({remainingBudget})</p>
+        <p className="text-xs text-amber-600 mt-1">Superi il tuo budget residuo ({remainingBudget})</p>
       )}
     </li>
   );
@@ -101,6 +137,7 @@ export default function AstaClient({
   notStarted,
   players,
   myBids,
+  myRoster,
   remainingBudget,
   slotsUsed,
   limits,
@@ -112,6 +149,7 @@ export default function AstaClient({
   notStarted: boolean;
   players: Player[];
   myBids: Record<number, MyBid>;
+  myRoster: RosterPlayer[];
   remainingBudget: number;
   slotsUsed: { por: number; mov: number };
   limits: { numPortieri: number; numMovimento: number };
@@ -121,6 +159,11 @@ export default function AstaClient({
 }) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("tutti");
+
+  const porFull = slotsUsed.por >= limits.numPortieri;
+  const movFull = slotsUsed.mov >= limits.numMovimento;
+  const porOptions = myRoster.filter((r) => r.mantraRole === "POR");
+  const movOptions = myRoster.filter((r) => r.mantraRole !== "POR");
 
   const filtered = players.filter(
     (p) =>
@@ -216,15 +259,20 @@ export default function AstaClient({
                       </span>
                     </div>
                     <ul className="divide-y">
-                      {byRole[role].map((p) => (
-                        <BidRow
-                          key={p.id}
-                          roundId={round.id}
-                          player={p}
-                          myBid={myBids[p.id]}
-                          remainingBudget={remainingBudget}
-                        />
-                      ))}
+                      {byRole[role].map((p) => {
+                        const isPor = p.mantraRole === "POR";
+                        return (
+                          <BidRow
+                            key={p.id}
+                            roundId={round.id}
+                            player={p}
+                            myBid={myBids[p.id]}
+                            remainingBudget={remainingBudget}
+                            poolFull={isPor ? porFull : movFull}
+                            releaseOptions={isPor ? porOptions : movOptions}
+                          />
+                        );
+                      })}
                     </ul>
                   </div>
                 ))}

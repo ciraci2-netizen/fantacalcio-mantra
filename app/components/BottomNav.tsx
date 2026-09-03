@@ -8,7 +8,6 @@ const NAV = [
   { href: "/lineup",    icon: "📋", label: "Formaz." },
   { href: "/standings", icon: "🏆", label: "Classif." },
   { href: "/calendar",  icon: "📅", label: "Calcol." },
-  { href: "/bacheca",   icon: "💬", label: "Bacheca" },
 ];
 
 export default function BottomNav() {

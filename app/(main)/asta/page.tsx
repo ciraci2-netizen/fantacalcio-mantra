@@ -54,7 +54,7 @@ export default async function AstaPage() {
   };
   const notStarted = isRoundNotStarted(round.startDate);
 
-  const [playersRes, myBidsRes, limits, slotsUsed] = await Promise.all([
+  const [playersRes, myBidsRes, limits, slotsUsed, myRosterRes] = await Promise.all([
     db.execute(
       `SELECT p.id, p.name, p.realTeam, p.mantraRole
        FROM "Player" p
@@ -62,11 +62,17 @@ export default async function AstaPage() {
        ORDER BY p.mantraRole ASC, p.name ASC`
     ),
     db.execute({
-      sql: `SELECT id, playerId, amount FROM "SealedBid" WHERE roundId = ? AND userId = ? AND status = 'pending'`,
+      sql: `SELECT id, playerId, amount, releasePlayerId FROM "SealedBid" WHERE roundId = ? AND userId = ? AND status = 'pending'`,
       args: [round.id, session.userId],
     }),
     getRosterLimits(db),
     roleSlotsUsed(db, session.userId),
+    db.execute({
+      sql: `SELECT p.id, p.name, p.mantraRole
+            FROM "Roster" r JOIN "Player" p ON p.id = r.playerId
+            WHERE r.userId = ? ORDER BY p.mantraRole ASC, p.name ASC`,
+      args: [session.userId],
+    }),
   ]);
 
   const remaining = await remainingBudget(db, session.userId);
@@ -87,10 +93,20 @@ export default async function AstaPage() {
     bidCount: bidCounts[r.id as number] ?? 0,
   }));
 
-  const myBids: Record<number, { bidId: number; amount: number }> = {};
+  const myBids: Record<number, { bidId: number; amount: number; releasePlayerId: number | null }> = {};
   for (const b of myBidsRes.rows) {
-    myBids[b.playerId as number] = { bidId: b.id as number, amount: b.amount as number };
+    myBids[b.playerId as number] = {
+      bidId: b.id as number,
+      amount: b.amount as number,
+      releasePlayerId: (b.releasePlayerId as number | null) ?? null,
+    };
   }
+
+  const myRoster = myRosterRes.rows.map((r) => ({
+    id: r.id as number,
+    name: r.name as string,
+    mantraRole: r.mantraRole as string,
+  }));
 
   const countByRole: Record<string, number> = {};
   for (const p of players) countByRole[p.mantraRole] = (countByRole[p.mantraRole] ?? 0) + 1;
@@ -101,6 +117,7 @@ export default async function AstaPage() {
       notStarted={notStarted}
       players={players}
       myBids={myBids}
+      myRoster={myRoster}
       remainingBudget={remaining}
       slotsUsed={slotsUsed}
       limits={limits}
