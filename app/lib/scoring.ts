@@ -356,10 +356,13 @@ export interface DefenseModifierResult {
 
 /**
  * Modificatore difensivo: si prende il voto (non il fantavoto) del portiere
- * titolare e dei 3 migliori difensori (terzini/centrali) titolari. Scatta
- * SOLO se portiere e TUTTI i difensori titolari (terzini+centrali) sono
- * andati a voto — se anche uno solo è sv/assente, niente modificatore per
- * quella squadra in quella giornata.
+ * titolare e dei 3 migliori difensori (terzini/centrali) tra quelli
+ * EFFETTIVAMENTE schierati (titolari, o le riserve entrate al loro posto).
+ * Scatta SOLO se la difesa e a 4 (o piu) - una difesa a 3, come nel caso di
+ * un 3-5-2, non da mai diritto al modificatore, ne come formazione di
+ * partenza ne dopo i cambi - e se portiere e TUTTI i difensori considerati
+ * sono andati a voto: se anche uno solo e sv/assente, niente modificatore
+ * per quella squadra in quella giornata.
  */
 export function calculateDefenseModifier(
   starters: Array<{ mantraRole: string; vote: number | null }>,
@@ -371,7 +374,7 @@ export function calculateDefenseModifier(
   if (!gk || gk.vote === null) return nullResult;
 
   const defenders = starters.filter((s) => s.mantraRole === "TER" || s.mantraRole === "DC");
-  if (defenders.length < 3) return nullResult;
+  if (defenders.length < 4) return nullResult;
   if (defenders.some((d) => d.vote === null)) return nullResult;
 
   const bestThree = [...defenders]

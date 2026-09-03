@@ -461,7 +461,9 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
                 <li>media 7.5+ → <strong>-4</strong> alla squadra avversaria</li>
               </ul>
               <p className="mt-2 text-xs text-blue-600">
-                Scatta solo se portiere e TUTTI i difensori titolari sono andati regolarmente a voto (nessuno sv/assente).
+                Scatta solo con una difesa a 4 (o piu) - una difesa a 3 (es. modulo 3-5-2) non da mai diritto al
+                modificatore, ne come formazione di partenza ne dopo i cambi - e solo se portiere e TUTTI i
+                difensori considerati sono andati regolarmente a voto (nessuno sv/assente).
               </p>
             </div>
 
