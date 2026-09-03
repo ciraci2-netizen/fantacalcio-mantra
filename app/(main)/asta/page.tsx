@@ -5,6 +5,7 @@ import { resolveExpiredRounds, remainingBudget, roleSlotsUsed, isRoundNotStarted
 import { getRosterLimits } from "@/app/lib/leagueSettings";
 import { MANTRA_ROLES } from "@/app/lib/scoring";
 import AstaClient from "./AstaClient";
+import AstaHistory from "./AstaHistory";
 
 export const metadata: Metadata = { title: "Asta buste" };
 export const dynamic = "force-dynamic";
@@ -29,6 +30,40 @@ export default async function AstaPage() {
 
   await resolveExpiredRounds(seasonId);
 
+  // Storico: le proprie offerte (vinte/perse) nei round gia chiusi di questa
+  // stagione. Solo le tue: niente cifre degli altri utenti.
+  const historyRes = await db.execute({
+    sql: `SELECT ar.id as roundId, ar.name as roundName, ar.resolvedAt,
+                 sb.amount, sb.status, p.name as playerName, p.mantraRole
+          FROM "SealedBid" sb
+          JOIN "AuctionRound" ar ON ar.id = sb.roundId
+          JOIN "Player" p ON p.id = sb.playerId
+          WHERE ar.seasonId = ? AND sb.userId = ? AND ar.resolvedAt IS NOT NULL AND sb.status IN ('won', 'lost')
+          ORDER BY ar.resolvedAt DESC, sb.status ASC, p.name ASC
+          LIMIT 300`,
+    args: [seasonId, session.userId],
+  });
+  type HistoryBid = { playerName: string; mantraRole: string; amount: number; status: string };
+  const historyByRound = new Map<number, { roundId: number; roundName: string; resolvedAt: string; bids: HistoryBid[] }>();
+  for (const r of historyRes.rows) {
+    const roundId = r.roundId as number;
+    if (!historyByRound.has(roundId)) {
+      historyByRound.set(roundId, {
+        roundId,
+        roundName: r.roundName as string,
+        resolvedAt: r.resolvedAt as string,
+        bids: [],
+      });
+    }
+    historyByRound.get(roundId)!.bids.push({
+      playerName: r.playerName as string,
+      mantraRole: r.mantraRole as string,
+      amount: r.amount as number,
+      status: r.status as string,
+    });
+  }
+  const myHistory = Array.from(historyByRound.values());
+
   const roundRes = await db.execute({
     sql: `SELECT id, name, startDate, endDate FROM "AuctionRound"
           WHERE seasonId = ? AND resolvedAt IS NULL ORDER BY id DESC LIMIT 1`,
@@ -38,10 +73,13 @@ export default async function AstaPage() {
 
   if (!roundRow) {
     return (
-      <div className="text-center py-16 text-gray-400">
-        <div className="text-4xl mb-3">🔨</div>
-        <p className="font-medium text-gray-500">Nessuna asta aperta al momento.</p>
-        <p className="text-sm mt-1">L&apos;admin aprirà un nuovo round quando ci saranno svincolati da assegnare.</p>
+      <div className="space-y-6">
+        <div className="text-center py-16 text-gray-400">
+          <div className="text-4xl mb-3">{"\u{1F528}"}</div>
+          <p className="font-medium text-gray-500">Nessuna asta aperta al momento.</p>
+          <p className="text-sm mt-1">L&apos;admin aprira un nuovo round quando ci saranno svincolati da assegnare.</p>
+        </div>
+        <AstaHistory history={myHistory} />
       </div>
     );
   }
@@ -112,18 +150,21 @@ export default async function AstaPage() {
   for (const p of players) countByRole[p.mantraRole] = (countByRole[p.mantraRole] ?? 0) + 1;
 
   return (
-    <AstaClient
-      round={round}
-      notStarted={notStarted}
-      players={players}
-      myBids={myBids}
-      myRoster={myRoster}
-      remainingBudget={remaining}
-      slotsUsed={slotsUsed}
-      limits={limits}
-      countByRole={countByRole}
-      roleLabel={ROLE_LABEL}
-      roles={MANTRA_ROLES as unknown as string[]}
-    />
+    <div className="space-y-6">
+      <AstaClient
+        round={round}
+        notStarted={notStarted}
+        players={players}
+        myBids={myBids}
+        myRoster={myRoster}
+        remainingBudget={remaining}
+        slotsUsed={slotsUsed}
+        limits={limits}
+        countByRole={countByRole}
+        roleLabel={ROLE_LABEL}
+        roles={MANTRA_ROLES as unknown as string[]}
+      />
+      <AstaHistory history={myHistory} />
+    </div>
   );
 }
