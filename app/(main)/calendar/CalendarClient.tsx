@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 
 type MatchRow = {
@@ -163,6 +163,19 @@ export default function CalendarClient({
   const touchStartX = useRef<number | null>(null);
 
   const [fading, setFading] = useState(false);
+  const pillsRef = useRef<HTMLDivElement>(null);
+
+  // Tiene la pillola della giornata attiva visibile scorrendo la barra in
+  // automatico (con 36 giornate la barra non entra tutta e senza questo la
+  // selezione poteva "sparire" fuori dallo schermo senza nessun indizio).
+  useEffect(() => {
+    const container = pillsRef.current;
+    if (!container) return;
+    const activeBtn = container.children[activeIdx] as HTMLElement | undefined;
+    if (activeBtn) {
+      activeBtn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    }
+  }, [activeIdx]);
 
   const go = (idx: number) => {
     const next = Math.max(0, Math.min(idx, matchdays.length - 1));
@@ -196,25 +209,43 @@ export default function CalendarClient({
       </h1>
 
       {/* Matchday pills */}
-      <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-        {matchdays.map((m, idx) => {
-          const hasPlayed = m.matches.some((mm) => mm.homeScore !== null);
-          return (
-            <button
-              key={m.id}
-              onClick={() => go(idx)}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                idx === activeIdx
-                  ? "bg-green-600 text-white shadow-sm"
-                  : hasPlayed
-                  ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  : "bg-blue-50 text-blue-600 hover:bg-blue-100"
-              }`}
-            >
-              G{m.number}
-            </button>
-          );
-        })}
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => pillsRef.current?.scrollBy({ left: -160, behavior: "smooth" })}
+          className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-white border text-gray-500 text-sm shadow-sm hover:bg-gray-50"
+          aria-label="Scorri indietro"
+        >
+          {"\u2039"}
+        </button>
+        <div ref={pillsRef} className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none scroll-smooth">
+          {matchdays.map((m, idx) => {
+            const hasPlayed = m.matches.some((mm) => mm.homeScore !== null);
+            return (
+              <button
+                key={m.id}
+                onClick={() => go(idx)}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                  idx === activeIdx
+                    ? "bg-green-600 text-white shadow-sm"
+                    : hasPlayed
+                    ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                    : "bg-blue-50 text-blue-600 hover:bg-blue-100"
+                }`}
+              >
+                G{m.number}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={() => pillsRef.current?.scrollBy({ left: 160, behavior: "smooth" })}
+          className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-white border text-gray-500 text-sm shadow-sm hover:bg-gray-50"
+          aria-label="Scorri avanti"
+        >
+          {"\u203a"}
+        </button>
       </div>
 
       {/* Swipeable card con fade transition */}
