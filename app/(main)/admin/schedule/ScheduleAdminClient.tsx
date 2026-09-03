@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { createSeason, generateCalendar, setCurrentMatchday, importCalendarCsv } from "@/app/actions/schedule";
+import { createSeason, generateCalendar, setCurrentMatchday, importCalendarCsv, repeatCalendarFromFirstLeg } from "@/app/actions/schedule";
 
 interface Matchday {
   id: number;
@@ -30,6 +30,7 @@ export default function ScheduleAdminClient({
   const [calError, calAction, calPending] = useActionState(generateCalendar, null);
   const [, matchdayAction] = useActionState(setCurrentMatchday, null);
   const [csvResult, csvAction, csvPending] = useActionState(importCalendarCsv, null);
+  const [repeatResult, repeatAction, repeatPending] = useActionState(repeatCalendarFromFirstLeg, null);
 
   const activeSeason = seasons.find((s) => s.id === activeSeasonId);
 
@@ -90,7 +91,11 @@ export default function ScheduleAdminClient({
                 </button>
               </form>
             </div>
-            {calError && <p className="text-red-600 text-sm mt-2">{calError}</p>}
+            {calError && (
+              <p className={`text-sm mt-2 ${calError.startsWith("OK:") ? "text-green-600" : "text-red-600"}`}>
+                {calError}
+              </p>
+            )}
           </div>
 
           {/* ── Import calendario da CSV ─────────────────── */}
@@ -129,6 +134,32 @@ export default function ScheduleAdminClient({
             <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
               <strong>Suggerimento:</strong> puoi copiare la tabella del calendario da Excel o Google Sheet e incollarla qui — assicurati che le colonne siano nell&apos;ordine corretto e che i nomi delle squadre corrispondano esattamente.
             </div>
+          </div>
+
+          {/* -- Ripeti calendario a campi invertiti -- */}
+          <div className="bg-white rounded-xl border shadow-sm p-5">
+            <h2 className="font-semibold text-gray-700 mb-1">Ripeti prime 9 giornate (campi invertiti)</h2>
+            <p className="text-xs text-gray-400 mb-3">
+              Prende le partite gia&apos; inserite nelle giornate 1-9 (a mano, da CSV o con la
+              generazione automatica) e le ripete identiche per tutte le giornate successive,
+              invertendo ogni volta casa e trasferta rispetto alle prime 9. Le giornate che hanno
+              gia&apos; un risultato inserito non vengono toccate.
+            </p>
+            <form action={repeatAction} className="flex gap-3 items-center">
+              <input type="hidden" name="seasonId" value={activeSeason.id} />
+              <button
+                type="submit"
+                disabled={repeatPending}
+                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+              >
+                {repeatPending ? "In corso..." : "Ripeti a campi invertiti"}
+              </button>
+            </form>
+            {repeatResult && (
+              <p className={`text-sm mt-2 ${repeatResult.startsWith("OK:") ? "text-green-600" : "text-red-600"}`}>
+                {repeatResult}
+              </p>
+            )}
           </div>
 
           <div className="bg-white rounded-xl border shadow-sm p-5">

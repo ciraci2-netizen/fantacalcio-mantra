@@ -46,6 +46,11 @@ function MatchdayCard({
         <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
         <span className="text-sm font-semibold text-gray-700">Giornata {md.number}</span>
       </div>
+      {md.matches.length === 0 && (
+        <div className="px-4 py-8 text-center text-sm text-gray-400">
+          Calendario non ancora generato per questa giornata.
+        </div>
+      )}
       <div className="divide-y">
         {md.matches.map((m) => {
           const isMyMatch = m.homeUser.id === currentUserId || m.awayUser.id === currentUserId;

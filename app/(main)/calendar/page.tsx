@@ -76,6 +76,19 @@ export default async function CalendarPage() {
     });
   }
 
+  // Aggiunge anche le giornate che esistono ma non hanno ancora partite
+  // generate/importate, cosi restano visibili (vuote) invece di sparire.
+  const allMatchdaysRes = await db.execute({
+    sql: `SELECT id, number FROM "Matchday" WHERE seasonId = ? ORDER BY number ASC`,
+    args: [season.id],
+  });
+  for (const row of allMatchdaysRes.rows) {
+    const mdId = row.id as number;
+    if (!matchdayMap.has(mdId)) {
+      matchdayMap.set(mdId, { id: mdId, number: row.number as number, matches: [] });
+    }
+  }
+
   const matchdays = [...matchdayMap.values()].sort((a, b) => a.number - b.number);
 
   // Default to most recent played matchday, or last if none played

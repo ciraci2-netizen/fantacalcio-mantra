@@ -53,37 +53,179 @@ export async function generateCalendar(prevState: string | null, formData: FormD
   const users = usersRes.rows;
   if (users.length !== 10) return `Servono esattamente 10 partecipanti (trovati: ${users.length}).`;
 
-  const schedule = generateRoundRobin(users.map((u) => u.id as number));
+  const teamIds = users.map((u) => u.id as number);
+  const schedule = generateRoundRobin(teamIds);
 
-  // Fill every matchday that exists for this season, cycling through the
-  // round-robin schedule as many times as needed — this supports any
-  // "numero giornate" the admin chose (not locked to a fixed number of
-  // legs). Home/away are swapped on alternating cycles so fixtures stay
-  // balanced even when the giornate count isn't an exact multiple of the
-  // round-robin length.
-  let matchdayIdx = 0;
-  let leg = 0;
-  while (matchdayIdx < matchdays.length) {
-    const swapSides = leg % 2 === 1;
-    for (const round of schedule) {
-      if (matchdayIdx >= matchdays.length) break;
-      const md = matchdays[matchdayIdx];
-      await db.execute({ sql: `DELETE FROM "Match" WHERE matchdayId = ?`, args: [md.id] });
-      for (const [homeId, awayId] of round) {
-        const [h, a] = swapSides ? [awayId, homeId] : [homeId, awayId];
-        await db.execute({
-          sql: `INSERT INTO "Match" (matchdayId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
-          args: [md.id, h, a],
-        });
-      }
-      matchdayIdx++;
+  // Chi-gioca-chi ad ogni turno viene preso ciclicamente dallo schedule
+  // (9 turni), ripetuto quante volte serve per coprire tutte le giornate
+  // della stagione. Il lato casa/trasferta invece NON segue piu' un cambio
+  // fisso ogni 9 giornate (quello produceva squadre con 9 partite in casa
+  // di fila e poi 9 in trasferta di fila): viene deciso giornata per
+  // giornata da un algoritmo goloso che tiene traccia, per ogni squadra,
+  // dell'ultimo lato giocato e di quante volte di fila - evitando piu' di
+  // 2 partite consecutive dello stesso lato e bilanciando nel tempo il
+  // totale casa/trasferta.
+  //
+  // Le giornate che hanno gia un risultato inserito (homeScore valorizzato
+  // su almeno una partita) vengono SALTATE: si lascia il turno cosi com'e,
+  // niente DELETE/INSERT - pero' il loro risultato reale viene comunque
+  // usato per aggiornare lo stato "ultimo lato/streak" di ogni squadra,
+  // cosi l'alternanza resta coerente anche subito dopo una giornata gia
+  // giocata. Cosi il bottone si puo premere in sicurezza anche a stagione
+  // iniziata, per rigenerare/bilanciare solo le giornate ancora da giocare,
+  // senza rischiare di cancellare risultati gia giocati.
+  type TeamState = { lastSide: "home" | "away" | null; streak: number; homeCount: number; awayCount: number };
+  const state = new Map<number, TeamState>();
+  for (const id of teamIds) state.set(id, { lastSide: null, streak: 0, homeCount: 0, awayCount: 0 });
+
+  function recordSide(teamId: number, side: "home" | "away") {
+    const s = state.get(teamId);
+    if (!s) return;
+    s.streak = s.lastSide === side ? s.streak + 1 : 1;
+    s.lastSide = side;
+    if (side === "home") s.homeCount += 1;
+    else s.awayCount += 1;
+  }
+
+  function chooseSides(p: number, q: number): [number, number] {
+    const sp = state.get(p)!;
+    const sq = state.get(q)!;
+    const pCanHome = !(sp.lastSide === "home" && sp.streak >= 2);
+    const pCanAway = !(sp.lastSide === "away" && sp.streak >= 2);
+    const qCanHome = !(sq.lastSide === "home" && sq.streak >= 2);
+    const qCanAway = !(sq.lastSide === "away" && sq.streak >= 2);
+
+    const optionA = pCanHome && qCanAway; // p in casa, q in trasferta
+    const optionB = qCanHome && pCanAway; // q in casa, p in trasferta
+
+    let home: number, away: number;
+    if (optionA && optionB) {
+      // entrambe valide: da' la casa a chi ne ha fatte meno finora
+      if (sp.homeCount <= sq.homeCount) { home = p; away = q; } else { home = q; away = p; }
+    } else if (optionA) {
+      home = p; away = q;
+    } else if (optionB) {
+      home = q; away = p;
+    } else {
+      // nessuna delle due rispetta il limite (caso raro): meglio del male,
+      // da' comunque la casa a chi ha giocato meno in casa finora
+      if (sp.homeCount <= sq.homeCount) { home = p; away = q; } else { home = q; away = p; }
     }
-    leg++;
+
+    recordSide(home, "home");
+    recordSide(away, "away");
+    return [home, away];
+  }
+
+  let updated = 0;
+  let skipped = 0;
+
+  for (let idx = 0; idx < matchdays.length; idx++) {
+    const md = matchdays[idx];
+    const round = schedule[idx % schedule.length];
+
+    const playedRes = await db.execute({
+      sql: `SELECT homeUserId, awayUserId FROM "Match" WHERE matchdayId = ? AND homeScore IS NOT NULL`,
+      args: [md.id],
+    });
+
+    if (playedRes.rows.length > 0) {
+      for (const r of playedRes.rows) {
+        recordSide(r.homeUserId as number, "home");
+        recordSide(r.awayUserId as number, "away");
+      }
+      skipped++;
+      continue;
+    }
+
+    await db.execute({ sql: `DELETE FROM "Match" WHERE matchdayId = ?`, args: [md.id] });
+    for (const [p, q] of round) {
+      const [h, a] = chooseSides(p, q);
+      await db.execute({
+        sql: `INSERT INTO "Match" (matchdayId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
+        args: [md.id, h, a],
+      });
+    }
+    updated++;
   }
 
   revalidatePath("/admin/schedule");
   revalidatePath("/calendar");
-  return null;
+  if (skipped > 0) {
+    return `OK: generate/aggiornate ${updated} giornate. ${skipped} gia con un risultato inserito sono state lasciate intatte.`;
+  }
+  return `OK: generate/aggiornate ${updated} giornate.`;
+}
+
+export async function repeatCalendarFromFirstLeg(prevState: string | null, formData: FormData) {
+  const session = await getSession();
+  if (!session?.isAdmin) return "Non autorizzato.";
+
+  const seasonId = parseInt(formData.get("seasonId") as string);
+  const db = getDb();
+
+  const seasonRes = await db.execute({ sql: `SELECT id FROM "Season" WHERE id = ?`, args: [seasonId] });
+  if (seasonRes.rows.length === 0) return "Stagione non trovata.";
+
+  const matchdaysRes = await db.execute({
+    sql: `SELECT id, number FROM "Matchday" WHERE seasonId = ? ORDER BY number ASC`,
+    args: [seasonId],
+  });
+  const matchdays = matchdaysRes.rows;
+  if (matchdays.length < 9) return "Servono almeno 9 giornate per usare questa funzione.";
+
+  // Legge le partite delle prime 9 giornate (chi gioca chi, chi e' in casa)
+  // cosi' come sono state inserite (a mano, da CSV, o dalla generazione
+  // automatica) - devono gia' esistere prima di usare questo bottone.
+  const firstNine: { homeUserId: number; awayUserId: number }[][] = [];
+  for (let i = 0; i < 9; i++) {
+    const md = matchdays[i];
+    const res = await db.execute({
+      sql: `SELECT homeUserId, awayUserId FROM "Match" WHERE matchdayId = ?`,
+      args: [md.id],
+    });
+    if (res.rows.length === 0) {
+      return `Manca il calendario della giornata ${md.number}: inseriscilo prima (a mano, da CSV o con la generazione automatica) e riprova.`;
+    }
+    firstNine.push(
+      res.rows.map((r) => ({ homeUserId: r.homeUserId as number, awayUserId: r.awayUserId as number }))
+    );
+  }
+
+  // Ripete le prime 9 giornate per tutte quelle successive, ciclicamente,
+  // invertendo ogni volta casa/trasferta rispetto alle prime 9. Le giornate
+  // che hanno gia' un risultato inserito vengono lasciate intatte.
+  let updated = 0;
+  let skipped = 0;
+  for (let idx = 9; idx < matchdays.length; idx++) {
+    const md = matchdays[idx];
+    const roundInCycle = idx % 9;
+
+    const playedRes = await db.execute({
+      sql: `SELECT 1 FROM "Match" WHERE matchdayId = ? AND homeScore IS NOT NULL LIMIT 1`,
+      args: [md.id],
+    });
+    if (playedRes.rows.length > 0) {
+      skipped++;
+      continue;
+    }
+
+    await db.execute({ sql: `DELETE FROM "Match" WHERE matchdayId = ?`, args: [md.id] });
+    for (const m of firstNine[roundInCycle]) {
+      await db.execute({
+        sql: `INSERT INTO "Match" (matchdayId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
+        args: [md.id, m.awayUserId, m.homeUserId],
+      });
+    }
+    updated++;
+  }
+
+  revalidatePath("/admin/schedule");
+  revalidatePath("/calendar");
+  if (skipped > 0) {
+    return `OK: ripetute/aggiornate ${updated} giornate a campi invertiti rispetto alle prime 9. ${skipped} gia con un risultato inserito sono state lasciate intatte.`;
+  }
+  return `OK: ripetute/aggiornate ${updated} giornate a campi invertiti rispetto alle prime 9.`;
 }
 
 function generateRoundRobin(teams: number[]): [number, number][][] {
