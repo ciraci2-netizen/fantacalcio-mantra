@@ -25,8 +25,12 @@ type Props = {
     numMovimento: number;
     scoreConversion: {
       enabled: boolean;
-      minScore: number;
-      step: number;
+      bands: { minScore: number; goals: number }[];
+      extrapolateStep: number;
+      homeFirstGoalThreshold: number;
+      bonusGoalEnabled: boolean;
+      bonusGoalDiffBandMargin: number;
+      bonusGoalSameBandMargin: number;
     };
     defenseModifierEnabled: boolean;
   };
@@ -47,26 +51,77 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
   /* Distacco minimo per vincere */
   const [minWinMargin, setMinWinMargin] = useState<number>(settings.minWinMargin);
 
-  /* ── Conversione punteggio → gol ──────────────────────────── */
+  /* -- Conversione punteggio -> gol (fasce personalizzabili) -- */
   const [scoreConvEnabled, setScoreConvEnabled] = useState<boolean>(settings.scoreConversion.enabled);
-  const [minScore, setMinScore] = useState<number>(settings.scoreConversion.minScore);
-  const [convStep, setConvStep] = useState<number>(settings.scoreConversion.step);
+  const [bands, setBands] = useState<{ minScore: number; goals: number }[]>(
+    settings.scoreConversion.bands.length > 0
+      ? settings.scoreConversion.bands
+      : [{ minScore: 66, goals: 1 }]
+  );
+  const [extrapolateStep, setExtrapolateStep] = useState<number>(settings.scoreConversion.extrapolateStep);
+
+  /* Soglia fissa "quota" per il 1o gol della squadra di casa (regola
+     separata dal bonus punti fattore campo qui sopra; 0 = disabilitata) */
+  const [homeFirstGoalThreshold, setHomeFirstGoalThreshold] = useState<number>(
+    settings.scoreConversion.homeFirstGoalThreshold
+  );
+
+  /* Regola "vittoria e gol omaggio" (distacco minimo per fascia, regola
+     separata dal "distacco minimo per vincere" qui sopra) */
+  const [bonusGoalEnabled, setBonusGoalEnabled] = useState<boolean>(settings.scoreConversion.bonusGoalEnabled);
+  const [bonusGoalDiffBandMargin, setBonusGoalDiffBandMargin] = useState<number>(
+    settings.scoreConversion.bonusGoalDiffBandMargin
+  );
+  const [bonusGoalSameBandMargin, setBonusGoalSameBandMargin] = useState<number>(
+    settings.scoreConversion.bonusGoalSameBandMargin
+  );
 
   /* ── Modificatore difensivo ────────────────────────────────── */
   const [defenseModEnabled, setDefenseModEnabled] = useState<boolean>(settings.defenseModifierEnabled);
 
-  /** Anteprima: [etichetta range, gol] */
+  const sortedBands = useMemo(
+    () => [...bands].filter((b) => !isNaN(b.minScore) && !isNaN(b.goals)).sort((a, b) => a.minScore - b.minScore),
+    [bands]
+  );
+
+  const updateBand = (idx: number, field: "minScore" | "goals", value: number) => {
+    setBands((prev) => prev.map((b, i) => (i === idx ? { ...b, [field]: value } : b)));
+  };
+  const removeBand = (idx: number) => {
+    setBands((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev));
+  };
+  const addBand = () => {
+    setBands((prev) => {
+      const last = [...prev].sort((a, b) => a.minScore - b.minScore).at(-1);
+      const nextMin = last ? last.minScore + (extrapolateStep || 4) : 66;
+      const nextGoals = last ? last.goals + 1 : 1;
+      return [...prev, { minScore: nextMin, goals: nextGoals }];
+    });
+  };
+
+  /** Anteprima calcolata dalle fasce ordinate + step di estrapolazione oltre l'ultima */
   const scoreConvPreview = useMemo(() => {
-    const rows: [string, number][] = [];
-    // 0 gol: tutto ciò che è sotto minScore
-    rows.push([`0 – ${minScore - 0.5} pt`, 0]);
-    for (let g = 1; g <= 6; g++) {
-      const low = minScore + (g - 1) * convStep;
-      const high = minScore + g * convStep - 0.5;
-      rows.push([`${low} – ${high} pt`, g]);
-    }
+    const rows: { range: string; goals: string }[] = [];
+    if (sortedBands.length === 0) return rows;
+    rows.push({ range: `< ${sortedBands[0].minScore} pt`, goals: "0" });
+    sortedBands.forEach((band, i) => {
+      const next = sortedBands[i + 1];
+      if (next) {
+        const high = next.minScore - 0.5;
+        rows.push({
+          range: high >= band.minScore ? `${band.minScore} - ${high} pt` : `${band.minScore} pt`,
+          goals: String(band.goals),
+        });
+      } else {
+        const step = extrapolateStep > 0 ? extrapolateStep : 4;
+        rows.push({
+          range: `>= ${band.minScore} pt`,
+          goals: `${band.goals} (poi +1 ogni ${step}pt)`,
+        });
+      }
+    });
     return rows;
-  }, [minScore, convStep]);
+  }, [sortedBands, extrapolateStep]);
 
   if (!seasonId) {
     return (
@@ -93,10 +148,15 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
         <input type="hidden" name="homeAdvantage" value={homeAdv} />
         {/* Distacco minimo per vincere */}
         <input type="hidden" name="minWinMargin" value={minWinMargin} />
-        {/* Conversione punteggio → gol */}
+        {/* Conversione punteggio -> gol (fasce) */}
         <input type="hidden" name="scoreConvEnabled" value={scoreConvEnabled ? "1" : "0"} />
-        <input type="hidden" name="scoreConvMinScore" value={minScore} />
-        <input type="hidden" name="scoreConvStep" value={convStep} />
+        <input type="hidden" name="scoreConvBands" value={JSON.stringify(bands)} />
+        <input type="hidden" name="scoreConvExtrapolateStep" value={extrapolateStep} />
+        <input type="hidden" name="scoreConvHomeFirstGoalThreshold" value={homeFirstGoalThreshold} />
+        {/* Vittoria e gol omaggio */}
+        <input type="hidden" name="scoreConvBonusGoalEnabled" value={bonusGoalEnabled ? "1" : "0"} />
+        <input type="hidden" name="scoreConvBonusGoalDiffBandMargin" value={bonusGoalDiffBandMargin} />
+        <input type="hidden" name="scoreConvBonusGoalSameBandMargin" value={bonusGoalSameBandMargin} />
         {/* Modificatore difensivo */}
         <input type="hidden" name="defenseModifierEnabled" value={defenseModEnabled ? "1" : "0"} />
 
@@ -242,6 +302,37 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
                 </div>
               )}
             </div>
+
+            <div className="mt-5 pt-5 border-t border-gray-100">
+              <p className="text-sm text-gray-600 mb-3">
+                <strong>Regola separata</strong>: indipendentemente dal bonus punti qui sopra, puoi fissare una
+                soglia diversa (una &quot;quota&quot;) per il <strong>1o gol</strong> della sola squadra di casa,
+                invece della soglia normale della prima fascia (vedi Fasce di conversione piu sotto). Le fasce
+                successive (2o gol, 3o gol...) non cambiano.
+              </p>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1">
+                  Quota 1o gol in casa
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={homeFirstGoalThreshold}
+                    onChange={(e) => setHomeFirstGoalThreshold(parseFloat(e.target.value) || 0)}
+                    className="w-28 border rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                  <span className="text-sm text-gray-500">
+                    punti {homeFirstGoalThreshold > 0 ? `(invece di ${sortedBands[0]?.minScore ?? 66})` : ""}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Imposta <strong>0</strong> per disabilitare (si usa sempre la soglia normale della prima fascia)
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -257,6 +348,12 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
               vincere la partita (fattore campo gia applicato). Sotto questa soglia il risultato e
               considerato <strong>pareggio</strong>, anche se un punteggio e comunque piu alto.
             </p>
+            {bonusGoalEnabled && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+                Hai attivato piu sotto la regola &quot;Vittoria e gol omaggio&quot;: quando e attiva,
+                questa impostazione viene ignorata (si usano le soglie per fascia di quella regola).
+              </p>
+            )}
             <div className="flex items-center gap-4 flex-wrap">
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">
@@ -347,52 +444,87 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
 
             {scoreConvEnabled && (
               <>
-                {/* Parametri formula */}
+                {/* Editor fasce */}
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Parametri della conversione</h3>
-                  <div className="flex flex-wrap items-end gap-6">
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 block mb-1">
-                        Punteggio per il 1° gol
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={50}
-                          max={80}
-                          step={0.5}
-                          value={minScore}
-                          onChange={(e) => setMinScore(parseFloat(e.target.value) || 66)}
-                          className="w-24 border rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-orange-400"
-                        />
-                        <span className="text-sm text-gray-500">pt</span>
-                      </div>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Sotto questo valore = 0 gol
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 block mb-1">
-                        Punti per ogni gol aggiuntivo
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={1}
-                          max={10}
-                          step={0.5}
-                          value={convStep}
-                          onChange={(e) => setConvStep(parseFloat(e.target.value) || 4)}
-                          className="w-24 border rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-orange-400"
-                        />
-                        <span className="text-sm text-gray-500">pt / gol</span>
-                      </div>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Ogni {convStep}pt in più = +1 gol
-                      </p>
-                    </div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Fasce di conversione</h3>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Ogni riga dice: a partire da quanti punti si ottiene quel numero di gol. Le fasce non devono
+                    per forza avere la stessa larghezza (es. la 1a e la 2a possono essere piu larghe delle altre).
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="text-sm border-collapse w-full max-w-md">
+                      <thead>
+                        <tr className="bg-gray-50">
+                          <th className="border px-3 py-2 text-left font-medium text-gray-600">Da (pt)</th>
+                          <th className="border px-3 py-2 text-left font-medium text-gray-600">Gol</th>
+                          <th className="border px-3 py-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bands.map((band, idx) => (
+                          <tr key={idx} className="bg-white">
+                            <td className="border px-2 py-1.5">
+                              <input
+                                type="number"
+                                step={0.5}
+                                value={band.minScore}
+                                onChange={(e) => updateBand(idx, "minScore", parseFloat(e.target.value))}
+                                className="w-24 border rounded px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-orange-400"
+                              />
+                            </td>
+                            <td className="border px-2 py-1.5">
+                              <input
+                                type="number"
+                                min={1}
+                                value={band.goals}
+                                onChange={(e) => updateBand(idx, "goals", parseInt(e.target.value, 10))}
+                                className="w-16 border rounded px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-orange-400"
+                              />
+                            </td>
+                            <td className="border px-2 py-1.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => removeBand(idx)}
+                                disabled={bands.length <= 1}
+                                className="text-xs text-red-500 hover:text-red-700 disabled:opacity-30 disabled:cursor-not-allowed"
+                              >
+                                x
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
+                  <button
+                    type="button"
+                    onClick={addBand}
+                    className="mt-2 text-xs bg-orange-100 hover:bg-orange-200 text-orange-700 px-3 py-1.5 rounded-lg font-medium"
+                  >
+                    + Aggiungi fascia
+                  </button>
+                </div>
+
+                {/* Step di estrapolazione oltre l'ultima fascia */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 block mb-1">
+                    Punti per ogni gol oltre l&apos;ultima fascia
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      step={0.5}
+                      value={extrapolateStep}
+                      onChange={(e) => setExtrapolateStep(parseFloat(e.target.value) || 4)}
+                      className="w-24 border rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-orange-400"
+                    />
+                    <span className="text-sm text-gray-500">pt / gol</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Dopo l&apos;ultima fascia definita sopra, ogni {extrapolateStep}pt in piu = +1 gol
+                  </p>
                 </div>
 
                 {/* Tabella anteprima */}
@@ -409,28 +541,16 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
                         </tr>
                       </thead>
                       <tbody>
-                        {scoreConvPreview.map(([range, goals]) => (
-                          <tr key={range} className={goals % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-                            <td className="border px-4 py-2 text-gray-700 font-mono text-xs">{range}</td>
+                        {scoreConvPreview.map((row) => (
+                          <tr key={row.range} className="bg-white even:bg-gray-50">
+                            <td className="border px-4 py-2 text-gray-700 font-mono text-xs">{row.range}</td>
                             <td className="border px-4 py-2 text-center">
-                              <span
-                                className={`inline-block font-bold px-3 py-0.5 rounded-full text-xs ${
-                                  goals === 0
-                                    ? "bg-gray-100 text-gray-500"
-                                    : goals >= 3
-                                    ? "bg-orange-100 text-orange-700"
-                                    : "bg-green-100 text-green-700"
-                                }`}
-                              >
-                                {goals} {goals === 1 ? "gol" : "gol"}
+                              <span className="inline-block font-bold px-3 py-0.5 rounded-full text-xs bg-green-100 text-green-700">
+                                {row.goals}
                               </span>
                             </td>
                           </tr>
                         ))}
-                        <tr className="bg-gray-50 text-xs text-gray-400 italic">
-                          <td className="border px-4 py-1.5 text-gray-500">≥ {minScore + 6 * convStep} pt</td>
-                          <td className="border px-4 py-1.5 text-center">7+ gol</td>
-                        </tr>
                       </tbody>
                     </table>
                   </div>
@@ -439,6 +559,87 @@ export default function SettingsClient({ seasonId, seasonName, settings, users }
             )}
           </div>
         </div>
+
+        {/* Card 3b: Vittoria e gol omaggio */}
+        {scoreConvEnabled && (
+          <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+            <div className="bg-pink-50 border-b border-pink-100 px-5 py-3 flex items-center gap-2">
+              <span className="text-lg">{"\u{1F381}"}</span>
+              <h2 className="font-semibold text-gray-700">Vittoria e gol omaggio</h2>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-600">
+                Regola alternativa al &quot;Distacco minimo per vincere&quot; qui sopra: quando e attiva, decide
+                lei chi vince (e la ignora). Le due squadre devono raggiungere almeno la soglia del 1o gol; poi
+                serve un distacco minimo di fantapunti che dipende dal fatto che le due squadre siano nella{" "}
+                <strong>stessa fascia</strong> (stessi gol) o in <strong>fasce diverse</strong>. Se il distacco e
+                raggiunto, la squadra avanti vince e riceve anche un <strong>gol omaggio</strong> in piu rispetto
+                a quanto darebbe la sola conversione punteggio-gol.
+              </p>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setBonusGoalEnabled(!bonusGoalEnabled)}
+                  className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${
+                    bonusGoalEnabled ? "bg-green-500" : "bg-gray-300"
+                  }`}
+                  aria-label="Attiva/disattiva vittoria e gol omaggio"
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                      bonusGoalEnabled ? "translate-x-6" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+                <span className="text-sm font-medium text-gray-700">
+                  {bonusGoalEnabled
+                    ? "\u2705 Attiva - sostituisce il distacco minimo per vincere qui sopra"
+                    : "\u274C Disattiva - resta valido il distacco minimo per vincere qui sopra"}
+                </span>
+              </div>
+
+              {bonusGoalEnabled && (
+                <div className="flex flex-wrap items-end gap-6">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1">
+                      Distacco minimo - fasce diverse
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        step={0.5}
+                        value={bonusGoalDiffBandMargin}
+                        onChange={(e) => setBonusGoalDiffBandMargin(parseFloat(e.target.value) || 0)}
+                        className="w-24 border rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-pink-400"
+                      />
+                      <span className="text-sm text-gray-500">pt</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1">
+                      Distacco minimo - stessa fascia
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        step={0.5}
+                        value={bonusGoalSameBandMargin}
+                        onChange={(e) => setBonusGoalSameBandMargin(parseFloat(e.target.value) || 0)}
+                        className="w-24 border rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-pink-400"
+                      />
+                      <span className="text-sm text-gray-500">pt</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── Card 4: Modificatore Difensivo ──────────────────── */}
         <div className="bg-white rounded-xl border shadow-sm overflow-hidden">

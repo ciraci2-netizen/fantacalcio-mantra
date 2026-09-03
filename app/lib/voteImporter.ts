@@ -13,6 +13,7 @@ import {
   calculateDefenseModifier,
   convertScoreToGoals,
   computeAutoSubstitutions,
+  normalizeScoreConversion,
   DEFAULT_GOAL_THRESHOLDS,
   DEFAULT_SCORE_CONVERSION,
   type GoalThreshold,
@@ -247,7 +248,7 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
       } catch { /* usa default */ }
       try {
         if (settingsRes.rows[0].scoreConversion) {
-          scoreConversion = JSON.parse(settingsRes.rows[0].scoreConversion as string);
+          scoreConversion = normalizeScoreConversion(JSON.parse(settingsRes.rows[0].scoreConversion as string));
         }
       } catch { /* usa default */ }
     }
@@ -390,43 +391,83 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
     const homeScore = Math.round((rawHomeScore + awayDefense.malus + homeAdvantage) * 100) / 100;
     const awayScore = Math.round((rawAwayScore + homeDefense.malus) * 100) / 100;
 
-    // Convert scores to goals (Mantra system) — null when conversion disabled
-    let homeGoals = scoreConversion.enabled ? convertScoreToGoals(homeScore, scoreConversion) : null;
+    // Convert scores to goals (Mantra system): null quando la conversione e disabilitata.
+    // La squadra di casa puo avere una soglia fissa diversa per il 1 gol
+    // (homeFirstGoalThreshold, es. 68 invece di 66): regola separata dal
+    // bonus punti fattore campo, tocca solo la prima fascia.
+    const homeFirstGoalOverride =
+      scoreConversion.homeFirstGoalThreshold > 0 ? scoreConversion.homeFirstGoalThreshold : undefined;
+    let homeGoals = scoreConversion.enabled
+      ? convertScoreToGoals(homeScore, scoreConversion, homeFirstGoalOverride)
+      : null;
     let awayGoals = scoreConversion.enabled ? convertScoreToGoals(awayScore, scoreConversion) : null;
 
     let homePoints = 1;
     let awayPoints = 1;
 
-    // Distacco minimo di fantapunti per vincere (impostazione lega,
-    // minWinMargin): sotto questa soglia il risultato resta pareggio anche
-    // se un punteggio (o i gol da esso derivati) e piu alto dell altro.
-    // Calcolato sugli stessi punteggi mostrati (fattore campo gia incluso),
-    // cosi da coprire anche il caso "69.5 a 70" con margine reale 0.5.
-    const rawMargin = Math.abs(homeScore - awayScore);
+    if (scoreConversion.bonusGoalEnabled && scoreConversion.enabled && homeGoals !== null && awayGoals !== null) {
+      // Regola "vittoria e gol omaggio": distacco minimo diverso a seconda
+      // che le due squadre siano nella STESSA fascia (stessi gol convertiti,
+      // altrimenti sarebbe pareggio) o in fasce DIVERSE. Se il distacco
+      // richiesto e raggiunto, la squadra avanti vince E riceve un gol
+      // omaggio in piu rispetto a quanto darebbe la sola conversione; se
+      // non e raggiunto, e sempre pareggio (gol allineati al piu basso).
+      // Il vincitore deve inoltre aver raggiunto almeno la soglia del 1
+      // gol (la propria, se e la squadra di casa con soglia fissa). Per la
+      // squadra di casa la soglia include anche il bonus fattore campo
+      // (homeAdvantage): il punteggio mostrato lo contiene gia, quindi va
+      // sommato anche alla soglia richiesta, altrimenti il bonus farebbe
+      // raggiungere il minimo "gratis" (es. soglia 66 + fattore campo 2 =
+      // serve davvero 68, non 66).
+      const sameBand = homeGoals === awayGoals;
+      const requiredMargin = sameBand ? scoreConversion.bonusGoalSameBandMargin : scoreConversion.bonusGoalDiffBandMargin;
+      const diff = Math.round((homeScore - awayScore) * 100) / 100;
+      const leaderIsHome = diff > 0;
+      const leaderScore = leaderIsHome ? homeScore : awayScore;
+      const leaderMinThreshold = leaderIsHome
+        ? (homeFirstGoalOverride ?? scoreConversion.bands[0]?.minScore ?? 66) + homeAdvantage
+        : scoreConversion.bands[0]?.minScore ?? 66;
 
-    if (rawMargin >= minWinMargin) {
-      if (scoreConversion.enabled && homeGoals !== null && awayGoals !== null) {
-        // Vittoria/sconfitta/pareggio decisi dagli STESSI gol mostrati nel tabellino
-        if (homeGoals > awayGoals) { homePoints = 3; awayPoints = 0; }
-        else if (awayGoals > homeGoals) { homePoints = 0; awayPoints = 3; }
-      } else {
-        // Senza conversione in gol: confronto diretto sugli STESSI punteggi mostrati
-        if (homeScore > awayScore) { homePoints = 3; awayPoints = 0; }
-        else if (awayScore > homeScore) { homePoints = 0; awayPoints = 3; }
+      if (diff !== 0 && Math.abs(diff) >= requiredMargin && leaderScore >= leaderMinThreshold) {
+        if (leaderIsHome) { homePoints = 3; awayPoints = 0; homeGoals += 1; }
+        else { awayPoints = 3; homePoints = 0; awayGoals += 1; }
+      } else if (homeGoals !== awayGoals) {
+        const tiedGoals = Math.min(homeGoals, awayGoals);
+        homeGoals = tiedGoals;
+        awayGoals = tiedGoals;
       }
-    }
+    } else {
+      // Distacco minimo di fantapunti per vincere (impostazione lega,
+      // minWinMargin): sotto questa soglia il risultato resta pareggio anche
+      // se un punteggio (o i gol da esso derivati) e piu alto dell altro.
+      // Calcolato sugli stessi punteggi mostrati (fattore campo gia incluso),
+      // cosi da coprire anche il caso "69.5 a 70" con margine reale 0.5.
+      const rawMargin = Math.abs(homeScore - awayScore);
 
-    // Il distacco minimo puo forzare un pareggio (rawMargin < minWinMargin)
-    // anche quando i gol convertiti sarebbero diversi (es. 71.5 vs 69.0 pt
-    // -> 2 vs 1 gol, ma sotto la soglia): senza questo allineamento si
-    // vedrebbe "2-1" etichettato "Pareggio", di nuovo un risultato mostrato
-    // che non corrisponde ai punti assegnati. Se il pareggio e stato deciso,
-    // i gol mostrati vengono allineati al piu basso dei due (non si regalano
-    // gol che il distacco minimo non ha confermato).
-    if (homePoints === 1 && awayPoints === 1 && homeGoals !== null && awayGoals !== null && homeGoals !== awayGoals) {
-      const tiedGoals = Math.min(homeGoals, awayGoals);
-      homeGoals = tiedGoals;
-      awayGoals = tiedGoals;
+      if (rawMargin >= minWinMargin) {
+        if (scoreConversion.enabled && homeGoals !== null && awayGoals !== null) {
+          // Vittoria/sconfitta/pareggio decisi dagli STESSI gol mostrati nel tabellino
+          if (homeGoals > awayGoals) { homePoints = 3; awayPoints = 0; }
+          else if (awayGoals > homeGoals) { homePoints = 0; awayPoints = 3; }
+        } else {
+          // Senza conversione in gol: confronto diretto sugli STESSI punteggi mostrati
+          if (homeScore > awayScore) { homePoints = 3; awayPoints = 0; }
+          else if (awayScore > homeScore) { homePoints = 0; awayPoints = 3; }
+        }
+      }
+
+      // Il distacco minimo puo forzare un pareggio (rawMargin < minWinMargin)
+      // anche quando i gol convertiti sarebbero diversi (es. 71.5 vs 69.0 pt
+      // -> 2 vs 1 gol, ma sotto la soglia): senza questo allineamento si
+      // vedrebbe "2-1" etichettato "Pareggio", di nuovo un risultato mostrato
+      // che non corrisponde ai punti assegnati. Se il pareggio e stato deciso,
+      // i gol mostrati vengono allineati al piu basso dei due (non si regalano
+      // gol che il distacco minimo non ha confermato).
+      if (homePoints === 1 && awayPoints === 1 && homeGoals !== null && awayGoals !== null && homeGoals !== awayGoals) {
+        const tiedGoals = Math.min(homeGoals, awayGoals);
+        homeGoals = tiedGoals;
+        awayGoals = tiedGoals;
+      }
     }
 
     await db.execute({

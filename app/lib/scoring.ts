@@ -293,32 +293,106 @@ export const DEFAULT_GOAL_THRESHOLDS: GoalThreshold[] = [
 
 // ── Score-to-goals conversion (Mantra system) ─────────────────────────────────
 
+export type ScoreBand = { minScore: number; goals: number };
+
 export interface ScoreConversion {
   enabled: boolean;
-  minScore: number; // punteggio per segnare esattamente 1 gol (default 66)
-  step: number;     // punti aggiuntivi per ogni gol in più (default 4)
+  bands: ScoreBand[];       // fasce punteggio->gol, in ordine di minScore crescente
+  extrapolateStep: number;  // punti aggiuntivi per ogni gol oltre l'ultima fascia definita (default 4)
+  homeFirstGoalThreshold: number; // 0 = disabilitato; se >0, sovrascrive SOLO la soglia del 1 gol per la squadra di casa (fattore campo "quota fissa", indipendente dal bonus punti fattore campo)
+  bonusGoalEnabled: boolean;      // regola "vittoria e gol omaggio" (distacco minimo per fascia)
+  bonusGoalDiffBandMargin: number; // distacco minimo richiesto quando le due squadre sono in fasce diverse
+  bonusGoalSameBandMargin: number; // distacco minimo richiesto quando le due squadre sono nella stessa fascia
 }
 
+// Fasce ufficiali di conversione punteggio->gol: le prime due sono piu larghe
+// (66-71,999 = 1 gol, 72-76,999 = 2 gol), poi si stabilizzano su 4 punti a gol.
 export const DEFAULT_SCORE_CONVERSION: ScoreConversion = {
   enabled: false,
-  minScore: 66,
-  step: 4,
+  bands: [
+    { minScore: 66, goals: 1 },
+    { minScore: 72, goals: 2 },
+    { minScore: 77, goals: 3 },
+    { minScore: 81, goals: 4 },
+    { minScore: 85, goals: 5 },
+    { minScore: 89, goals: 6 },
+  ],
+  extrapolateStep: 4,
+  homeFirstGoalThreshold: 0,
+  bonusGoalEnabled: false,
+  bonusGoalDiffBandMargin: 3,
+  bonusGoalSameBandMargin: 4,
 };
 
 /**
- * Converte il punteggio totale di una formazione in numero di gol (sistema Mantra).
- * Esempi con minScore=66, step=4:
- *   < 66  → 0 gol
- *   66–69.5 → 1 gol
- *   70–73.5 → 2 gol
- *   74–77.5 → 3 gol
+ * Normalizza un oggetto scoreConversion letto dal DB (anche nel vecchio
+ * formato {enabled, minScore, step}, senza fasce esplicite) nel formato
+ * attuale a fasce. Cosi le leghe che avevano gia salvato minScore/step
+ * continuano a funzionare identiche a prima, e ogni campo nuovo mancante
+ * prende un default sicuro (disabilitato).
+ */
+export function normalizeScoreConversion(
+  raw: (Partial<ScoreConversion> & { minScore?: number; step?: number }) | null | undefined
+): ScoreConversion {
+  if (!raw) return { ...DEFAULT_SCORE_CONVERSION, bands: DEFAULT_SCORE_CONVERSION.bands.map((b) => ({ ...b })) };
+
+  let bands = raw.bands;
+  let extrapolateStep = raw.extrapolateStep;
+
+  if (!bands || !Array.isArray(bands) || bands.length === 0) {
+    // Formato precedente: fasce uniformi generate da minScore/step
+    const minScore = typeof raw.minScore === "number" ? raw.minScore : DEFAULT_SCORE_CONVERSION.bands[0].minScore;
+    const step = typeof raw.step === "number" && raw.step > 0 ? raw.step : DEFAULT_SCORE_CONVERSION.extrapolateStep;
+    bands = Array.from({ length: 6 }, (_, i) => ({ minScore: minScore + i * step, goals: i + 1 }));
+    extrapolateStep = step;
+  }
+  if (!extrapolateStep || extrapolateStep <= 0) extrapolateStep = DEFAULT_SCORE_CONVERSION.extrapolateStep;
+
+  return {
+    enabled: Boolean(raw.enabled),
+    bands: [...bands].sort((a, b) => a.minScore - b.minScore),
+    extrapolateStep,
+    homeFirstGoalThreshold: typeof raw.homeFirstGoalThreshold === "number" ? raw.homeFirstGoalThreshold : 0,
+    bonusGoalEnabled: Boolean(raw.bonusGoalEnabled),
+    bonusGoalDiffBandMargin:
+      typeof raw.bonusGoalDiffBandMargin === "number" ? raw.bonusGoalDiffBandMargin : DEFAULT_SCORE_CONVERSION.bonusGoalDiffBandMargin,
+    bonusGoalSameBandMargin:
+      typeof raw.bonusGoalSameBandMargin === "number" ? raw.bonusGoalSameBandMargin : DEFAULT_SCORE_CONVERSION.bonusGoalSameBandMargin,
+  };
+}
+
+/**
+ * Converte il punteggio totale di una formazione in numero di gol (sistema
+ * Mantra), usando le fasce configurate (non necessariamente a step fisso:
+ * le prime fasce possono essere piu larghe delle successive). Oltre
+ * l'ultima fascia definita, si continua ad aggiungere un gol ogni
+ * extrapolateStep punti. firstBandOverride sovrascrive SOLO la soglia
+ * della prima fascia (usato per la soglia fissa "quota" della squadra di
+ * casa, regola separata dal bonus punti fattore campo).
  */
 export function convertScoreToGoals(
   score: number,
-  conv: ScoreConversion = DEFAULT_SCORE_CONVERSION
+  conv: ScoreConversion = DEFAULT_SCORE_CONVERSION,
+  firstBandOverride?: number
 ): number {
   if (!conv.enabled) return 0;
-  return Math.max(0, Math.floor((score - (conv.minScore - conv.step)) / conv.step));
+  const bands = [...conv.bands].sort((a, b) => a.minScore - b.minScore);
+  if (bands.length === 0) return 0;
+  if (firstBandOverride !== undefined && firstBandOverride > 0) {
+    bands[0] = { ...bands[0], minScore: firstBandOverride };
+  }
+  if (score < bands[0].minScore) return 0;
+
+  const step = conv.extrapolateStep > 0 ? conv.extrapolateStep : 4;
+  for (let i = bands.length - 1; i >= 0; i--) {
+    if (score >= bands[i].minScore) {
+      if (i === bands.length - 1) {
+        return bands[i].goals + Math.floor((score - bands[i].minScore) / step);
+      }
+      return bands[i].goals;
+    }
+  }
+  return 0;
 }
 
 /** Calcola il bonus soglie gol per una formazione */

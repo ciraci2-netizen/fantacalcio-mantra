@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
-import { DEFAULT_GOAL_THRESHOLDS, DEFAULT_SCORE_CONVERSION } from "@/app/lib/scoring";
+import { DEFAULT_GOAL_THRESHOLDS, DEFAULT_SCORE_CONVERSION, normalizeScoreConversion } from "@/app/lib/scoring";
 import {
   MIN_PORTIERI, MAX_PORTIERI, DEFAULT_PORTIERI,
   MIN_MOVIMENTO, MAX_MOVIMENTO, DEFAULT_MOVIMENTO,
@@ -44,15 +44,63 @@ export async function saveLeagueSettings(prevState: string | null, formData: For
   // Goal thresholds — disabled by default (no bonus), preserved for backward compat
   const goalThresholds = JSON.stringify(DEFAULT_GOAL_THRESHOLDS);
 
-  // Score-to-goals conversion (Mantra system)
+  // Score-to-goals conversion (Mantra system): fasce personalizzabili
   const scoreConvEnabled = formData.get("scoreConvEnabled") === "1";
-  const scoreConvMinScore = parseFloat(formData.get("scoreConvMinScore") as string) || DEFAULT_SCORE_CONVERSION.minScore;
-  const scoreConvStep = parseFloat(formData.get("scoreConvStep") as string) || DEFAULT_SCORE_CONVERSION.step;
-  const scoreConversion = JSON.stringify({
-    enabled: scoreConvEnabled,
-    minScore: scoreConvMinScore,
-    step: scoreConvStep,
-  });
+
+  // Fasce: array [{minScore, goals}, ...] inviato come JSON da un campo
+  // nascosto (l'editor e lato client). Righe non valide vengono scartate;
+  // se non resta nulla di valido si torna alle fasce di default.
+  let scoreConvBands = DEFAULT_SCORE_CONVERSION.bands;
+  try {
+    const rawBands = JSON.parse((formData.get("scoreConvBands") as string) || "[]");
+    if (Array.isArray(rawBands)) {
+      const cleaned = rawBands
+        .map((b) => ({
+          minScore: parseFloat(b?.minScore),
+          goals: parseInt(b?.goals, 10),
+        }))
+        .filter((b) => !isNaN(b.minScore) && !isNaN(b.goals) && b.goals > 0)
+        .sort((a, b) => a.minScore - b.minScore);
+      if (cleaned.length > 0) scoreConvBands = cleaned;
+    }
+  } catch { /* usa default */ }
+
+  const scoreConvExtrapolateStepRaw = parseFloat(formData.get("scoreConvExtrapolateStep") as string);
+  const scoreConvExtrapolateStep =
+    !isNaN(scoreConvExtrapolateStepRaw) && scoreConvExtrapolateStepRaw > 0
+      ? scoreConvExtrapolateStepRaw
+      : DEFAULT_SCORE_CONVERSION.extrapolateStep;
+
+  // Soglia fissa "quota" per il 1 gol della squadra di casa (0 = disabilitata,
+  // regola separata dal bonus punti fattore campo qui sopra)
+  const homeFirstGoalThresholdRaw = parseFloat(formData.get("scoreConvHomeFirstGoalThreshold") as string);
+  const homeFirstGoalThreshold =
+    !isNaN(homeFirstGoalThresholdRaw) && homeFirstGoalThresholdRaw > 0 ? homeFirstGoalThresholdRaw : 0;
+
+  // Regola "vittoria e gol omaggio" (distacco minimo per fascia)
+  const bonusGoalEnabled = formData.get("scoreConvBonusGoalEnabled") === "1";
+  const bonusGoalDiffBandMarginRaw = parseFloat(formData.get("scoreConvBonusGoalDiffBandMargin") as string);
+  const bonusGoalDiffBandMargin =
+    !isNaN(bonusGoalDiffBandMarginRaw) && bonusGoalDiffBandMarginRaw >= 0
+      ? bonusGoalDiffBandMarginRaw
+      : DEFAULT_SCORE_CONVERSION.bonusGoalDiffBandMargin;
+  const bonusGoalSameBandMarginRaw = parseFloat(formData.get("scoreConvBonusGoalSameBandMargin") as string);
+  const bonusGoalSameBandMargin =
+    !isNaN(bonusGoalSameBandMarginRaw) && bonusGoalSameBandMarginRaw >= 0
+      ? bonusGoalSameBandMarginRaw
+      : DEFAULT_SCORE_CONVERSION.bonusGoalSameBandMargin;
+
+  const scoreConversion = JSON.stringify(
+    normalizeScoreConversion({
+      enabled: scoreConvEnabled,
+      bands: scoreConvBands,
+      extrapolateStep: scoreConvExtrapolateStep,
+      homeFirstGoalThreshold,
+      bonusGoalEnabled,
+      bonusGoalDiffBandMargin,
+      bonusGoalSameBandMargin,
+    })
+  );
 
   // Modificatore difensivo (portiere + 3 migliori difensori titolari)
   const defenseModifierEnabled = formData.get("defenseModifierEnabled") === "1" ? 1 : 0;

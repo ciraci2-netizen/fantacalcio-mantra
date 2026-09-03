@@ -2,7 +2,7 @@ import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { redirect } from "next/navigation";
 import SettingsClient from "./SettingsClient";
-import { DEFAULT_GOAL_THRESHOLDS, DEFAULT_SCORE_CONVERSION } from "@/app/lib/scoring";
+import { DEFAULT_GOAL_THRESHOLDS, DEFAULT_SCORE_CONVERSION, normalizeScoreConversion } from "@/app/lib/scoring";
 import { DEFAULT_PORTIERI, DEFAULT_MOVIMENTO } from "@/app/lib/leagueSettings";
 
 export default async function AdminSettingsPage() {
@@ -48,7 +48,7 @@ export default async function AdminSettingsPage() {
             ? (() => { try { return JSON.parse(raw.goalThresholds as string); } catch { return DEFAULT_GOAL_THRESHOLDS; } })()
             : DEFAULT_GOAL_THRESHOLDS,
           scoreConversion: raw.scoreConversion
-            ? (() => { try { return JSON.parse(raw.scoreConversion as string); } catch { return DEFAULT_SCORE_CONVERSION; } })()
+            ? (() => { try { return normalizeScoreConversion(JSON.parse(raw.scoreConversion as string)); } catch { return DEFAULT_SCORE_CONVERSION; } })()
             : DEFAULT_SCORE_CONVERSION,
         };
       }
