@@ -265,10 +265,13 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
     args: [matchdayId],
   });
 
-  // Formazione EFFETTIVA (titolare, o la riserva che lo ha sostituito; ruolo
-  // + voto grezzo, non fantavoto) di ciascun utente, per il modificatore
-  // difensivo calcolato piu sotto a livello di partita (serve conoscere
-  // ENTRAMBE le formazioni della partita, non solo la propria).
+  // Titolari ORIGINALI (ruolo + voto grezzo, non fantavoto) di ciascun
+  // utente, per il modificatore difensivo calcolato piu sotto a livello di
+  // partita (serve conoscere ENTRAMBE le formazioni della partita, non solo
+  // la propria). Si usa SEMPRE la formazione di partenza, mai quella dopo
+  // le sostituzioni: un titolare assente (sv, senza voto) tra portiere e
+  // difensori disabilita il modificatore per quella squadra in quella
+  // giornata, indipendentemente da chi lo ha sostituito in panchina.
   const defenseStartersByUser = new Map<number, Array<{ mantraRole: string; vote: number | null }>>();
 
   for (const lineup of lineupsRes.rows) {
@@ -291,6 +294,14 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
       .filter((s) => Number(s.isStarter) === 0)
       .sort((a, b) => (a.position as number) - (b.position as number));
 
+    defenseStartersByUser.set(
+      userId,
+      starterRows.map((s) => ({
+        mantraRole: s.mantraRole as string,
+        vote: s.vote as number | null,
+      }))
+    );
+
     let base = 0;
     let subsUsed = 0;
     let totalGoals = 0;
@@ -310,24 +321,6 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
       })),
       maxSubstitutions
     );
-
-    // Formazione effettivamente in campo (titolare andato a voto, oppure la
-    // riserva che lo ha sostituito): la difesa dopo i cambi puo avere un
-    // numero di difensori diverso da quella di partenza, e il modificatore
-    // difensivo (calculateDefenseModifier) deve valutare quella REALMENTE
-    // schierata, non solo la formazione iniziale.
-    const effectiveStarters = starterRows.map((starter, si) => {
-      if (starter.fantavoto !== null) {
-        return { mantraRole: starter.mantraRole as string, vote: starter.vote as number | null };
-      }
-      const rIdx = reserveForStarter[si];
-      if (rIdx !== null) {
-        const reserve = reserveRows[rIdx];
-        return { mantraRole: reserve.mantraRole as string, vote: reserve.vote as number | null };
-      }
-      return { mantraRole: starter.mantraRole as string, vote: null };
-    });
-    defenseStartersByUser.set(userId, effectiveStarters);
 
     starterRows.forEach((starter, si) => {
       const gfGs = starter.goals as number;
