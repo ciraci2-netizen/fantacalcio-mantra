@@ -18,6 +18,7 @@ interface PastRoundBid {
   teamName: string;
   amount: number;
   status: string;
+  releasedPlayerName: string | null;
 }
 
 interface PastRound {
@@ -215,7 +216,14 @@ export default function AdminAstaClient({
                                       <td className="py-1.5 pr-2 text-right font-mono">{b.amount}</td>
                                       <td className="py-1.5 text-xs">
                                         {b.status === "won" ? (
-                                          <span className="text-green-700 font-semibold">{"\u2713"} vinta</span>
+                                          <div>
+                                            <span className="text-green-700 font-semibold">{"\u2713"} vinta</span>
+                                            {b.releasedPlayerName && (
+                                              <div className="text-gray-400 font-normal mt-0.5">
+                                                {"\u2194"} svincolato {b.releasedPlayerName}
+                                              </div>
+                                            )}
+                                          </div>
                                         ) : (
                                           <span className="text-gray-400">persa</span>
                                         )}

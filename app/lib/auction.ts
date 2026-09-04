@@ -220,7 +220,12 @@ export async function resolveRound(roundId: number): Promise<ResolveResult> {
 
   const winners: AuctionWinner[] = [];
   const unsold: AuctionUnsold[] = [];
-  const winningBidIds: number[] = [];
+  // Per ogni offerta vincente salviamo anche l'eventuale svincolo DAVVERO
+  // eseguito (puo differire da quanto l'utente aveva dichiarato in anticipo
+  // in sb.releasePlayerId: quel campo era solo "nel caso servisse" - se poi
+  // gli slot non erano pieni non e stato usato). Cosi lo storico puo mostrare
+  // con certezza chi e stato svincolato per fare posto a ciascun acquisto.
+  const winningBids: { id: number; releasePlayerId: number | null }[] = [];
   const losingBidIds: number[] = [];
 
   for (const [playerId, bids] of byPlayer) {
@@ -275,7 +280,10 @@ export async function resolveRound(roundId: number): Promise<ResolveResult> {
       continue;
     }
 
-    for (const b of bids) (b.id === winner.id ? winningBidIds : losingBidIds).push(b.id);
+    for (const b of bids) {
+      if (b.id === winner.id) winningBids.push({ id: b.id, releasePlayerId: winnerReleasePlayerId });
+      else losingBidIds.push(b.id);
+    }
     spentThisRound.set(winner.userId, (spentThisRound.get(winner.userId) ?? 0) + winner.amount);
 
     let releasedPlayerName: string | undefined;
@@ -303,8 +311,14 @@ export async function resolveRound(roundId: number): Promise<ResolveResult> {
     });
   }
 
-  for (const id of winningBidIds) {
-    await db.execute({ sql: `UPDATE "SealedBid" SET status = 'won' WHERE id = ?`, args: [id] });
+  for (const wb of winningBids) {
+    // releasePlayerId viene sovrascritto con l'esito reale: null se alla
+    // fine non e servito nessuno svincolo, anche se in fase di offerta
+    // l'utente ne aveva indicato uno "di riserva".
+    await db.execute({
+      sql: `UPDATE "SealedBid" SET status = 'won', releasePlayerId = ? WHERE id = ?`,
+      args: [wb.releasePlayerId, wb.id],
+    });
   }
   for (const id of losingBidIds) {
     await db.execute({ sql: `UPDATE "SealedBid" SET status = 'lost' WHERE id = ?`, args: [id] });

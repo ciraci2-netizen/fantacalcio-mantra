@@ -66,11 +66,17 @@ export default async function AdminAstaPage() {
 
   const pastRounds = await Promise.all(
     pastRoundsRes.rows.map(async (r) => {
+      // releasePlayerId qui riflette l'esito reale (vedi resolveRound):
+      // valorizzato solo se per quell'acquisto e' davvero servito uno
+      // svincolo, non semplicemente quanto l'utente aveva dichiarato "di
+      // riserva" al momento dell'offerta.
       const bidsRes = await db.execute({
-        sql: `SELECT sb.playerId, sb.userId, sb.amount, sb.status, p.name as playerName, u.teamName
+        sql: `SELECT sb.playerId, sb.userId, sb.amount, sb.status, sb.releasePlayerId,
+                     p.name as playerName, u.teamName, rp.name as releasedPlayerName
               FROM "SealedBid" sb
               JOIN "Player" p ON p.id = sb.playerId
               JOIN "User" u ON u.id = sb.userId
+              LEFT JOIN "Player" rp ON rp.id = sb.releasePlayerId
               WHERE sb.roundId = ?
               ORDER BY sb.playerId ASC, sb.amount DESC`,
         args: [r.id],
@@ -87,6 +93,7 @@ export default async function AdminAstaPage() {
           teamName: b.teamName as string,
           amount: b.amount as number,
           status: b.status as string,
+          releasedPlayerName: (b.releasedPlayerName as string | null) ?? null,
         })),
       };
     })
