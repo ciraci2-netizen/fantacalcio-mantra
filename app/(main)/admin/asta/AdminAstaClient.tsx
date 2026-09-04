@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, Fragment } from "react";
 import { openAuctionRound, closeAuctionRoundNow } from "@/app/actions/auction";
 
 interface CurrentRound {
@@ -32,6 +32,20 @@ interface PastRound {
 function fmt(dt: string | null) {
   if (!dt) return "—";
   return new Date(dt).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+// Raggruppa le offerte di un round per giocatore, nell'ordine in cui
+// arrivano (gia' playerId ASC, amount DESC dalla query). Un giocatore e'
+// rimasto svincolato in quel round se nessuna delle sue offerte e' 'won'
+// (es. l'unica offerta superava il budget/gli slot residui di chi l'ha
+// fatta): prima si vedeva identico a una "persa" qualunque, ora si segnala.
+function groupBidsByPlayer(bids: PastRoundBid[]) {
+  const map = new Map<number, { playerId: number; playerName: string; bids: PastRoundBid[] }>();
+  for (const b of bids) {
+    if (!map.has(b.playerId)) map.set(b.playerId, { playerId: b.playerId, playerName: b.playerName, bids: [] });
+    map.get(b.playerId)!.bids.push(b);
+  }
+  return Array.from(map.values());
 }
 
 export default function AdminAstaClient({
@@ -156,6 +170,8 @@ export default function AdminAstaClient({
           <div className="divide-y">
             {pastRounds.map((r) => {
               const won = r.bids.filter((b) => b.status === "won");
+              const playerGroups = groupBidsByPlayer(r.bids);
+              const unsoldGroups = playerGroups.filter((g) => !g.bids.some((b) => b.status === "won"));
               const isOpen = expanded === r.id;
               return (
                 <div key={r.id}>
@@ -166,7 +182,9 @@ export default function AdminAstaClient({
                     <div>
                       <p className="text-sm font-medium text-gray-700">{r.name}</p>
                       <p className="text-xs text-gray-400">
-                        chiuso il {fmt(r.resolvedAt)} · {won.length} giocatori assegnati · {r.bids.length} offerte totali
+                        chiuso il {fmt(r.resolvedAt)} {"\u00b7"} {won.length} giocatori assegnati
+                        {unsoldGroups.length > 0 && `\u00b7 ${unsoldGroups.length} rimasti svincolati`}
+                        {" "}{"\u00b7"} {r.bids.length} offerte totali
                       </p>
                     </div>
                     <span className="text-gray-400 text-sm">{isOpen ? "▲" : "▼"}</span>
@@ -186,20 +204,34 @@ export default function AdminAstaClient({
                             </tr>
                           </thead>
                           <tbody className="divide-y">
-                            {r.bids.map((b, i) => (
-                              <tr key={i} className={b.status === "won" ? "bg-green-50" : ""}>
-                                <td className="py-1.5 pr-2 font-medium">{b.playerName}</td>
-                                <td className="py-1.5 pr-2 text-gray-500">{b.teamName}</td>
-                                <td className="py-1.5 pr-2 text-right font-mono">{b.amount}</td>
-                                <td className="py-1.5 text-xs">
-                                  {b.status === "won" ? (
-                                    <span className="text-green-700 font-semibold">✓ vinta</span>
-                                  ) : (
-                                    <span className="text-gray-400">persa</span>
+                            {playerGroups.map((g) => {
+                              const sold = g.bids.some((b) => b.status === "won");
+                              return (
+                                <Fragment key={g.playerId}>
+                                  {g.bids.map((b, i) => (
+                                    <tr key={i} className={b.status === "won" ? "bg-green-50" : ""}>
+                                      <td className="py-1.5 pr-2 font-medium">{b.playerName}</td>
+                                      <td className="py-1.5 pr-2 text-gray-500">{b.teamName}</td>
+                                      <td className="py-1.5 pr-2 text-right font-mono">{b.amount}</td>
+                                      <td className="py-1.5 text-xs">
+                                        {b.status === "won" ? (
+                                          <span className="text-green-700 font-semibold">{"\u2713"} vinta</span>
+                                        ) : (
+                                          <span className="text-gray-400">persa</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                  {!sold && (
+                                    <tr className="bg-amber-50">
+                                      <td colSpan={4} className="py-1.5 pr-2 pl-2 text-xs text-amber-700 font-medium">
+                                        {"\u26a0"} Rimasto svincolato: nessuna offerta e andata a buon fine.
+                                      </td>
+                                    </tr>
                                   )}
-                                </td>
-                              </tr>
-                            ))}
+                                </Fragment>
+                              );
+                            })}
                           </tbody>
                         </table>
                       )}
