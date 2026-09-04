@@ -30,39 +30,53 @@ export default async function AstaPage() {
 
   await resolveExpiredRounds(seasonId);
 
-  // Storico: le proprie offerte (vinte/perse) nei round gia chiusi di questa
-  // stagione. Solo le tue: niente cifre degli altri utenti.
-  const historyRes = await db.execute({
-    sql: `SELECT ar.id as roundId, ar.name as roundName, ar.resolvedAt,
-                 sb.amount, sb.status, p.name as playerName, p.mantraRole
-          FROM "SealedBid" sb
-          JOIN "AuctionRound" ar ON ar.id = sb.roundId
-          JOIN "Player" p ON p.id = sb.playerId
-          WHERE ar.seasonId = ? AND sb.userId = ? AND ar.resolvedAt IS NOT NULL AND sb.status IN ('won', 'lost')
-          ORDER BY ar.resolvedAt DESC, sb.status ASC, p.name ASC
-          LIMIT 300`,
-    args: [seasonId, session.userId],
+  // Storico completo: le offerte di TUTTI (non solo le proprie) nei round
+  // gia chiusi di questa stagione - prima si vedevano solo le proprie offerte,
+  // ma lo storico di chi ha preso/svincolato cosa e chi ha offerto quanto e
+  // ora visibile a chiunque, non solo all'admin (stessa vista di /admin/asta,
+  // qui in sola lettura).
+  const pastRoundsRes = await db.execute({
+    sql: `SELECT id, name, resolvedAt FROM "AuctionRound"
+          WHERE seasonId = ? AND resolvedAt IS NOT NULL ORDER BY id DESC LIMIT 10`,
+    args: [seasonId],
   });
-  type HistoryBid = { playerName: string; mantraRole: string; amount: number; status: string };
-  const historyByRound = new Map<number, { roundId: number; roundName: string; resolvedAt: string; bids: HistoryBid[] }>();
-  for (const r of historyRes.rows) {
-    const roundId = r.roundId as number;
-    if (!historyByRound.has(roundId)) {
-      historyByRound.set(roundId, {
-        roundId,
-        roundName: r.roundName as string,
-        resolvedAt: r.resolvedAt as string,
-        bids: [],
+  type HistoryBid = {
+    playerId: number; playerName: string; mantraRole: string; teamName: string;
+    amount: number; status: string; releasedPlayerName: string | null; unsoldReason: string | null;
+  };
+  const myHistory = await Promise.all(
+    pastRoundsRes.rows.map(async (r) => {
+      const bidsRes = await db.execute({
+        sql: `SELECT sb.playerId, sb.amount, sb.status, p.name as playerName, p.mantraRole,
+                     u.teamName, rp.name as releasedPlayerName
+              FROM "SealedBid" sb
+              JOIN "Player" p ON p.id = sb.playerId
+              JOIN "User" u ON u.id = sb.userId
+              LEFT JOIN "Player" rp ON rp.id = sb.releasePlayerId
+              WHERE sb.roundId = ?
+              ORDER BY sb.playerId ASC, sb.amount DESC`,
+        args: [r.id],
       });
-    }
-    historyByRound.get(roundId)!.bids.push({
-      playerName: r.playerName as string,
-      mantraRole: r.mantraRole as string,
-      amount: r.amount as number,
-      status: r.status as string,
-    });
-  }
-  const myHistory = Array.from(historyByRound.values());
+      const unsoldRes = await db.execute({
+        sql: `SELECT playerId, reason FROM "AuctionUnsold" WHERE roundId = ?`,
+        args: [r.id],
+      });
+      const unsoldReasons: Record<number, string> = {};
+      for (const u of unsoldRes.rows) unsoldReasons[u.playerId as number] = u.reason as string;
+
+      const bids: HistoryBid[] = bidsRes.rows.map((b) => ({
+        playerId: b.playerId as number,
+        playerName: b.playerName as string,
+        mantraRole: b.mantraRole as string,
+        teamName: b.teamName as string,
+        amount: b.amount as number,
+        status: b.status as string,
+        releasedPlayerName: (b.releasedPlayerName as string | null) ?? null,
+        unsoldReason: unsoldReasons[b.playerId as number] ?? null,
+      }));
+      return { roundId: r.id as number, roundName: r.name as string, resolvedAt: r.resolvedAt as string, bids };
+    })
+  );
 
   const roundRes = await db.execute({
     sql: `SELECT id, name, startDate, endDate FROM "AuctionRound"
@@ -79,7 +93,7 @@ export default async function AstaPage() {
           <p className="font-medium text-gray-500">Nessuna asta aperta al momento.</p>
           <p className="text-sm mt-1">L&apos;admin aprira un nuovo round quando ci saranno svincolati da assegnare.</p>
         </div>
-        <AstaHistory history={myHistory} />
+        <AstaHistory history={myHistory} myTeamName={session.teamName} />
       </div>
     );
   }
@@ -164,7 +178,7 @@ export default async function AstaPage() {
         roleLabel={ROLE_LABEL}
         roles={MANTRA_ROLES as unknown as string[]}
       />
-      <AstaHistory history={myHistory} />
+      <AstaHistory history={myHistory} myTeamName={session.teamName} />
     </div>
   );
 }

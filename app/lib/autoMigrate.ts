@@ -93,6 +93,18 @@ export async function autoMigrate(): Promise<void> {
       createdAt        TEXT    NOT NULL DEFAULT (datetime('now')),
       UNIQUE(roundId, playerId, userId)
     )`,
+    // Motivo esatto per cui un giocatore che aveva ricevuto offerte e'
+    // rimasto svincolato dopo la chiusura di un round (vedi resolveRound in
+    // app/lib/auction.ts) - senza questo, passato il momento della chiusura
+    // non c'era piu modo di distinguere "fondi insufficienti" da "slot rosa
+    // pieni" per un round gia risolto.
+    `CREATE TABLE IF NOT EXISTS "AuctionUnsold" (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      roundId   INTEGER NOT NULL,
+      playerId  INTEGER NOT NULL,
+      reason    TEXT    NOT NULL,
+      createdAt TEXT    NOT NULL DEFAULT (datetime('now'))
+    )`,
     `CREATE TABLE IF NOT EXISTS "Cup" (
       id       INTEGER PRIMARY KEY AUTOINCREMENT,
       seasonId INTEGER NOT NULL,

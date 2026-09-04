@@ -273,9 +273,14 @@ export async function resolveRound(roundId: number): Promise<ResolveResult> {
 
     if (!winner) {
       for (const b of bids) losingBidIds.push(b.id);
-      unsold.push({
-        playerId, playerName: bids[0].playerName,
-        reason: skippedForSlots ? "slot rosa pieni" : "fondi insufficienti",
+      const reason = skippedForSlots ? "slot rosa pieni" : "fondi insufficienti";
+      unsold.push({ playerId, playerName: bids[0].playerName, reason });
+      // Salvato subito (non solo restituito) cosi lo storico puo mostrare il
+      // motivo esatto anche dopo che il round e chiuso da tempo - prima si
+      // perdeva non appena la risposta di questa funzione veniva scartata.
+      await db.execute({
+        sql: `INSERT INTO "AuctionUnsold" (roundId, playerId, reason) VALUES (?, ?, ?)`,
+        args: [roundId, playerId, reason],
       });
       continue;
     }

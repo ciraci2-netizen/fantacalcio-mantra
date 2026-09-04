@@ -81,6 +81,20 @@ export default async function AdminAstaPage() {
               ORDER BY sb.playerId ASC, sb.amount DESC`,
         args: [r.id],
       });
+
+      // Motivo esatto per cui un giocatore e' rimasto svincolato in questo
+      // round (salvato da resolveRound al momento della chiusura). Assente
+      // per i round chiusi PRIMA di questa funzionalita': in quel caso lo
+      // storico mostra solo il messaggio generico, senza motivo specifico.
+      const unsoldRes = await db.execute({
+        sql: `SELECT playerId, reason FROM "AuctionUnsold" WHERE roundId = ?`,
+        args: [r.id],
+      });
+      const unsoldReasons: Record<number, string> = {};
+      for (const u of unsoldRes.rows) {
+        unsoldReasons[u.playerId as number] = u.reason as string;
+      }
+
       return {
         id: r.id as number,
         name: r.name as string,
@@ -94,6 +108,7 @@ export default async function AdminAstaPage() {
           amount: b.amount as number,
           status: b.status as string,
           releasedPlayerName: (b.releasedPlayerName as string | null) ?? null,
+          unsoldReason: unsoldReasons[b.playerId as number] ?? null,
         })),
       };
     })

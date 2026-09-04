@@ -19,6 +19,7 @@ interface PastRoundBid {
   amount: number;
   status: string;
   releasedPlayerName: string | null;
+  unsoldReason: string | null;
 }
 
 interface PastRound {
@@ -233,7 +234,13 @@ export default function AdminAstaClient({
                                   {!sold && (
                                     <tr className="bg-amber-50">
                                       <td colSpan={4} className="py-1.5 pr-2 pl-2 text-xs text-amber-700 font-medium">
-                                        {"\u26a0"} Rimasto svincolato: nessuna offerta e andata a buon fine.
+                                        {"\u26a0"} Rimasto svincolato
+                                        {(() => {
+                                          const reason = g.bids.find((b) => b.unsoldReason)?.unsoldReason;
+                                          return reason
+                                            ? `: ${reason}.`
+                                            : ": nessuna offerta e andata a buon fine (round chiuso prima che questo dettaglio fosse disponibile).";
+                                        })()}
                                       </td>
                                     </tr>
                                   )}

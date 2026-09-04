@@ -200,6 +200,21 @@ export async function runMigrations() {
     UNIQUE(roundId, playerId, userId)
   )`);
 
+  // Motivo esatto per cui un giocatore che aveva ricevuto offerte e' rimasto
+  // svincolato dopo la chiusura di un round (vedi resolveRound in
+  // app/lib/auction.ts) - senza questo, passato il momento della chiusura
+  // non c'era piu modo di distinguere "fondi insufficienti" da "slot rosa
+  // pieni" per un round gia risolto.
+  await db.execute(`CREATE TABLE IF NOT EXISTS "AuctionUnsold" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    roundId INTEGER NOT NULL,
+    playerId INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (roundId) REFERENCES "AuctionRound"(id),
+    FOREIGN KEY (playerId) REFERENCES "Player"(id)
+  )`);
+
   // === Modificatore difensivo (portiere + 3 migliori difensori titolari) ===
   // Interruttore per stagione, in LeagueSettings.
   try { await db.execute(`ALTER TABLE "LeagueSettings" ADD COLUMN "defenseModifierEnabled" INTEGER NOT NULL DEFAULT 0`); } catch { /* già presente */ }
