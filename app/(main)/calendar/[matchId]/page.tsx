@@ -38,9 +38,28 @@ type PlayerSlot = {
   playerId: number;
   name: string;
   mantraRole: string;
+  vote: number | null;
   fantavoto: number | null;
   isStarter: boolean;
 };
+
+// Ricostruisce SOLO quali giocatori sono stati considerati per il
+// modificatore difensivo (portiere + 3 migliori difensori titolari, per
+// VOTO - mai fantavoto, vedi calculateDefenseModifier in app/lib/scoring.ts),
+// per renderlo verificabile nel tabellino. Il malus vero resta quello gia
+// salvato su Match (calcolato da calculateScoresCore): qui non lo si
+// ricalcola, si mostra solo la composizione usata per arrivarci.
+type DefenseConsidered = { gk: PlayerSlot; defenders: PlayerSlot[] } | null;
+
+function pickDefenseConsidered(slots: PlayerSlot[]): DefenseConsidered {
+  const starters = slots.filter((s) => s.isStarter);
+  const gk = starters.find((s) => s.mantraRole === "POR");
+  if (!gk || gk.vote === null) return null;
+  const defenders = starters.filter((s) => s.mantraRole === "TER" || s.mantraRole === "DC");
+  if (defenders.length < 4 || defenders.some((d) => d.vote === null)) return null;
+  const bestThree = [...defenders].sort((a, b) => (b.vote as number) - (a.vote as number)).slice(0, 3);
+  return { gk, defenders: bestThree };
+}
 
 export default async function MatchDetailPage({
   params,
@@ -160,7 +179,7 @@ export default async function MatchDetailPage({
     sql: `SELECT ls.lineupId, l.userId,
                  ls.isStarter, ls.position,
                  p.id as playerId, p.name, p.mantraRole,
-                 pv.fantavoto
+                 pv.vote, pv.fantavoto
           FROM "LineupSlot" ls
           JOIN "Lineup" l ON l.id = ls.lineupId
           JOIN "Player" p ON p.id = ls.playerId
@@ -178,6 +197,7 @@ export default async function MatchDetailPage({
       playerId: row.playerId as number,
       name: row.name as string,
       mantraRole: row.mantraRole as string,
+      vote: row.vote as number | null,
       fantavoto: row.fantavoto as number | null,
       isStarter: Boolean(row.isStarter),
     };
@@ -189,6 +209,11 @@ export default async function MatchDetailPage({
   // senza voto), da evidenziare nel tabellino.
   const homeSubs = computeSubstitutionIds(homeSlots, maxSubstitutions);
   const awaySubs = computeSubstitutionIds(awaySlots, maxSubstitutions);
+
+  // Solo per il riquadro "Modificatore difensivo" qui sotto: chi e stato
+  // considerato (portiere + 3 migliori difensori titolari, per voto).
+  const homeDefenseConsidered = pickDefenseConsidered(homeSlots);
+  const awayDefenseConsidered = pickDefenseConsidered(awaySlots);
 
   const played = match.homeScore !== null;
   const homeWon = (match.homePoints as number) === 3;
@@ -281,24 +306,44 @@ export default async function MatchDetailPage({
             <span className="text-base">🛡️</span>
             <span className="font-semibold text-gray-700 text-sm">Modificatore difensivo</span>
           </div>
-          <div className="p-4 space-y-2 text-sm">
+          <div className="p-4 space-y-3 text-sm">
             {match.homeDefenseMalus != null && (
-              <p className="text-gray-600">
-                Difesa <strong>{match.homeTeamName as string}</strong>: media{" "}
-                <strong>{(match.homeDefenseAvg as number).toFixed(2)}</strong> →{" "}
-                <span className="text-red-600 font-semibold">
-                  {match.homeDefenseMalus as number} a {match.awayTeamName as string}
-                </span>
-              </p>
+              <div className="text-gray-600">
+                <p>
+                  Difesa <strong>{match.homeTeamName as string}</strong>: media{" "}
+                  <strong>{(match.homeDefenseAvg as number).toFixed(2)}</strong> {"\u2192"}{" "}
+                  <span className="text-red-600 font-semibold">
+                    {match.homeDefenseMalus as number} a {match.awayTeamName as string}
+                  </span>
+                </p>
+                {homeDefenseConsidered && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Voti considerati (portiere + 3 migliori difensori titolari): {homeDefenseConsidered.gk.name}{" "}
+                    {(homeDefenseConsidered.gk.vote as number).toFixed(1)}, {homeDefenseConsidered.defenders
+                      .map((d) => `${d.name} ${(d.vote as number).toFixed(1)}`)
+                      .join(", ")}
+                  </p>
+                )}
+              </div>
             )}
             {match.awayDefenseMalus != null && (
-              <p className="text-gray-600">
-                Difesa <strong>{match.awayTeamName as string}</strong>: media{" "}
-                <strong>{(match.awayDefenseAvg as number).toFixed(2)}</strong> →{" "}
-                <span className="text-red-600 font-semibold">
-                  {match.awayDefenseMalus as number} a {match.homeTeamName as string}
-                </span>
-              </p>
+              <div className="text-gray-600">
+                <p>
+                  Difesa <strong>{match.awayTeamName as string}</strong>: media{" "}
+                  <strong>{(match.awayDefenseAvg as number).toFixed(2)}</strong> {"\u2192"}{" "}
+                  <span className="text-red-600 font-semibold">
+                    {match.awayDefenseMalus as number} a {match.homeTeamName as string}
+                  </span>
+                </p>
+                {awayDefenseConsidered && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Voti considerati (portiere + 3 migliori difensori titolari): {awayDefenseConsidered.gk.name}{" "}
+                    {(awayDefenseConsidered.gk.vote as number).toFixed(1)}, {awayDefenseConsidered.defenders
+                      .map((d) => `${d.name} ${(d.vote as number).toFixed(1)}`)
+                      .join(", ")}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -548,7 +593,12 @@ function SlotRow({
       >
         {slot.name}
       </Link>
-      <span className={`text-sm shrink-0 tabular-nums ${fvColor}`}>
+      {slot.vote !== null && (
+        <span className="text-xs text-gray-400 shrink-0 tabular-nums" title="Voto (prima di bonus/malus)">
+          v.{slot.vote.toFixed(1)}
+        </span>
+      )}
+      <span className={`text-sm shrink-0 tabular-nums ${fvColor}`} title="Fantavoto (voto + bonus/malus)">
         {fv !== null ? fv.toFixed(1) : <span className="text-gray-300 text-xs">sv</span>}
       </span>
     </div>
