@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { importVotes, calculateAllScores, updatePlayerVote, backfillGsrDryRun, backfillGsrApply } from "@/app/actions/votes";
+import { importVotes, calculateAllScores, resetMatchday, updatePlayerVote, backfillGsrDryRun, backfillGsrApply } from "@/app/actions/votes";
 import { lockAndAdvanceMatchday, setMatchdayDeadline } from "@/app/actions/schedule";
 import { setPlayerStatus } from "@/app/actions/settings";
 import DeadlineTimer from "@/app/components/DeadlineTimer";
@@ -89,6 +89,7 @@ export default function VotesAdminClient({
   // di importare comunque, invece di un messaggio d'errore generico.
   const mismatchDetected = importResult?.match(/^MISMATCH_GIORNATA:(\d+)$/)?.[1] ?? null;
   const [calcResult, calcAction, calcPending] = useActionState(calculateAllScores, null);
+  const [resetResult, resetAction, resetPending] = useActionState(resetMatchday, null);
   const [advanceResult, advanceAction, advancePending] = useActionState(lockAndAdvanceMatchday, null);
   const [, statusAction] = useActionState(setPlayerStatus, null);
   const [deadlineResult, deadlineAction, deadlinePending] = useActionState(setMatchdayDeadline, null);
@@ -462,7 +463,33 @@ export default function VotesAdminClient({
                   </button>
                 </form>
               )}
+
+              {selectedMatchday.votesImported && (
+                <form
+                  action={resetAction}
+                  onSubmit={(e) => {
+                    if (!confirm(`Azzerare la Giornata ${selectedMatchday.number}? Voti importati, risultati e classifica di questa giornata verranno rimossi (le formazioni inviate a mano restano, solo il punteggio si azzera). Potrai reimportare/ricalcolare da capo.`)) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  <input type="hidden" name="matchdayId" value={selectedMatchday.id} />
+                  <button
+                    type="submit"
+                    disabled={resetPending}
+                    className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                  >
+                    {resetPending ? "Azzeramento..." : `${"\u{1F5D1}"} Azzera G${selectedMatchday.number}`}
+                  </button>
+                </form>
+              )}
             </div>
+
+            {resetResult && (
+              <div className={`px-4 py-3 rounded-lg text-sm ${resetResult.startsWith("AZZERATA") ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>
+                {resetResult}
+              </div>
+            )}
 
             {mismatchDetected && (
               <div className="px-4 py-3 rounded-lg text-sm bg-amber-50 border border-amber-200 text-amber-800 space-y-2">

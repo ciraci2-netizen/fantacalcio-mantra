@@ -126,6 +126,60 @@ export async function updatePlayerVote(prevState: string | null, formData: FormD
   return null;
 }
 
+// -- Admin: azzera voti e risultati di una giornata gia importata/calcolata,
+// per poterla reimportare/ricalcolare da zero a mano. Cancella i voti
+// importati, i risultati delle partite (che spariscono anche dalla
+// classifica, calcolata al volo da Match.homePoints/awayPoints) e le
+// formazioni generate automaticamente per chi non aveva inviato la propria
+// (isAutomatic = 1) - le formazioni inviate a mano dagli utenti restano,
+// solo il punteggio calcolato viene azzerato, cosi non si perde cosa
+// avevano schierato.
+export async function resetMatchday(prevState: string | null, formData: FormData) {
+  const session = await getSession();
+  if (!session?.isAdmin) return "Non autorizzato.";
+
+  const matchdayId = parseInt(formData.get("matchdayId") as string);
+  if (!matchdayId) return "Giornata non valida.";
+
+  const db = getDb();
+  const check = await db.execute({ sql: `SELECT number FROM "Matchday" WHERE id = ?`, args: [matchdayId] });
+  if (check.rows.length === 0) return "Giornata non trovata.";
+  const matchdayNumber = check.rows[0].number as number;
+
+  await db.execute({ sql: `DELETE FROM "PlayerVote" WHERE matchdayId = ?`, args: [matchdayId] });
+
+  await db.execute({
+    sql: `DELETE FROM "LineupSlot" WHERE lineupId IN (
+            SELECT id FROM "Lineup" WHERE matchdayId = ? AND isAutomatic = 1
+          )`,
+    args: [matchdayId],
+  });
+  await db.execute({ sql: `DELETE FROM "Lineup" WHERE matchdayId = ? AND isAutomatic = 1`, args: [matchdayId] });
+  await db.execute({
+    sql: `UPDATE "Lineup" SET totalScore = NULL, goalBonus = NULL, substitutions = 0
+          WHERE matchdayId = ? AND (isAutomatic = 0 OR isAutomatic IS NULL)`,
+    args: [matchdayId],
+  });
+
+  await db.execute({
+    sql: `UPDATE "Match" SET homeScore = NULL, awayScore = NULL, homePoints = NULL, awayPoints = NULL,
+                 homeGoals = NULL, awayGoals = NULL,
+                 homeDefenseAvg = NULL, homeDefenseMalus = NULL, awayDefenseAvg = NULL, awayDefenseMalus = NULL
+          WHERE matchdayId = ?`,
+    args: [matchdayId],
+  });
+
+  await db.execute({ sql: `UPDATE "Matchday" SET votesImported = 0 WHERE id = ?`, args: [matchdayId] });
+
+  revalidatePath("/admin/votes");
+  revalidatePath("/standings");
+  revalidatePath("/calendar");
+  revalidatePath("/dashboard");
+  revalidatePath("/lineup");
+
+  return `AZZERATA: Giornata ${matchdayNumber} riportata a "non calcolata" - voti, risultati e formazioni automatiche rimossi. Le formazioni inviate a mano restano, solo il punteggio e stato azzerato.`;
+}
+
 // ── Admin: calculate all scores for a matchday ───────────────────────────
 export async function calculateAllScores(prevState: string | null, formData: FormData) {
   const session = await getSession();

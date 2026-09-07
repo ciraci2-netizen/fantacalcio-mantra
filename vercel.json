@@ -7,10 +7,6 @@
     {
       "path": "/api/cron/lock-matchday",
       "schedule": "0 11 * * 6"
-    },
-    {
-      "path": "/api/cron/auto-import",
-      "schedule": "0 10 * * 1"
     }
   ]
 }
