@@ -464,11 +464,11 @@ export default function VotesAdminClient({
                 </form>
               )}
 
-              {selectedMatchday.votesImported && (
+              {(selectedMatchday.votesImported || selectedMatchday.isLocked) && (
                 <form
                   action={resetAction}
                   onSubmit={(e) => {
-                    if (!confirm(`Azzerare la Giornata ${selectedMatchday.number}? Voti importati, risultati e classifica di questa giornata verranno rimossi (le formazioni inviate a mano restano, solo il punteggio si azzera). Potrai reimportare/ricalcolare da capo.`)) {
+                    if (!confirm(`Azzerare la Giornata ${selectedMatchday.number}? Voti importati, risultati e classifica di questa giornata verranno rimossi (le formazioni inviate a mano restano, solo il punteggio si azzera), la giornata viene sbloccata e ridiventa quella corrente per schierare. Potrai reimportare/ricalcolare da capo.`)) {
                       e.preventDefault();
                     }
                   }}

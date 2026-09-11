@@ -142,9 +142,10 @@ export async function resetMatchday(prevState: string | null, formData: FormData
   if (!matchdayId) return "Giornata non valida.";
 
   const db = getDb();
-  const check = await db.execute({ sql: `SELECT number FROM "Matchday" WHERE id = ?`, args: [matchdayId] });
+  const check = await db.execute({ sql: `SELECT number, seasonId FROM "Matchday" WHERE id = ?`, args: [matchdayId] });
   if (check.rows.length === 0) return "Giornata non trovata.";
   const matchdayNumber = check.rows[0].number as number;
+  const seasonId = check.rows[0].seasonId as number;
 
   await db.execute({ sql: `DELETE FROM "PlayerVote" WHERE matchdayId = ?`, args: [matchdayId] });
 
@@ -171,13 +172,32 @@ export async function resetMatchday(prevState: string | null, formData: FormData
 
   await db.execute({ sql: `UPDATE "Matchday" SET votesImported = 0 WHERE id = ?`, args: [matchdayId] });
 
+  // Sblocca la giornata e cancella la sua scadenza: se restasse bloccata e
+  // con una scadenza nel passato, il cron automatico (auto-lock) la
+  // ribloccherebbe da solo al giro successivo, generando di nuovo
+  // formazioni automatiche al posto di chi non ha ancora schierato.
+  await db.execute({ sql: `UPDATE "Matchday" SET isLocked = 0 WHERE id = ?`, args: [matchdayId] });
+  try {
+    await db.execute({ sql: `UPDATE "Matchday" SET deadline = NULL WHERE id = ?`, args: [matchdayId] });
+  } catch { /* colonna deadline non ancora migrata: ignora */ }
+
+  // Riporta indietro il puntatore "giornata corrente" della stagione, ma
+  // SOLO se nel frattempo era gia' avanzato oltre questa giornata - altrimenti
+  // il sito continuerebbe a proporre a tutti la formazione della giornata
+  // successiva, lasciando questa azzerata irraggiungibile dal menu normale.
+  await db.execute({
+    sql: `UPDATE "Season" SET currentMatchday = ? WHERE id = ? AND currentMatchday > ?`,
+    args: [matchdayNumber, seasonId, matchdayNumber],
+  });
+
   revalidatePath("/admin/votes");
+  revalidatePath("/admin/schedule");
   revalidatePath("/standings");
   revalidatePath("/calendar");
   revalidatePath("/dashboard");
   revalidatePath("/lineup");
 
-  return `AZZERATA: Giornata ${matchdayNumber} riportata a "non calcolata" - voti, risultati e formazioni automatiche rimossi. Le formazioni inviate a mano restano, solo il punteggio e stato azzerato.`;
+  return `AZZERATA: Giornata ${matchdayNumber} riportata a "non calcolata" e riaperta (sbloccata, senza scadenza) - voti, risultati e formazioni automatiche rimossi, ed e' di nuovo la giornata corrente per schierare. Le formazioni inviate a mano restano, solo il punteggio e stato azzerato.`;
 }
 
 // ── Admin: calculate all scores for a matchday ───────────────────────────
