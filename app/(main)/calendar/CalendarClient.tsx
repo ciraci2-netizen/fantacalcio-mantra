@@ -41,8 +41,8 @@ function MatchdayCard({
   currentUserId: number;
 }) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-      <div className="px-4 py-2.5 border-b bg-gray-50 flex items-center gap-2">
+    <div className="bg-gray-100 rounded-xl shadow-md border border-gray-300 overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-gray-300 bg-gray-200 flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
         <span className="text-sm font-semibold text-gray-700">Giornata {md.number}</span>
       </div>
@@ -252,7 +252,7 @@ export default function CalendarClient({
       <div
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="select-none max-w-md mx-auto"
+        className="select-none max-w-2xl mx-auto"
         style={{ transition: "opacity 0.12s ease", opacity: fading ? 0 : 1 }}
       >
         {md && <MatchdayCard md={md} currentUserId={currentUserId} />}

@@ -289,7 +289,6 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
                                 <input type="hidden" name="cupRoundId" value={round.id} />
                                 <input type="hidden" name="slot" value={slot} />
                                 <input type="number" name="matchdayNumber" min="1" defaultValue={slotInfo?.matchdayNumber ?? ""} placeholder="Giornata" className="w-20 border rounded px-1.5 py-0.5 text-xs focus:ring-2 focus:ring-green-500 focus:outline-none" />
-                                <input type="date" name="playDate" defaultValue={slotInfo?.playDate ?? ""} className="border rounded px-1.5 py-0.5 text-xs focus:ring-2 focus:ring-green-500 focus:outline-none" />
                                 <button type="submit" disabled={slotSchedulePending} className="px-2 py-0.5 bg-gray-500 hover:bg-gray-600 disabled:opacity-60 text-white rounded text-xs">Salva</button>
                               </form>
                             </div>

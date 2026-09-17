@@ -62,11 +62,19 @@ export default async function LineupPage() {
     }
   } catch { /* ignore */ }
 
-  // Partite coppa pendenti per l'utente (homeScore IS NULL)
+  // Partite coppa pendenti per l'utente (homeScore IS NULL) che si giocano
+  // PROPRIO in questa giornata di campionato: la giornata di un turno di
+  // coppa e' quella del singolo turno interno del girone (CupRoundSlot),
+  // o in mancanza quella dell'intero turno/girone (CupRound.matchdayNumber)
+  // per i turni a eliminazione diretta. Senza questo filtro comparivano
+  // TUTTE le partite di coppa ancora da giocare, anche quelle di giornate
+  // future - la formazione di oggi non vale per quelle.
   let cupMatches: { cupName: string; roundName: string; opponentName: string }[] = [];
+  const currentMatchdayNumber = matchday.number as number;
   try {
     const cmRes = await db.execute({
       sql: `SELECT c.name as cupName, cr.name as roundName,
+                   cr.matchdayNumber as roundMatchday, crs.matchdayNumber as slotMatchday,
                    hu.teamName as homeTeam, au.teamName as awayTeam,
                    cm.homeUserId, cm.awayUserId
             FROM "CupMatch" cm
@@ -74,19 +82,54 @@ export default async function LineupPage() {
             JOIN "Cup" c ON c.id = cr.cupId
             JOIN "User" hu ON hu.id = cm.homeUserId
             JOIN "User" au ON au.id = cm.awayUserId
+            LEFT JOIN "CupRoundSlot" crs ON crs.cupRoundId = cr.id AND crs.slot = cm.roundSlot
             WHERE c.seasonId = ? AND cm.homeScore IS NULL
               AND (cm.homeUserId = ? OR cm.awayUserId = ?)`,
       args: [season.id, session.userId, session.userId],
     });
-    cupMatches = cmRes.rows.map((row) => {
-      const isHome = (row.homeUserId as number) === session.userId;
-      return {
-        cupName: row.cupName as string,
-        roundName: row.roundName as string,
-        opponentName: (isHome ? row.awayTeam : row.homeTeam) as string,
-      };
-    });
-  } catch { /* cups table might not exist */ }
+    cupMatches = cmRes.rows
+      .filter((row) => {
+        const effectiveMatchday = (row.slotMatchday as number | null) ?? (row.roundMatchday as number | null);
+        return effectiveMatchday === currentMatchdayNumber;
+      })
+      .map((row) => {
+        const isHome = (row.homeUserId as number) === session.userId;
+        return {
+          cupName: row.cupName as string,
+          roundName: row.roundName as string,
+          opponentName: (isHome ? row.awayTeam : row.homeTeam) as string,
+        };
+      });
+  } catch {
+    // CupRoundSlot / roundSlot non ancora migrati: ripiega sulla sola
+    // giornata dell'intero turno (funziona per l'eliminazione diretta,
+    // non distingue i turni interni di un girone).
+    try {
+      const cmRes = await db.execute({
+        sql: `SELECT c.name as cupName, cr.name as roundName, cr.matchdayNumber as roundMatchday,
+                     hu.teamName as homeTeam, au.teamName as awayTeam,
+                     cm.homeUserId, cm.awayUserId
+              FROM "CupMatch" cm
+              JOIN "CupRound" cr ON cr.id = cm.cupRoundId
+              JOIN "Cup" c ON c.id = cr.cupId
+              JOIN "User" hu ON hu.id = cm.homeUserId
+              JOIN "User" au ON au.id = cm.awayUserId
+              WHERE c.seasonId = ? AND cm.homeScore IS NULL
+                AND (cm.homeUserId = ? OR cm.awayUserId = ?)`,
+        args: [season.id, session.userId, session.userId],
+      });
+      cupMatches = cmRes.rows
+        .filter((row) => (row.roundMatchday as number | null) === currentMatchdayNumber)
+        .map((row) => {
+          const isHome = (row.homeUserId as number) === session.userId;
+          return {
+            cupName: row.cupName as string,
+            roundName: row.roundName as string,
+            opponentName: (isHome ? row.awayTeam : row.homeTeam) as string,
+          };
+        });
+    } catch { /* cups table might not exist */ }
+  }
 
   const rosterRes = await db.execute({
     sql: `SELECT p.id, p.name, p.realTeam, p.mantraRole,
@@ -142,31 +185,31 @@ export default async function LineupPage() {
       />
 
       {/* Competizioni di giornata */}
-      <div className="bg-white rounded-xl border shadow-sm p-4">
+      <div className="bg-gray-100 rounded-xl border border-gray-200 shadow-sm p-5">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
           Questa formazione vale per:
         </p>
-        <div className="space-y-2">
+        <div className="space-y-3">
           {/* Lega */}
-          <div className="flex items-center gap-3 text-sm">
-            <span className="text-base">⚽</span>
-            <div>
-              <span className="font-semibold text-gray-700">Lega — Giornata {matchday.number as number}</span>
+          <div className="flex items-start gap-3 text-sm">
+            <span className="text-base shrink-0">⚽</span>
+            <div className="min-w-0">
+              <span className="font-semibold text-gray-700 break-words">Lega — Giornata {matchday.number as number}</span>
               {leagueMatch ? (
-                <span className="text-gray-500 ml-2">vs {leagueMatch.opponentName}</span>
+                <span className="text-gray-500 block break-words">vs {leagueMatch.opponentName}</span>
               ) : (
-                <span className="text-gray-400 ml-2 italic">nessuna partita assegnata</span>
+                <span className="text-gray-400 block italic">nessuna partita assegnata</span>
               )}
             </div>
           </div>
 
           {/* Coppe pendenti */}
           {cupMatches.map((cm, i) => (
-            <div key={i} className="flex items-center gap-3 text-sm">
-              <span className="text-base">🏆</span>
-              <div>
-                <span className="font-semibold text-gray-700">{cm.cupName} — {cm.roundName}</span>
-                <span className="text-gray-500 ml-2">vs {cm.opponentName}</span>
+            <div key={i} className="flex items-start gap-3 text-sm">
+              <span className="text-base shrink-0">🏆</span>
+              <div className="min-w-0">
+                <span className="font-semibold text-gray-700 break-words">{cm.cupName} — {cm.roundName}</span>
+                <span className="text-gray-500 block break-words">vs {cm.opponentName}</span>
               </div>
             </div>
           ))}
