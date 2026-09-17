@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
+import { computeGroupStandings } from "@/app/lib/cupStandings";
 
 export const metadata: Metadata = { title: "Coppe" };
 
@@ -18,6 +19,9 @@ type CupRound = {
   id: number;
   name: string;
   number: number;
+  type: "eliminazione" | "girone";
+  matchdayNumber: number | null;
+  playDate: string | null;
   matches: CupMatch[];
 };
 
@@ -62,10 +66,20 @@ export default async function CoppePage() {
 
   const cups: Cup[] = await Promise.all(
     cupsRes.rows.map(async (cup) => {
-      const roundsRes = await db.execute({
-        sql: `SELECT id, name, number FROM "CupRound" WHERE cupId = ? ORDER BY number ASC`,
-        args: [cup.id],
-      });
+      // "type" e' una colonna aggiunta dopo (fase a gironi) - se il DB non e'
+      // ancora migrato, ricadiamo su un turno "eliminazione" per tutti.
+      let roundsRes;
+      try {
+        roundsRes = await db.execute({
+          sql: `SELECT id, name, number, type, matchdayNumber, playDate FROM "CupRound" WHERE cupId = ? ORDER BY number ASC`,
+          args: [cup.id],
+        });
+      } catch {
+        roundsRes = await db.execute({
+          sql: `SELECT id, name, number FROM "CupRound" WHERE cupId = ? ORDER BY number ASC`,
+          args: [cup.id],
+        });
+      }
 
       const rounds: CupRound[] = await Promise.all(
         roundsRes.rows.map(async (round) => {
@@ -82,6 +96,9 @@ export default async function CoppePage() {
             id: round.id as number,
             name: round.name as string,
             number: round.number as number,
+            type: ((round.type as string | undefined) ?? "eliminazione") as "eliminazione" | "girone",
+            matchdayNumber: (round.matchdayNumber as number | null | undefined) ?? null,
+            playDate: (round.playDate as string | null | undefined) ?? null,
             matches: matchesRes.rows.map((m) => ({
               id: m.id as number,
               homeScore: m.homeScore as number | null,
@@ -105,58 +122,95 @@ export default async function CoppePage() {
         Coppe — <span className="text-green-700">{season.name as string}</span>
       </h1>
 
-      {cups.map((cup) => (
-        <div key={cup.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-          <div className="bg-yellow-600 text-white px-5 py-3 font-bold text-lg flex items-center gap-2">
-            🏆 {cup.name}
-          </div>
+      {cups.map((cup) => {
+        const groupRounds = cup.rounds.filter((r) => r.type === "girone");
+        const knockoutRounds = cup.rounds.filter((r) => r.type !== "girone");
 
-          {cup.rounds.length === 0 ? (
-            <div className="p-4 text-gray-400 text-sm">Nessun turno configurato.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              {/* Bracket: rounds as horizontal columns */}
-              <div className="flex min-w-max p-5 gap-0">
-                {cup.rounds.map((round, roundIdx) => {
-                  const isLast = roundIdx === cup.rounds.length - 1;
-                  return (
-                    <div key={round.id} className="flex items-stretch">
-                      {/* Round column */}
-                      <div className="w-60">
-                        <div className="text-xs font-bold uppercase text-gray-400 tracking-wider mb-4 text-center px-2 pb-2 border-b">
-                          {round.name}
-                        </div>
-                        <div className="flex flex-col justify-around h-full gap-4">
-                          {round.matches.length === 0 ? (
-                            <p className="text-gray-300 text-sm text-center py-4">–</p>
-                          ) : (
-                            round.matches.map((m) => (
-                              <MatchCard
-                                key={m.id}
-                                match={m}
-                                currentUserId={session.userId}
-                              />
-                            ))
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Connector arrow */}
-                      {!isLast && (
-                        <div className="w-10 flex items-center justify-center text-gray-200 text-2xl select-none shrink-0">
-                          →
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+        return (
+          <div key={cup.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <div className="bg-yellow-600 text-white px-5 py-3 font-bold text-lg flex items-center gap-2">
+              {"\ud83c\udfc6"} {cup.name}
             </div>
-          )}
-        </div>
-      ))}
+
+            {cup.rounds.length === 0 ? (
+              <div className="p-4 text-gray-400 text-sm">Nessun turno configurato.</div>
+            ) : (
+              <>
+                {/* Gironi: classifica per ognuno */}
+                {groupRounds.length > 0 && (
+                  <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-5 border-b">
+                    {groupRounds.map((round) => (
+                      <GroupStandings key={round.id} round={round} currentUserId={session.userId} />
+                    ))}
+                  </div>
+                )}
+
+                {/* Turni a eliminazione diretta: bracket a colonne */}
+                {knockoutRounds.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <div className="flex min-w-max p-5 gap-0">
+                      {knockoutRounds.map((round, roundIdx) => {
+                        const isLast = roundIdx === knockoutRounds.length - 1;
+                        return (
+                          <div key={round.id} className="flex items-stretch">
+                            {/* Round column */}
+                            <div className="w-60">
+                              <div className="text-xs font-bold uppercase text-gray-400 tracking-wider mb-4 text-center px-2 pb-2 border-b">
+                                {round.name}
+                                {formatSchedule(round) && (
+                                  <div className="text-[10px] font-normal normal-case text-gray-400 mt-1">
+                                    {formatSchedule(round)}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex flex-col justify-around h-full gap-4">
+                                {round.matches.length === 0 ? (
+                                  <p className="text-gray-300 text-sm text-center py-4">{"\u2013"}</p>
+                                ) : (
+                                  round.matches.map((m) => (
+                                    <MatchCard
+                                      key={m.id}
+                                      match={m}
+                                      currentUserId={session.userId}
+                                    />
+                                  ))
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Connector arrow */}
+                            {!isLast && (
+                              <div className="w-10 flex items-center justify-center text-gray-200 text-2xl select-none shrink-0">
+                                {"\u2192"}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
+}
+
+// Etichetta "quando si gioca" per un turno/girone: giornata di campionato
+// e/o data, solo informativa (nessun calcolo automatico dal punteggio).
+function formatSchedule(round: CupRound): string | null {
+  const parts: string[] = [];
+  if (round.matchdayNumber !== null) parts.push(`Giornata ${round.matchdayNumber}`);
+  if (round.playDate) {
+    const d = new Date(round.playDate);
+    if (!isNaN(d.getTime())) {
+      parts.push(d.toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" }));
+    }
+  }
+  return parts.length > 0 ? parts.join(" " + String.fromCharCode(183) + " ") : null;
 }
 
 function MatchCard({
@@ -231,6 +285,74 @@ function MatchCard({
           {played ? m.awayScore?.toFixed(1) : "–"}
         </span>
       </div>
+    </div>
+  );
+}
+
+function GroupStandings({
+  round,
+  currentUserId,
+}: {
+  round: CupRound;
+  currentUserId: number;
+}) {
+  const standings = computeGroupStandings(round.matches);
+  const qualifyCount = Math.min(4, standings.length);
+
+  return (
+    <div className="border rounded-xl overflow-hidden">
+      <div className="bg-gray-50 px-4 py-2.5 border-b">
+        <h3 className="font-semibold text-gray-700 text-sm">{round.name}</h3>
+        {formatSchedule(round) && (
+          <p className="text-xs text-gray-400 mt-0.5">{formatSchedule(round)}</p>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-gray-400 text-xs uppercase tracking-wide">
+              <th className="text-left font-medium px-3 py-2">#</th>
+              <th className="text-left font-medium px-3 py-2">Squadra</th>
+              <th className="text-center font-medium px-2 py-2">PG</th>
+              <th className="text-center font-medium px-2 py-2">V</th>
+              <th className="text-center font-medium px-2 py-2">N</th>
+              <th className="text-center font-medium px-2 py-2">P</th>
+              <th className="text-center font-medium px-2 py-2">DR</th>
+              <th className="text-center font-medium px-3 py-2">Pt</th>
+            </tr>
+          </thead>
+          <tbody>
+            {standings.map((s, i) => {
+              const qualified = i < qualifyCount;
+              const isMe = s.userId === currentUserId;
+              return (
+                <tr
+                  key={s.userId}
+                  className={`border-t ${qualified ? "bg-green-50" : ""} ${isMe ? "font-semibold" : ""}`}
+                >
+                  <td className={`px-3 py-2 ${qualified ? "text-green-700" : "text-gray-400"}`}>{i + 1}</td>
+                  <td className={`px-3 py-2 truncate max-w-[160px] ${isMe ? "text-green-700" : "text-gray-700"}`}>
+                    {s.teamName}
+                  </td>
+                  <td className="text-center px-2 py-2 text-gray-500">{s.played}</td>
+                  <td className="text-center px-2 py-2 text-gray-500">{s.wins}</td>
+                  <td className="text-center px-2 py-2 text-gray-500">{s.draws}</td>
+                  <td className="text-center px-2 py-2 text-gray-500">{s.losses}</td>
+                  <td className="text-center px-2 py-2 text-gray-500 tabular-nums">
+                    {s.diff > 0 ? `+${s.diff.toFixed(1)}` : s.diff.toFixed(1)}
+                  </td>
+                  <td className="text-center px-3 py-2 font-bold text-gray-800">{s.points}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {qualifyCount > 0 && (
+        <div className="px-4 py-2 border-t bg-green-50/60 text-xs text-green-700">
+          {"\u2713"} Le prime {qualifyCount} passano il turno
+        </div>
+      )}
     </div>
   );
 }

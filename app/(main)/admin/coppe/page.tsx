@@ -19,7 +19,15 @@ export default async function AdminCoppePage() {
 
   const cups = await Promise.all(
     cupsRes.rows.map(async (cup) => {
-      const roundsRes = await db.execute({ sql: `SELECT id, name, number FROM "CupRound" WHERE cupId = ? ORDER BY number ASC`, args: [cup.id] });
+      // "type"/"matchdayNumber"/"playDate" sono colonne aggiunte dopo (fase a
+      // gironi + schedulazione) - se il DB non e' ancora migrato, ricadiamo
+      // su un turno "eliminazione" senza schedulazione per tutti.
+      let roundsRes;
+      try {
+        roundsRes = await db.execute({ sql: `SELECT id, name, number, type, matchdayNumber, playDate FROM "CupRound" WHERE cupId = ? ORDER BY number ASC`, args: [cup.id] });
+      } catch {
+        roundsRes = await db.execute({ sql: `SELECT id, name, number FROM "CupRound" WHERE cupId = ? ORDER BY number ASC`, args: [cup.id] });
+      }
       const rounds = await Promise.all(
         roundsRes.rows.map(async (round) => {
           const matchesRes = await db.execute({
@@ -35,6 +43,9 @@ export default async function AdminCoppePage() {
             id: round.id as number,
             name: round.name as string,
             number: round.number as number,
+            type: ((round.type as string | undefined) ?? "eliminazione") as "eliminazione" | "girone",
+            matchdayNumber: (round.matchdayNumber as number | null | undefined) ?? null,
+            playDate: (round.playDate as string | null | undefined) ?? null,
             matches: matchesRes.rows.map((m) => ({
               id: m.id as number,
               homeScore: m.homeScore as number | null,

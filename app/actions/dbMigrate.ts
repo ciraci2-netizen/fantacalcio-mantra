@@ -238,6 +238,18 @@ export async function runMigrations() {
   // se l'offerta vince (vedi resolveRound in app/lib/auction.ts).
   try { await db.execute(`ALTER TABLE "SealedBid" ADD COLUMN "releasePlayerId" INTEGER`); } catch { /* gia presente */ }
 
+  // Coppe con fase a gironi: un CupRound puo' essere un girone (round-robin
+  // fra piu' squadre, con classifica calcolata dai risultati) invece che un
+  // turno a eliminazione diretta come prima. Default 'eliminazione' per non
+  // toccare i turni gia' esistenti.
+  try { await db.execute(`ALTER TABLE "CupRound" ADD COLUMN "type" TEXT NOT NULL DEFAULT 'eliminazione'`); } catch { /* gia presente */ }
+
+  // Quando si gioca un turno/girone di coppa: solo un'etichetta informativa
+  // (numero di giornata di campionato e/o data), il punteggio resta sempre
+  // inserito a mano - non c'e' calcolo automatico dalla formazione.
+  try { await db.execute(`ALTER TABLE "CupRound" ADD COLUMN "matchdayNumber" INTEGER`); } catch { /* gia presente */ }
+  try { await db.execute(`ALTER TABLE "CupRound" ADD COLUMN "playDate" TEXT`); } catch { /* gia presente */ }
+
   return { success: true };
 }
 
