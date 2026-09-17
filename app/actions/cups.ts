@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { generateRoundRobinSchedule } from "@/app/lib/cupSchedule";
+import { calculateDefenseModifier } from "@/app/lib/scoring";
 
 async function requireAdmin() {
   const session = await getSession();
@@ -12,8 +13,9 @@ async function requireAdmin() {
 }
 
 // Giornata di campionato e/o data in cui si gioca un turno/girone - solo
-// un'etichetta informativa: il punteggio resta sempre inserito a mano,
-// niente calcolo automatico dalla formazione di quella giornata.
+// un'etichetta informativa: il punteggio resta modificabile a mano in
+// qualsiasi momento (vedi setCupMatchScore), e puo' anche essere calcolato
+// in automatico a partire da questa giornata (vedi calculateCupMatchScore).
 function readSchedule(formData: FormData) {
   const rawMatchday = (formData.get("matchdayNumber") as string)?.trim();
   const matchdayNumber = rawMatchday ? parseInt(rawMatchday, 10) : null;
@@ -224,6 +226,133 @@ export async function createCupMatch(prevState: unknown, formData: FormData) {
       sql: `INSERT INTO "CupMatch" (cupRoundId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
       args: [cupRoundId, homeUserId, awayUserId],
     });
+    revalidatePath("/coppe");
+    revalidatePath("/admin/coppe");
+    return { success: true };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+// Calcola in automatico il risultato di una partita di coppa a partire dal
+// fantavoto che le due squadre hanno gia' fatto in quella giornata di
+// campionato (stessa formazione e voti gia' calcolati come al solito -
+// serve che la giornata sia gia stata importata/calcolata) - con lo stesso
+// modificatore difensivo del campionato se e' attivo, ma SENZA bonus
+// fattore campo: in coppa nessuna delle due squadre e' "di casa". La
+// giornata da usare e' quella del turno interno del girone (CupRoundSlot),
+// o in mancanza quella dell'intero turno/girone (CupRound.matchdayNumber)
+// per i turni a eliminazione diretta. Il risultato calcolato resta comunque
+// modificabile a mano dopo con setCupMatchScore, se serve correggerlo.
+export async function calculateCupMatchScore(prevState: unknown, formData: FormData) {
+  try {
+    await requireAdmin();
+    const db = getDb();
+    const matchId = Number(formData.get("matchId"));
+
+    const matchRes = await db.execute({
+      sql: `SELECT cm.cupRoundId, cm.roundSlot, cm.homeUserId, cm.awayUserId, cr.cupId
+            FROM "CupMatch" cm JOIN "CupRound" cr ON cr.id = cm.cupRoundId
+            WHERE cm.id = ?`,
+      args: [matchId],
+    });
+    if (matchRes.rows.length === 0) return { error: "Partita non trovata." };
+    const row = matchRes.rows[0];
+    const cupRoundId = row.cupRoundId as number;
+    const roundSlot = row.roundSlot as number | null;
+    const homeUserId = row.homeUserId as number;
+    const awayUserId = row.awayUserId as number;
+    const cupId = row.cupId as number;
+
+    // Giornata da usare: prima prova quella del singolo turno interno
+    // (girone), altrimenti quella dell'intero turno (eliminazione diretta).
+    let matchdayNumber: number | null = null;
+    if (roundSlot !== null) {
+      try {
+        const slotRes = await db.execute({
+          sql: `SELECT matchdayNumber FROM "CupRoundSlot" WHERE cupRoundId = ? AND slot = ?`,
+          args: [cupRoundId, roundSlot],
+        });
+        matchdayNumber = (slotRes.rows[0]?.matchdayNumber as number | null | undefined) ?? null;
+      } catch { /* tabella non ancora migrata: prova comunque il turno intero sotto */ }
+    }
+    if (matchdayNumber === null) {
+      try {
+        const roundRes = await db.execute({ sql: `SELECT matchdayNumber FROM "CupRound" WHERE id = ?`, args: [cupRoundId] });
+        matchdayNumber = (roundRes.rows[0]?.matchdayNumber as number | null | undefined) ?? null;
+      } catch { /* colonna non ancora migrata */ }
+    }
+    if (matchdayNumber === null) {
+      return { error: "Imposta prima la giornata di campionato (sotto il turno, o sull'intero turno/girone), poi riprova." };
+    }
+
+    const cupRes = await db.execute({ sql: `SELECT seasonId FROM "Cup" WHERE id = ?`, args: [cupId] });
+    if (cupRes.rows.length === 0) return { error: "Coppa non trovata." };
+    const seasonId = cupRes.rows[0].seasonId as number;
+
+    const mdRes = await db.execute({
+      sql: `SELECT id FROM "Matchday" WHERE number = ? AND seasonId = ?`,
+      args: [matchdayNumber, seasonId],
+    });
+    if (mdRes.rows.length === 0) return { error: `Non trovo la Giornata ${matchdayNumber} in questa stagione.` };
+    const matchdayId = mdRes.rows[0].id as number;
+
+    const homeLineupRes = await db.execute({
+      sql: `SELECT id, totalScore FROM "Lineup" WHERE userId = ? AND matchdayId = ?`,
+      args: [homeUserId, matchdayId],
+    });
+    const awayLineupRes = await db.execute({
+      sql: `SELECT id, totalScore FROM "Lineup" WHERE userId = ? AND matchdayId = ?`,
+      args: [awayUserId, matchdayId],
+    });
+    const homeTotal = homeLineupRes.rows[0]?.totalScore as number | null | undefined;
+    const awayTotal = awayLineupRes.rows[0]?.totalScore as number | null | undefined;
+
+    if (homeTotal === null || homeTotal === undefined || awayTotal === null || awayTotal === undefined) {
+      return {
+        error: `Non risultano voti calcolati per la Giornata ${matchdayNumber}: importa i voti e calcola quella giornata come al solito, poi riprova.`,
+      };
+    }
+
+    let defenseModifierEnabled = false;
+    try {
+      const settingsRes = await db.execute({
+        sql: `SELECT defenseModifierEnabled FROM "LeagueSettings" WHERE seasonId = ?`,
+        args: [seasonId],
+      });
+      if (settingsRes.rows.length > 0) defenseModifierEnabled = Boolean(settingsRes.rows[0].defenseModifierEnabled);
+    } catch { /* colonna non ancora migrata */ }
+
+    let homeDefenseMalus = 0;
+    let awayDefenseMalus = 0;
+    if (defenseModifierEnabled) {
+      const starterVotes = async (lineupId: number) => {
+        const slotsRes = await db.execute({
+          sql: `SELECT ls.position, p.mantraRole, pv.vote
+                FROM "LineupSlot" ls
+                JOIN "Player" p ON p.id = ls.playerId
+                LEFT JOIN "PlayerVote" pv ON pv.playerId = ls.playerId AND pv.matchdayId = ?
+                WHERE ls.lineupId = ? AND ls.isStarter = 1
+                ORDER BY ls.position ASC`,
+          args: [matchdayId, lineupId],
+        });
+        return slotsRes.rows.map((s) => ({ mantraRole: s.mantraRole as string, vote: s.vote as number | null }));
+      };
+      const homeStarters = await starterVotes(homeLineupRes.rows[0].id as number);
+      const awayStarters = await starterVotes(awayLineupRes.rows[0].id as number);
+      homeDefenseMalus = calculateDefenseModifier(homeStarters).malus;
+      awayDefenseMalus = calculateDefenseModifier(awayStarters).malus;
+    }
+
+    // Nessun fattore campo: in coppa non c'e' una squadra "di casa".
+    const homeScore = Math.round((homeTotal + awayDefenseMalus) * 100) / 100;
+    const awayScore = Math.round((awayTotal + homeDefenseMalus) * 100) / 100;
+
+    await db.execute({
+      sql: `UPDATE "CupMatch" SET homeScore = ?, awayScore = ? WHERE id = ?`,
+      args: [homeScore, awayScore, matchId],
+    });
+
     revalidatePath("/coppe");
     revalidatePath("/admin/coppe");
     return { success: true };

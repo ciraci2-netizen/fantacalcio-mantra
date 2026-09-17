@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { createCup, createCupRound, createCupGroup, createCupMatch, setCupMatchScore, setCupRoundSchedule, setSlotSchedule, deleteCup, deleteCupRound } from "@/app/actions/cups";
+import { createCup, createCupRound, createCupGroup, createCupMatch, setCupMatchScore, calculateCupMatchScore, setCupRoundSchedule, setSlotSchedule, deleteCup, deleteCupRound } from "@/app/actions/cups";
 import { computeGroupStandings } from "@/app/lib/cupStandings";
 
 type Match = { id: number; homeScore: number | null; awayScore: number | null; homeTeam: string; awayTeam: string; homeUserId: number; awayUserId: number; roundSlot: number | null };
@@ -51,6 +51,7 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
   const [groupState, groupAction, groupPending] = useActionState(createCupGroup, null);
   const [matchState, matchAction, matchPending] = useActionState(createCupMatch, null);
   const [scoreState, scoreAction, scorePending] = useActionState(setCupMatchScore, null);
+  const [calcState, calcAction, calcPending] = useActionState(calculateCupMatchScore, null);
   const [scheduleState, scheduleAction, schedulePending] = useActionState(setCupRoundSchedule, null);
   const [slotScheduleState, slotScheduleAction, slotSchedulePending] = useActionState(setSlotSchedule, null);
   const [deleteState, deleteAction] = useActionState(deleteCup, null);
@@ -79,6 +80,7 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
       {deleteRoundState?.error && <p className="text-red-600 text-sm">{deleteRoundState.error}</p>}
       {scheduleState?.error && <p className="text-red-600 text-sm">{scheduleState.error}</p>}
       {slotScheduleState?.error && <p className="text-red-600 text-sm">{slotScheduleState.error}</p>}
+      {calcState?.error && <p className="text-red-600 text-sm">{calcState.error}</p>}
 
       {/* Cups list */}
       {cups.map((cup) => (
@@ -242,7 +244,12 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
                     di questa funzione) restano in un elenco unico */}
                 {(() => {
                   const renderMatch = (m: Match) => (
-                    <div key={m.id} className="flex flex-wrap items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
+                    // La key include il punteggio: dopo "Calcola" (o dopo un
+                    // altro Salva) il valore torna dal server nelle props,
+                    // ma un <input> non controllato non lo mostrerebbe da
+                    // solo - la key diversa forza React a ricreare i campi
+                    // con il nuovo valore.
+                    <div key={`${m.id}:${m.homeScore}:${m.awayScore}`} className="flex flex-wrap items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
                       <span className="font-medium text-sm flex-1 text-right">{m.homeTeam}</span>
                       <form action={scoreAction} className="flex items-center gap-1">
                         <input type="hidden" name="matchId" value={m.id} />
@@ -250,6 +257,10 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
                         <span className="text-gray-400">{"\u2014"}</span>
                         <input type="number" name="awayScore" step="0.1" defaultValue={m.awayScore ?? ""} placeholder="0.0" className="w-16 border rounded px-1 py-0.5 text-sm text-center" />
                         <button type="submit" disabled={scorePending} className="px-2 py-0.5 bg-green-600 text-white rounded text-xs">{"\u2713"}</button>
+                      </form>
+                      <form action={calcAction}>
+                        <input type="hidden" name="matchId" value={m.id} />
+                        <button type="submit" disabled={calcPending} title="Calcola dal fantavoto gia fatto in quella giornata" className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded text-xs">Calcola</button>
                       </form>
                       <span className="font-medium text-sm flex-1">{m.awayTeam}</span>
                     </div>
