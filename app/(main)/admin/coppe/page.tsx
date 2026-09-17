@@ -55,6 +55,26 @@ export default async function AdminCoppePage() {
               args: [round.id],
             });
           }
+          // Giornata/data per singolo turno interno del girone (tabella
+          // "CupRoundSlot", aggiunta dopo) - se il DB non e' ancora
+          // migrato, ricadiamo su nessuna schedulazione per turno.
+          let slotSchedule: Record<number, { matchdayNumber: number | null; playDate: string | null }> = {};
+          try {
+            const slotsRes = await db.execute({
+              sql: `SELECT slot, matchdayNumber, playDate FROM "CupRoundSlot" WHERE cupRoundId = ?`,
+              args: [round.id],
+            });
+            slotSchedule = Object.fromEntries(
+              slotsRes.rows.map((s) => [
+                s.slot as number,
+                {
+                  matchdayNumber: (s.matchdayNumber as number | null | undefined) ?? null,
+                  playDate: (s.playDate as string | null | undefined) ?? null,
+                },
+              ])
+            );
+          } catch { /* tabella non ancora migrata */ }
+
           return {
             id: round.id as number,
             name: round.name as string,
@@ -62,6 +82,7 @@ export default async function AdminCoppePage() {
             type: ((round.type as string | undefined) ?? "eliminazione") as "eliminazione" | "girone",
             matchdayNumber: (round.matchdayNumber as number | null | undefined) ?? null,
             playDate: (round.playDate as string | null | undefined) ?? null,
+            slotSchedule,
             matches: matchesRes.rows.map((m) => ({
               id: m.id as number,
               homeScore: m.homeScore as number | null,

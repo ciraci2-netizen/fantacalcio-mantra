@@ -1,11 +1,12 @@
 "use client";
 
 import { useActionState } from "react";
-import { createCup, createCupRound, createCupGroup, createCupMatch, setCupMatchScore, setCupRoundSchedule, deleteCup, deleteCupRound } from "@/app/actions/cups";
+import { createCup, createCupRound, createCupGroup, createCupMatch, setCupMatchScore, setCupRoundSchedule, setSlotSchedule, deleteCup, deleteCupRound } from "@/app/actions/cups";
 import { computeGroupStandings } from "@/app/lib/cupStandings";
 
 type Match = { id: number; homeScore: number | null; awayScore: number | null; homeTeam: string; awayTeam: string; homeUserId: number; awayUserId: number; roundSlot: number | null };
-type Round = { id: number; name: string; number: number; type: "eliminazione" | "girone"; matchdayNumber: number | null; playDate: string | null; matches: Match[] };
+type SlotSchedule = { matchdayNumber: number | null; playDate: string | null };
+type Round = { id: number; name: string; number: number; type: "eliminazione" | "girone"; matchdayNumber: number | null; playDate: string | null; slotSchedule: Record<number, SlotSchedule>; matches: Match[] };
 type Cup = { id: number; name: string; rounds: Round[] };
 type User = { id: number; teamName: string; username: string };
 
@@ -51,6 +52,7 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
   const [matchState, matchAction, matchPending] = useActionState(createCupMatch, null);
   const [scoreState, scoreAction, scorePending] = useActionState(setCupMatchScore, null);
   const [scheduleState, scheduleAction, schedulePending] = useActionState(setCupRoundSchedule, null);
+  const [slotScheduleState, slotScheduleAction, slotSchedulePending] = useActionState(setSlotSchedule, null);
   const [deleteState, deleteAction] = useActionState(deleteCup, null);
   const [deleteRoundState, deleteRoundAction] = useActionState(deleteCupRound, null);
 
@@ -76,6 +78,7 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
 
       {deleteRoundState?.error && <p className="text-red-600 text-sm">{deleteRoundState.error}</p>}
       {scheduleState?.error && <p className="text-red-600 text-sm">{scheduleState.error}</p>}
+      {slotScheduleState?.error && <p className="text-red-600 text-sm">{slotScheduleState.error}</p>}
 
       {/* Cups list */}
       {cups.map((cup) => (
@@ -158,19 +161,25 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
                   </form>
                 </div>
 
-                {/* Quando si gioca: giornata/data, solo etichetta - il punteggio resta a mano */}
-                <form action={scheduleAction} className="flex flex-wrap items-end gap-2 mb-3 bg-gray-50 rounded-lg px-3 py-2">
-                  <input type="hidden" name="cupRoundId" value={round.id} />
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-0.5">Giornata</label>
-                    <input type="number" name="matchdayNumber" min="1" defaultValue={round.matchdayNumber ?? ""} placeholder="es. 12" className="w-20 border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-green-500 focus:outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-0.5">Data</label>
-                    <input type="date" name="playDate" defaultValue={round.playDate ?? ""} className="border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-green-500 focus:outline-none" />
-                  </div>
-                  <button type="submit" disabled={schedulePending} className="px-2.5 py-1 bg-gray-600 hover:bg-gray-700 disabled:opacity-60 text-white rounded text-xs">Salva</button>
-                </form>
+                {/* Quando si gioca: giornata/data, solo etichetta - il punteggio
+                    resta a mano. Nei gironi questa etichetta e' per singolo
+                    turno interno (vedi sotto ogni "Turno N"); qui resta solo
+                    per i turni a eliminazione diretta (un'unica partita, o
+                    poche, giocate tutte nella stessa giornata) */}
+                {!isGroup && (
+                  <form action={scheduleAction} className="flex flex-wrap items-end gap-2 mb-3 bg-gray-50 rounded-lg px-3 py-2">
+                    <input type="hidden" name="cupRoundId" value={round.id} />
+                    <div>
+                      <label className="block text-[10px] text-gray-400 mb-0.5">Giornata</label>
+                      <input type="number" name="matchdayNumber" min="1" defaultValue={round.matchdayNumber ?? ""} placeholder="es. 12" className="w-20 border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-green-500 focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-400 mb-0.5">Data</label>
+                      <input type="date" name="playDate" defaultValue={round.playDate ?? ""} className="border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-green-500 focus:outline-none" />
+                    </div>
+                    <button type="submit" disabled={schedulePending} className="px-2.5 py-1 bg-gray-600 hover:bg-gray-700 disabled:opacity-60 text-white rounded text-xs">Salva</button>
+                  </form>
+                )}
 
                 {/* Classifica (solo gironi) */}
                 {isGroup && standings.length > 0 && (
@@ -254,19 +263,29 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
 
                   return (
                     <div className="space-y-4">
-                      {groupMatchesBySlot(round.matches).map(({ slot, matches, resting }) => (
-                        <div key={slot}>
-                          <div className="flex flex-wrap items-baseline gap-x-2 mb-1.5">
-                            <span className="text-xs font-semibold text-amber-700">Turno {slot}</span>
-                            {resting.length > 0 && (
-                              <span className="text-xs text-gray-400">
-                                {"\u2014"} riposa: {resting.join(", ")}
-                              </span>
-                            )}
+                      {groupMatchesBySlot(round.matches).map(({ slot, matches, resting }) => {
+                        const slotInfo = round.slotSchedule[slot];
+                        return (
+                          <div key={slot}>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1.5">
+                              <span className="text-xs font-semibold text-amber-700">Turno {slot}</span>
+                              {resting.length > 0 && (
+                                <span className="text-xs text-gray-400">
+                                  {"\u2014"} riposa: {resting.join(", ")}
+                                </span>
+                              )}
+                              <form action={slotScheduleAction} className="flex flex-wrap items-center gap-1.5 ml-1">
+                                <input type="hidden" name="cupRoundId" value={round.id} />
+                                <input type="hidden" name="slot" value={slot} />
+                                <input type="number" name="matchdayNumber" min="1" defaultValue={slotInfo?.matchdayNumber ?? ""} placeholder="Giornata" className="w-20 border rounded px-1.5 py-0.5 text-xs focus:ring-2 focus:ring-green-500 focus:outline-none" />
+                                <input type="date" name="playDate" defaultValue={slotInfo?.playDate ?? ""} className="border rounded px-1.5 py-0.5 text-xs focus:ring-2 focus:ring-green-500 focus:outline-none" />
+                                <button type="submit" disabled={slotSchedulePending} className="px-2 py-0.5 bg-gray-500 hover:bg-gray-600 disabled:opacity-60 text-white rounded text-xs">Salva</button>
+                              </form>
+                            </div>
+                            <div className="space-y-2">{matches.map(renderMatch)}</div>
                           </div>
-                          <div className="space-y-2">{matches.map(renderMatch)}</div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   );
                 })()}

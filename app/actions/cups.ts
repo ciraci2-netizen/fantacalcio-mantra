@@ -165,6 +165,36 @@ export async function setCupRoundSchedule(prevState: unknown, formData: FormData
   }
 }
 
+// Giornata di campionato e/o data per un singolo turno interno (Turno 1, 2,
+// ...) di un girone - impostata a mano dall'admin, indipendente per ogni
+// turno interno. Solo un'etichetta informativa, come le altre.
+export async function setSlotSchedule(prevState: unknown, formData: FormData) {
+  try {
+    await requireAdmin();
+    const db = getDb();
+    const cupRoundId = Number(formData.get("cupRoundId"));
+    const slot = Number(formData.get("slot"));
+    const { matchdayNumber, playDate } = readSchedule(formData);
+    try {
+      await db.execute({
+        sql: `INSERT INTO "CupRoundSlot" (cupRoundId, slot, matchdayNumber, playDate) VALUES (?, ?, ?, ?)
+              ON CONFLICT(cupRoundId, slot) DO UPDATE SET matchdayNumber = excluded.matchdayNumber, playDate = excluded.playDate`,
+        args: [cupRoundId, slot, matchdayNumber, playDate],
+      });
+    } catch {
+      return {
+        error:
+          'Devi prima eseguire la migrazione del database: vai su Admin e premi "Esegui migrazione DB", poi riprova.',
+      };
+    }
+    revalidatePath("/coppe");
+    revalidatePath("/admin/coppe");
+    return { success: true };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
 // Elimina un intero turno/girone (e le sue partite) - utile per correggere
 // un girone creato con le squadre sbagliate senza dover cancellare tutta
 // la coppa.

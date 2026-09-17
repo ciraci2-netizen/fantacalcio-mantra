@@ -257,6 +257,19 @@ export async function runMigrations() {
   // punteggio resta sempre inserito a mano.
   try { await db.execute(`ALTER TABLE "CupMatch" ADD COLUMN "roundSlot" INTEGER`); } catch { /* gia presente */ }
 
+  // Giornata di campionato e/o data per ciascun turno interno di un girone
+  // (Turno 1, Turno 2, ...) - a differenza del campo su CupRound (un'unica
+  // etichetta per l'intero turno/girone), qui ogni turno interno ha la sua,
+  // impostata a mano dall'admin. Sempre e solo un'etichetta informativa.
+  await db.execute(`CREATE TABLE IF NOT EXISTS "CupRoundSlot" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cupRoundId INTEGER NOT NULL,
+    slot INTEGER NOT NULL,
+    matchdayNumber INTEGER,
+    playDate TEXT,
+    UNIQUE(cupRoundId, slot)
+  )`);
+
   return { success: true };
 }
 
