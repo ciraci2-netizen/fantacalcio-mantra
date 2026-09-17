@@ -30,15 +30,31 @@ export default async function AdminCoppePage() {
       }
       const rounds = await Promise.all(
         roundsRes.rows.map(async (round) => {
-          const matchesRes = await db.execute({
-            sql: `SELECT cm.id, cm.homeScore, cm.awayScore, cm.homeUserId, cm.awayUserId,
-                         hu.teamName as homeTeam, au.teamName as awayTeam
-                  FROM "CupMatch" cm
-                  JOIN "User" hu ON hu.id = cm.homeUserId
-                  JOIN "User" au ON au.id = cm.awayUserId
-                  WHERE cm.cupRoundId = ?`,
-            args: [round.id],
-          });
+          // "roundSlot" e' una colonna aggiunta dopo (turni interni del
+          // girone) - se il DB non e' ancora migrato, ricadiamo su un
+          // elenco piatto di partite senza raggruppamento.
+          let matchesRes;
+          try {
+            matchesRes = await db.execute({
+              sql: `SELECT cm.id, cm.homeScore, cm.awayScore, cm.homeUserId, cm.awayUserId, cm.roundSlot,
+                           hu.teamName as homeTeam, au.teamName as awayTeam
+                    FROM "CupMatch" cm
+                    JOIN "User" hu ON hu.id = cm.homeUserId
+                    JOIN "User" au ON au.id = cm.awayUserId
+                    WHERE cm.cupRoundId = ?`,
+              args: [round.id],
+            });
+          } catch {
+            matchesRes = await db.execute({
+              sql: `SELECT cm.id, cm.homeScore, cm.awayScore, cm.homeUserId, cm.awayUserId,
+                           hu.teamName as homeTeam, au.teamName as awayTeam
+                    FROM "CupMatch" cm
+                    JOIN "User" hu ON hu.id = cm.homeUserId
+                    JOIN "User" au ON au.id = cm.awayUserId
+                    WHERE cm.cupRoundId = ?`,
+              args: [round.id],
+            });
+          }
           return {
             id: round.id as number,
             name: round.name as string,
@@ -54,6 +70,7 @@ export default async function AdminCoppePage() {
               awayTeam: m.awayTeam as string,
               homeUserId: m.homeUserId as number,
               awayUserId: m.awayUserId as number,
+              roundSlot: (m.roundSlot as number | null | undefined) ?? null,
             })),
           };
         })

@@ -250,6 +250,13 @@ export async function runMigrations() {
   try { await db.execute(`ALTER TABLE "CupRound" ADD COLUMN "matchdayNumber" INTEGER`); } catch { /* gia presente */ }
   try { await db.execute(`ALTER TABLE "CupRound" ADD COLUMN "playDate" TEXT`); } catch { /* gia presente */ }
 
+  // Turno interno del girone (1, 2, 3...): a quale "giornata di girone"
+  // appartiene ogni partita, calcolato in automatico alla creazione del
+  // girone col calendario all'italiana (una squadra a riposo a turno se le
+  // squadre sono dispari). Solo per raggruppare le partite nella UI - il
+  // punteggio resta sempre inserito a mano.
+  try { await db.execute(`ALTER TABLE "CupMatch" ADD COLUMN "roundSlot" INTEGER`); } catch { /* gia presente */ }
+
   return { success: true };
 }
 

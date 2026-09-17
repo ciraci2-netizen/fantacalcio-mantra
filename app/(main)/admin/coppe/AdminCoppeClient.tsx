@@ -4,10 +4,45 @@ import { useActionState } from "react";
 import { createCup, createCupRound, createCupGroup, createCupMatch, setCupMatchScore, setCupRoundSchedule, deleteCup, deleteCupRound } from "@/app/actions/cups";
 import { computeGroupStandings } from "@/app/lib/cupStandings";
 
-type Match = { id: number; homeScore: number | null; awayScore: number | null; homeTeam: string; awayTeam: string; homeUserId: number; awayUserId: number };
+type Match = { id: number; homeScore: number | null; awayScore: number | null; homeTeam: string; awayTeam: string; homeUserId: number; awayUserId: number; roundSlot: number | null };
 type Round = { id: number; name: string; number: number; type: "eliminazione" | "girone"; matchdayNumber: number | null; playDate: string | null; matches: Match[] };
 type Cup = { id: number; name: string; rounds: Round[] };
 type User = { id: number; teamName: string; username: string };
+
+// Raggruppa le partite di un girone per turno interno (roundSlot), e per
+// ogni turno calcola quale squadra resta a riposo (la squadra del girone
+// che non compare fra i due team di nessuna partita di quel turno).
+type SlotGroup = { slot: number; matches: Match[]; resting: string[] };
+
+function groupMatchesBySlot(matches: Match[]): SlotGroup[] {
+  const teamNames = new Map<number, string>();
+  for (const m of matches) {
+    teamNames.set(m.homeUserId, m.homeTeam);
+    teamNames.set(m.awayUserId, m.awayTeam);
+  }
+  const allTeamIds = [...teamNames.keys()];
+
+  const bySlot = new Map<number, Match[]>();
+  for (const m of matches) {
+    const slot = m.roundSlot ?? 0;
+    if (!bySlot.has(slot)) bySlot.set(slot, []);
+    bySlot.get(slot)!.push(m);
+  }
+
+  return [...bySlot.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([slot, slotMatches]) => {
+      const playingIds = new Set<number>();
+      for (const m of slotMatches) {
+        playingIds.add(m.homeUserId);
+        playingIds.add(m.awayUserId);
+      }
+      const resting = allTeamIds
+        .filter((id) => !playingIds.has(id))
+        .map((id) => teamNames.get(id) as string);
+      return { slot, matches: slotMatches, resting };
+    });
+}
 
 export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cup[]; users: User[]; seasonName: string | null }) {
   const [createState, createAction, createPending] = useActionState(createCup, null);
@@ -192,9 +227,12 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
                   </form>
                 )}
 
-                {/* Matches */}
-                <div className="space-y-2">
-                  {round.matches.map((m) => (
+                {/* Matches - nei gironi raggruppate per turno interno (con chi
+                    riposa), se il turno ha gia' il calendario calcolato;
+                    altrimenti (turni a eliminazione, o gironi creati prima
+                    di questa funzione) restano in un elenco unico */}
+                {(() => {
+                  const renderMatch = (m: Match) => (
                     <div key={m.id} className="flex flex-wrap items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
                       <span className="font-medium text-sm flex-1 text-right">{m.homeTeam}</span>
                       <form action={scoreAction} className="flex items-center gap-1">
@@ -206,8 +244,32 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
                       </form>
                       <span className="font-medium text-sm flex-1">{m.awayTeam}</span>
                     </div>
-                  ))}
-                </div>
+                  );
+
+                  const canGroup = isGroup && round.matches.length > 0 && round.matches.every((m) => m.roundSlot !== null);
+
+                  if (!canGroup) {
+                    return <div className="space-y-2">{round.matches.map(renderMatch)}</div>;
+                  }
+
+                  return (
+                    <div className="space-y-4">
+                      {groupMatchesBySlot(round.matches).map(({ slot, matches, resting }) => (
+                        <div key={slot}>
+                          <div className="flex flex-wrap items-baseline gap-x-2 mb-1.5">
+                            <span className="text-xs font-semibold text-amber-700">Turno {slot}</span>
+                            {resting.length > 0 && (
+                              <span className="text-xs text-gray-400">
+                                {"\u2014"} riposa: {resting.join(", ")}
+                              </span>
+                            )}
+                          </div>
+                          <div className="space-y-2">{matches.map(renderMatch)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}

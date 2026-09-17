@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
+import { generateRoundRobinSchedule } from "@/app/lib/cupSchedule";
 
 async function requireAdmin() {
   const session = await getSession();
@@ -107,11 +108,23 @@ export async function createCupGroup(prevState: unknown, formData: FormData) {
       };
     }
 
-    for (let i = 0; i < userIds.length; i++) {
-      for (let j = i + 1; j < userIds.length; j++) {
+    // Calendario all'italiana: ogni squadra incontra tutte le altre una
+    // volta sola, raggruppate per turno interno del girone (roundSlot) con
+    // una squadra a riposo a turno se le squadre sono dispari.
+    const schedule = generateRoundRobinSchedule(userIds);
+    for (const m of schedule) {
+      try {
+        await db.execute({
+          sql: `INSERT INTO "CupMatch" (cupRoundId, homeUserId, awayUserId, roundSlot) VALUES (?, ?, ?, ?)`,
+          args: [cupRoundId, m.homeUserId, m.awayUserId, m.roundSlot],
+        });
+      } catch {
+        // Colonna roundSlot non ancora migrata: crea comunque la partita,
+        // solo senza raggruppamento per turno (rifai la migrazione DB e
+        // ricrea il girone per averlo).
         await db.execute({
           sql: `INSERT INTO "CupMatch" (cupRoundId, homeUserId, awayUserId) VALUES (?, ?, ?)`,
-          args: [cupRoundId, userIds[i], userIds[j]],
+          args: [cupRoundId, m.homeUserId, m.awayUserId],
         });
       }
     }
