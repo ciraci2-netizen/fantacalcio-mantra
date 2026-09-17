@@ -252,7 +252,7 @@ export default function CalendarClient({
       <div
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="select-none"
+        className="select-none max-w-md mx-auto"
         style={{ transition: "opacity 0.12s ease", opacity: fading ? 0 : 1 }}
       >
         {md && <MatchdayCard md={md} currentUserId={currentUserId} />}

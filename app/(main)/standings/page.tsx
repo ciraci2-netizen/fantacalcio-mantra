@@ -120,7 +120,7 @@ function Podium({ standings, myUserId }: { standings: StandingRow[]; myUserId: n
   const positions = [2, 1, 3];
 
   return (
-    <div className="bg-gradient-to-b from-slate-800 to-slate-900 rounded-2xl p-6 shadow-xl">
+    <div className="bg-slate-900/35 backdrop-blur-sm border border-white/10 rounded-2xl p-6 shadow-xl">
       <div className="flex items-end justify-center gap-3">
         {podiumOrder.map((s, vi) => {
           if (!s) return null;
