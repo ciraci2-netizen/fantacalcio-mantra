@@ -64,16 +64,33 @@ export default function LineupForm({
   const error = optimisticResult && optimisticResult !== "ok" ? optimisticResult : null;
 
   const [formation, setFormation] = useState(existingLineup?.formation ?? "4-4-2");
+
+  // Un giocatore salvato in precedenza potrebbe non essere più nella rosa
+  // attuale (svincolo, cessione, scambio tra liberi...). In quel caso lo
+  // slot va considerato vuoto: altrimenti l'id "fantasma" resta nello stato
+  // (anche se in UI lo slot appare vuoto) e viene comunque inviato al
+  // salvataggio, facendo fallire la validazione lato server con
+  // "Stai schierando un giocatore non nella rosa di questa squadra."
+  const rosterIds = new Set(roster.map((p) => p.id));
+  const inRoster = (id: number | null | undefined): number | null =>
+    id != null && rosterIds.has(id) ? id : null;
+
   const [starters, setStarters] = useState<(number | null)[]>(
     Array(11)
       .fill(null)
-      .map((_, i) => existingLineup?.starters[i] ?? null)
+      .map((_, i) => inRoster(existingLineup?.starters[i]))
   );
   const [reserves, setReserves] = useState<(number | null)[]>(
     Array(11)
       .fill(null)
-      .map((_, i) => existingLineup?.reserves[i] ?? null)
+      .map((_, i) => inRoster(existingLineup?.reserves[i]))
   );
+
+  // Avvisa l'utente se qualche slot è stato svuotato per questo motivo,
+  // altrimenti lo slot "Opzionale" sembra semplicemente mai stato compilato.
+  const droppedCount =
+    (existingLineup?.starters.filter((id) => id != null && !rosterIds.has(id)).length ?? 0) +
+    (existingLineup?.reserves.filter((id) => id != null && !rosterIds.has(id)).length ?? 0);
   const [filter, setFilter] = useState<string>("tutti");
   const [viewMode, setViewMode] = useState<"lista" | "campo">("lista");
 
@@ -132,6 +149,15 @@ export default function LineupForm({
           🛠️ Modalità admin — stai inserendo/modificando la formazione di{" "}
           <strong>{admin.teamName}</strong> per la giornata {matchdayNumber}
           {isLocked && " (giornata bloccata: la modifica è comunque consentita solo agli admin)"}.
+        </div>
+      )}
+      {droppedCount > 0 && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm">
+          ⚠️ {droppedCount === 1
+            ? "Un giocatore della formazione precedente non è più nella rosa"
+            : `${droppedCount} giocatori della formazione precedente non sono più nella rosa`}{" "}
+          (svincolo, cessione o scambio) ed {droppedCount === 1 ? "è stato" : "sono stati"} rimoss
+          {droppedCount === 1 ? "o" : "i"} dagli slot. Completa gli slot rimasti vuoti prima di salvare.
         </div>
       )}
       <form action={action} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
