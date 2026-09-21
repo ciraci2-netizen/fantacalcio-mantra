@@ -1,8 +1,17 @@
-// Calcola la classifica di un girone di Coppa (fase a gruppi) a partire
-// dalle partite del turno. Punti: vittoria 3, pareggio 1, sconfitta 0.
-// Spareggio: punti -> differenza punteggio -> punteggio totale fatto.
-// Pura funzione, senza accesso al DB, cosi' e' riusabile sia lato admin
+// Calcola risultati e classifica delle partite di Coppa a partire dai
+// punteggi salvati (homeScore/awayScore), applicando le STESSE regole del
+// campionato (distacco minimo per vincere, bonus gol per fascia - vedi
+// CupRules in app/lib/leagueSettings.ts) invece di un confronto diretto dei
+// punteggi: senza questo, in coppa si vedevano vittorie con un distacco di
+// fantapunti che in campionato sarebbe stato un pareggio. Il risultato non
+// viene salvato nel DB: si ricalcola sempre al volo dal punteggio gia'
+// salvato, cosi' resta coerente anche se le regole di lega cambiano dopo, e
+// non serve nessuna migrazione per le partite gia' giocate.
+// Pure funzioni, senza accesso al DB, cosi' sono riusabili sia lato admin
 // (app/(main)/admin/coppe) sia lato pubblico (app/(main)/coppe).
+
+import { computeMatchOutcome, type MatchOutcome } from "./scoring";
+import { DEFAULT_CUP_RULES, type CupRules } from "./leagueSettings";
 
 export type CupGroupMatch = {
   homeUserId: number;
@@ -12,6 +21,30 @@ export type CupGroupMatch = {
   homeScore: number | null;
   awayScore: number | null;
 };
+
+export type CupMatchResult = {
+  homeGoals: number | null;
+  awayGoals: number | null;
+  homePoints: number | null; // null se la partita non e' ancora stata giocata
+  awayPoints: number | null;
+};
+
+/**
+ * Risultato (gol mostrati + punti partita) di una singola partita di coppa,
+ * calcolato dalle regole di lega correnti. Mai fattore campo (homeAdvantage
+ * a 0): in coppa nessuna delle due squadre e' "di casa".
+ */
+export function computeCupMatchResult(
+  homeScore: number | null,
+  awayScore: number | null,
+  rules: CupRules = DEFAULT_CUP_RULES
+): CupMatchResult {
+  if (homeScore === null || awayScore === null) {
+    return { homeGoals: null, awayGoals: null, homePoints: null, awayPoints: null };
+  }
+  const outcome: MatchOutcome = computeMatchOutcome(homeScore, awayScore, 0, rules.minWinMargin, rules.scoreConversion);
+  return outcome;
+}
 
 export type CupStandingRow = {
   userId: number;
@@ -26,7 +59,7 @@ export type CupStandingRow = {
   diff: number;
 };
 
-export function computeGroupStandings(matches: CupGroupMatch[]): CupStandingRow[] {
+export function computeGroupStandings(matches: CupGroupMatch[], rules: CupRules = DEFAULT_CUP_RULES): CupStandingRow[] {
   const table = new Map<number, CupStandingRow>();
 
   const ensure = (id: number, name: string) => {
@@ -62,11 +95,17 @@ export function computeGroupStandings(matches: CupGroupMatch[]): CupStandingRow[
     away.scoreFor += m.awayScore;
     away.scoreAgainst += m.homeScore;
 
-    if (m.homeScore > m.awayScore) {
+    // Vittoria/pareggio/sconfitta decisi dalle STESSE regole di lega
+    // (distacco minimo, bonus gol per fascia) usate per il campionato -
+    // mai un confronto diretto dei due punteggi, che ignorerebbe queste
+    // regole e potrebbe mostrare una vittoria con un distacco che in
+    // campionato sarebbe stato un pareggio.
+    const result = computeCupMatchResult(m.homeScore, m.awayScore, rules);
+    if (result.homePoints === 3) {
       home.wins += 1;
       home.points += 3;
       away.losses += 1;
-    } else if (m.homeScore < m.awayScore) {
+    } else if (result.awayPoints === 3) {
       away.wins += 1;
       away.points += 3;
       home.losses += 1;

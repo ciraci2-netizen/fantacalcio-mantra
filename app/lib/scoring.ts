@@ -395,6 +395,93 @@ export function convertScoreToGoals(
   return 0;
 }
 
+export interface MatchOutcome {
+  homeGoals: number | null; // null se la conversione punteggio->gol e' disabilitata
+  awayGoals: number | null;
+  homePoints: 0 | 1 | 3;
+  awayPoints: 0 | 1 | 3;
+}
+
+/**
+ * Decide punti partita (3 vittoria / 1 pareggio / 0 sconfitta) e i gol
+ * mostrati (se la conversione punteggio->gol e' attiva) a partire da due
+ * punteggi GIA' calcolati (fattore campo e modificatore difensivo, se
+ * applicabili, gia' inclusi in homeScore/awayScore). Unica fonte di verita'
+ * per le regole di lega (distacco minimo per vincere, bonus gol per fascia),
+ * condivisa da calculateScoresCore (campionato, app/lib/voteImporter.ts,
+ * homeAdvantage reale) e da computeCupMatchResult (coppe,
+ * app/lib/cupStandings.ts, homeAdvantage sempre 0 perche' in coppa nessuna
+ * squadra e' "di casa") - cosi' una vittoria/pareggio deciso dalle regole di
+ * lega e' sempre coerente ovunque si giochi, ed è impossibile vedere in
+ * coppa una vittoria con un distacco che in campionato sarebbe un pareggio.
+ */
+export function computeMatchOutcome(
+  homeScore: number,
+  awayScore: number,
+  homeAdvantage: number,
+  minWinMargin: number,
+  scoreConversion: ScoreConversion
+): MatchOutcome {
+  const homeFirstGoalOverride =
+    scoreConversion.homeFirstGoalThreshold > 0 ? scoreConversion.homeFirstGoalThreshold : undefined;
+  let homeGoals = scoreConversion.enabled
+    ? convertScoreToGoals(homeScore, scoreConversion, homeFirstGoalOverride)
+    : null;
+  let awayGoals = scoreConversion.enabled ? convertScoreToGoals(awayScore, scoreConversion) : null;
+
+  let homePoints: 0 | 1 | 3 = 1;
+  let awayPoints: 0 | 1 | 3 = 1;
+
+  if (scoreConversion.bonusGoalEnabled && scoreConversion.enabled && homeGoals !== null && awayGoals !== null) {
+    // Regola "vittoria e gol omaggio": vedi calculateScoresCore per la
+    // spiegazione completa - stessa identica logica qui.
+    const sameBand = homeGoals === awayGoals;
+    const requiredMargin = sameBand ? scoreConversion.bonusGoalSameBandMargin : scoreConversion.bonusGoalDiffBandMargin;
+    const diff = Math.round((homeScore - awayScore) * 100) / 100;
+    const leaderIsHome = diff > 0;
+    const leaderScore = leaderIsHome ? homeScore : awayScore;
+    const leaderMinThreshold = leaderIsHome
+      ? (homeFirstGoalOverride ?? scoreConversion.bands[0]?.minScore ?? 66) + homeAdvantage
+      : scoreConversion.bands[0]?.minScore ?? 66;
+
+    if (diff !== 0 && Math.abs(diff) >= requiredMargin && leaderScore >= leaderMinThreshold) {
+      if (leaderIsHome) { homePoints = 3; awayPoints = 0; homeGoals += 1; }
+      else { awayPoints = 3; homePoints = 0; awayGoals += 1; }
+    } else if (homeGoals !== awayGoals) {
+      const tiedGoals = Math.min(homeGoals, awayGoals);
+      homeGoals = tiedGoals;
+      awayGoals = tiedGoals;
+    }
+  } else {
+    // Distacco minimo di fantapunti per vincere: sotto questa soglia il
+    // risultato resta pareggio anche se un punteggio (o i gol da esso
+    // derivati) e piu alto dell altro.
+    const rawMargin = Math.abs(homeScore - awayScore);
+
+    if (rawMargin >= minWinMargin) {
+      if (scoreConversion.enabled && homeGoals !== null && awayGoals !== null) {
+        if (homeGoals > awayGoals) { homePoints = 3; awayPoints = 0; }
+        else if (awayGoals > homeGoals) { homePoints = 0; awayPoints = 3; }
+      } else {
+        if (homeScore > awayScore) { homePoints = 3; awayPoints = 0; }
+        else if (awayScore > homeScore) { homePoints = 0; awayPoints = 3; }
+      }
+    }
+
+    // Il distacco minimo puo forzare un pareggio anche quando i gol
+    // convertiti sarebbero diversi: in quel caso i gol mostrati si
+    // allineano al piu basso dei due (non si regalano gol che il distacco
+    // minimo non ha confermato).
+    if (homePoints === 1 && awayPoints === 1 && homeGoals !== null && awayGoals !== null && homeGoals !== awayGoals) {
+      const tiedGoals = Math.min(homeGoals, awayGoals);
+      homeGoals = tiedGoals;
+      awayGoals = tiedGoals;
+    }
+  }
+
+  return { homeGoals, awayGoals, homePoints, awayPoints };
+}
+
 /** Calcola il bonus soglie gol per una formazione */
 export function calculateGoalBonus(
   goals: number,

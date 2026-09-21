@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
-import { computeGroupStandings } from "@/app/lib/cupStandings";
+import { computeGroupStandings, computeCupMatchResult, type CupMatchResult } from "@/app/lib/cupStandings";
+import { getCupRules, type CupRules } from "@/app/lib/leagueSettings";
 
 export const metadata: Metadata = { title: "Coppe" };
 
@@ -13,6 +14,7 @@ type CupMatch = {
   awayTeam: string;
   homeUserId: number;
   awayUserId: number;
+  roundSlot: number | null;
 };
 
 type CupRound = {
@@ -83,15 +85,31 @@ export default async function CoppePage() {
 
       const rounds: CupRound[] = await Promise.all(
         roundsRes.rows.map(async (round) => {
-          const matchesRes = await db.execute({
-            sql: `SELECT cm.id, cm.homeScore, cm.awayScore, cm.homeUserId, cm.awayUserId,
-                         hu.teamName as homeTeam, au.teamName as awayTeam
-                  FROM "CupMatch" cm
-                  JOIN "User" hu ON hu.id = cm.homeUserId
-                  JOIN "User" au ON au.id = cm.awayUserId
-                  WHERE cm.cupRoundId = ?`,
-            args: [round.id],
-          });
+          // "roundSlot" e' una colonna aggiunta dopo (turni interni del
+          // girone) - se il DB non e' ancora migrato, ricadiamo su un
+          // elenco piatto di partite senza raggruppamento.
+          let matchesRes;
+          try {
+            matchesRes = await db.execute({
+              sql: `SELECT cm.id, cm.homeScore, cm.awayScore, cm.homeUserId, cm.awayUserId, cm.roundSlot,
+                           hu.teamName as homeTeam, au.teamName as awayTeam
+                    FROM "CupMatch" cm
+                    JOIN "User" hu ON hu.id = cm.homeUserId
+                    JOIN "User" au ON au.id = cm.awayUserId
+                    WHERE cm.cupRoundId = ?`,
+              args: [round.id],
+            });
+          } catch {
+            matchesRes = await db.execute({
+              sql: `SELECT cm.id, cm.homeScore, cm.awayScore, cm.homeUserId, cm.awayUserId,
+                           hu.teamName as homeTeam, au.teamName as awayTeam
+                    FROM "CupMatch" cm
+                    JOIN "User" hu ON hu.id = cm.homeUserId
+                    JOIN "User" au ON au.id = cm.awayUserId
+                    WHERE cm.cupRoundId = ?`,
+              args: [round.id],
+            });
+          }
           return {
             id: round.id as number,
             name: round.name as string,
@@ -107,6 +125,7 @@ export default async function CoppePage() {
               awayTeam: m.awayTeam as string,
               homeUserId: m.homeUserId as number,
               awayUserId: m.awayUserId as number,
+              roundSlot: (m.roundSlot as number | null | undefined) ?? null,
             })),
           };
         })
@@ -115,6 +134,8 @@ export default async function CoppePage() {
       return { id: cup.id as number, name: cup.name as string, rounds };
     })
   );
+
+  const rules = await getCupRules(db, season.id as number);
 
   return (
     <div className="space-y-10">
@@ -136,11 +157,14 @@ export default async function CoppePage() {
               <div className="p-4 text-gray-400 text-sm">Nessun turno configurato.</div>
             ) : (
               <>
-                {/* Gironi: classifica per ognuno */}
+                {/* Gironi: classifica + risultati di ogni partita, per ognuno */}
                 {groupRounds.length > 0 && (
                   <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-5 border-b">
                     {groupRounds.map((round) => (
-                      <GroupStandings key={round.id} round={round} currentUserId={session.userId} />
+                      <div key={round.id} className="space-y-3">
+                        <GroupStandings round={round} currentUserId={session.userId} rules={rules} />
+                        <GroupMatches round={round} currentUserId={session.userId} rules={rules} />
+                      </div>
                     ))}
                   </div>
                 )}
@@ -172,6 +196,7 @@ export default async function CoppePage() {
                                       key={m.id}
                                       match={m}
                                       currentUserId={session.userId}
+                                      rules={rules}
                                     />
                                   ))
                                 )}
@@ -213,17 +238,28 @@ function formatSchedule(round: CupRound): string | null {
   return parts.length > 0 ? parts.join(" " + String.fromCharCode(183) + " ") : null;
 }
 
+// Risultato di una partita, decisi dalle STESSE regole di lega (distacco
+// minimo per vincere, bonus gol per fascia) invece che dal confronto diretto
+// dei due punteggi - vedi computeCupMatchResult in app/lib/cupStandings.ts.
+function getMatchResult(m: CupMatch, rules: CupRules): { result: CupMatchResult; played: boolean; homeWins: boolean; awayWins: boolean; draw: boolean } {
+  const result = computeCupMatchResult(m.homeScore, m.awayScore, rules);
+  const played = result.homePoints !== null;
+  const homeWins = played && result.homePoints === 3;
+  const awayWins = played && result.awayPoints === 3;
+  const draw = played && result.homePoints === 1;
+  return { result, played, homeWins, awayWins, draw };
+}
+
 function MatchCard({
   match: m,
   currentUserId,
+  rules,
 }: {
   match: CupMatch;
   currentUserId: number;
+  rules: CupRules;
 }) {
-  const played = m.homeScore !== null && m.awayScore !== null;
-  const homeWins = played && (m.homeScore ?? 0) > (m.awayScore ?? 0);
-  const awayWins = played && (m.awayScore ?? 0) > (m.homeScore ?? 0);
-  const draw = played && m.homeScore === m.awayScore;
+  const { result, played, homeWins, awayWins, draw } = getMatchResult(m, rules);
   const isMyMatch = m.homeUserId === currentUserId || m.awayUserId === currentUserId;
 
   return (
@@ -250,12 +286,15 @@ function MatchCard({
           {homeWins && "🏆 "}
           {m.homeTeam}
         </span>
-        <span
-          className={`font-bold ml-2 shrink-0 ${
-            homeWins ? "text-green-700" : played ? "text-gray-500" : "text-gray-300"
-          }`}
-        >
-          {played ? m.homeScore?.toFixed(1) : "–"}
+        <span className="flex items-baseline gap-1.5 ml-2 shrink-0">
+          <span className={`font-bold ${homeWins ? "text-green-700" : played ? "text-gray-700" : "text-gray-300"}`}>
+            {!played ? "–" : result.homeGoals !== null ? result.homeGoals : m.homeScore?.toFixed(1)}
+          </span>
+          {played && result.homeGoals !== null && (
+            <span className={`text-xs tabular-nums ${homeWins ? "text-green-600" : "text-gray-400"}`}>
+              ({m.homeScore?.toFixed(1)})
+            </span>
+          )}
         </span>
       </div>
 
@@ -277,13 +316,100 @@ function MatchCard({
           {awayWins && "🏆 "}
           {m.awayTeam}
         </span>
-        <span
-          className={`font-bold ml-2 shrink-0 ${
-            awayWins ? "text-green-700" : played ? "text-gray-500" : "text-gray-300"
-          }`}
-        >
-          {played ? m.awayScore?.toFixed(1) : "–"}
+        <span className="flex items-baseline gap-1.5 ml-2 shrink-0">
+          <span className={`font-bold ${awayWins ? "text-green-700" : played ? "text-gray-700" : "text-gray-300"}`}>
+            {!played ? "–" : result.awayGoals !== null ? result.awayGoals : m.awayScore?.toFixed(1)}
+          </span>
+          {played && result.awayGoals !== null && (
+            <span className={`text-xs tabular-nums ${awayWins ? "text-green-600" : "text-gray-400"}`}>
+              ({m.awayScore?.toFixed(1)})
+            </span>
+          )}
         </span>
+      </div>
+    </div>
+  );
+}
+
+// Elenco di sola lettura delle partite di un girone, raggruppate per turno
+// interno (Turno 1, 2, ...) come in admin - cosi' anche chi non e' admin
+// vede il risultato di ogni singola partita, non solo la classifica finale.
+function GroupMatches({
+  round,
+  currentUserId,
+  rules,
+}: {
+  round: CupRound;
+  currentUserId: number;
+  rules: CupRules;
+}) {
+  if (round.matches.length === 0) return null;
+
+  const bySlot = new Map<number, CupMatch[]>();
+  for (const m of round.matches) {
+    const slot = m.roundSlot ?? 0;
+    if (!bySlot.has(slot)) bySlot.set(slot, []);
+    bySlot.get(slot)!.push(m);
+  }
+  const slots = [...bySlot.entries()].sort((a, b) => a[0] - b[0]);
+  const showSlots = round.matches.every((m) => m.roundSlot !== null) && slots.length > 1;
+
+  const renderRow = (m: CupMatch) => {
+    const { result, played, homeWins, awayWins } = getMatchResult(m, rules);
+    const isMyMatch = m.homeUserId === currentUserId || m.awayUserId === currentUserId;
+    return (
+      <div
+        key={m.id}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm ${
+          isMyMatch ? "bg-green-50/60" : "bg-white"
+        }`}
+      >
+        <span className={`flex-1 text-right truncate ${homeWins ? "font-semibold text-green-700" : "text-gray-600"}`}>
+          {m.homeTeam}
+        </span>
+        <span
+          className={`shrink-0 font-bold tabular-nums px-2 py-0.5 rounded text-xs min-w-[42px] text-center ${
+            !played
+              ? "text-gray-300"
+              : homeWins || awayWins
+              ? "bg-green-100 text-green-700"
+              : "bg-gray-100 text-gray-600"
+          }`}
+          title={
+            played
+              ? result.homeGoals !== null
+                ? `Fantapunti: ${m.homeScore?.toFixed(1)} – ${m.awayScore?.toFixed(1)}`
+                : undefined
+              : undefined
+          }
+        >
+          {played
+            ? result.homeGoals !== null && result.awayGoals !== null
+              ? `${result.homeGoals}-${result.awayGoals}`
+              : `${m.homeScore?.toFixed(1)}-${m.awayScore?.toFixed(1)}`
+            : "vs"}
+        </span>
+        <span className={`flex-1 truncate ${awayWins ? "font-semibold text-green-700" : "text-gray-600"}`}>
+          {m.awayTeam}
+        </span>
+      </div>
+    );
+  };
+
+  return (
+    <div className="border rounded-xl overflow-hidden">
+      <div className="bg-gray-50 px-4 py-2 border-b text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        Risultati
+      </div>
+      <div className="p-3 space-y-3">
+        {showSlots
+          ? slots.map(([slot, matches]) => (
+              <div key={slot}>
+                <p className="text-[11px] font-semibold text-amber-700 mb-1">Turno {slot}</p>
+                <div className="space-y-1">{matches.map(renderRow)}</div>
+              </div>
+            ))
+          : <div className="space-y-1">{round.matches.map(renderRow)}</div>}
       </div>
     </div>
   );
@@ -292,11 +418,13 @@ function MatchCard({
 function GroupStandings({
   round,
   currentUserId,
+  rules,
 }: {
   round: CupRound;
   currentUserId: number;
+  rules: CupRules;
 }) {
-  const standings = computeGroupStandings(round.matches);
+  const standings = computeGroupStandings(round.matches, rules);
   const qualifyCount = Math.min(4, standings.length);
 
   return (

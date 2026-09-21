@@ -1,4 +1,5 @@
 import type { Client } from "@libsql/client/http";
+import { DEFAULT_SCORE_CONVERSION, normalizeScoreConversion, type ScoreConversion } from "./scoring";
 
 /**
  * Limiti configurabili per la composizione delle rose, divisi per slot
@@ -41,5 +42,55 @@ export async function getRosterLimits(db: Client): Promise<RosterLimits> {
     };
   } catch {
     return { numPortieri: DEFAULT_PORTIERI, numMovimento: DEFAULT_MOVIMENTO };
+  }
+}
+
+/**
+ * Regole di lega che decidono un risultato (distacco minimo per vincere,
+ * bonus gol per fascia) - usate per calcolare al volo i risultati delle
+ * partite di coppa con le STESSE regole del campionato (vedi
+ * computeMatchOutcome in app/lib/scoring.ts e computeCupMatchResult in
+ * app/lib/cupStandings.ts). Mai fattore campo qui: le coppe non hanno una
+ * squadra "di casa", quello resta solo per il campionato.
+ */
+export interface CupRules {
+  minWinMargin: number;
+  scoreConversion: ScoreConversion;
+}
+
+export const DEFAULT_CUP_RULES: CupRules = {
+  minWinMargin: 0,
+  scoreConversion: DEFAULT_SCORE_CONVERSION,
+};
+
+/**
+ * Legge minWinMargin e scoreConversion per la stagione data. Ritorna i
+ * default (nessun distacco minimo, conversione disabilitata) se non ci sono
+ * impostazioni salvate o le colonne non sono ancora migrate - stesso
+ * comportamento di sicurezza di calculateScoresCore in voteImporter.ts.
+ */
+export async function getCupRules(db: Client, seasonId: number | null | undefined): Promise<CupRules> {
+  if (!seasonId) return DEFAULT_CUP_RULES;
+  try {
+    const settingsRes = await db.execute({
+      sql: `SELECT minWinMargin, scoreConversion FROM "LeagueSettings" WHERE seasonId = ?`,
+      args: [seasonId],
+    });
+    const row = settingsRes.rows[0];
+    if (!row) return DEFAULT_CUP_RULES;
+
+    let scoreConversion = DEFAULT_SCORE_CONVERSION;
+    try {
+      if (row.scoreConversion) {
+        scoreConversion = normalizeScoreConversion(JSON.parse(row.scoreConversion as string));
+      }
+    } catch { /* usa default */ }
+
+    return {
+      minWinMargin: (row.minWinMargin as number) ?? 0,
+      scoreConversion,
+    };
+  } catch {
+    return DEFAULT_CUP_RULES;
   }
 }

@@ -2,7 +2,8 @@
 
 import { useActionState } from "react";
 import { createCup, createCupRound, createCupGroup, createCupMatch, setCupMatchScore, calculateCupMatchScore, setCupRoundSchedule, setSlotSchedule, deleteCup, deleteCupRound } from "@/app/actions/cups";
-import { computeGroupStandings } from "@/app/lib/cupStandings";
+import { computeGroupStandings, computeCupMatchResult } from "@/app/lib/cupStandings";
+import { DEFAULT_CUP_RULES, type CupRules } from "@/app/lib/leagueSettings";
 
 type Match = { id: number; homeScore: number | null; awayScore: number | null; homeTeam: string; awayTeam: string; homeUserId: number; awayUserId: number; roundSlot: number | null };
 type SlotSchedule = { matchdayNumber: number | null; playDate: string | null };
@@ -45,7 +46,8 @@ function groupMatchesBySlot(matches: Match[]): SlotGroup[] {
     });
 }
 
-export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cup[]; users: User[]; seasonName: string | null }) {
+export default function AdminCoppeClient({ cups, users, seasonName, rules }: { cups: Cup[]; users: User[]; seasonName: string | null; rules?: CupRules }) {
+  const cupRules = rules ?? DEFAULT_CUP_RULES;
   const [createState, createAction, createPending] = useActionState(createCup, null);
   const [roundState, roundAction, roundPending] = useActionState(createCupRound, null);
   const [groupState, groupAction, groupPending] = useActionState(createCupGroup, null);
@@ -149,7 +151,7 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
           {/* Rounds */}
           {cup.rounds.map((round) => {
             const isGroup = round.type === "girone";
-            const standings = isGroup ? computeGroupStandings(round.matches) : [];
+            const standings = isGroup ? computeGroupStandings(round.matches, cupRules) : [];
             const qualifyCount = Math.min(4, standings.length);
             return (
               <div key={round.id} className="p-4 border-b last:border-0">
@@ -243,14 +245,17 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
                     altrimenti (turni a eliminazione, o gironi creati prima
                     di questa funzione) restano in un elenco unico */}
                 {(() => {
-                  const renderMatch = (m: Match) => (
+                  const renderMatch = (m: Match) => {
+                    const result = computeCupMatchResult(m.homeScore, m.awayScore, cupRules);
+                    const played = result.homePoints !== null;
+                    return (
                     // La key include il punteggio: dopo "Calcola" (o dopo un
                     // altro Salva) il valore torna dal server nelle props,
                     // ma un <input> non controllato non lo mostrerebbe da
                     // solo - la key diversa forza React a ricreare i campi
                     // con il nuovo valore.
                     <div key={`${m.id}:${m.homeScore}:${m.awayScore}`} className="flex flex-wrap items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
-                      <span className="font-medium text-sm flex-1 text-right">{m.homeTeam}</span>
+                      <span className={`font-medium text-sm flex-1 text-right ${played && result.homePoints === 3 ? "text-green-700" : ""}`}>{m.homeTeam}</span>
                       <form action={scoreAction} className="flex items-center gap-1">
                         <input type="hidden" name="matchId" value={m.id} />
                         <input type="number" name="homeScore" step="0.1" defaultValue={m.homeScore ?? ""} placeholder="0.0" className="w-16 border rounded px-1 py-0.5 text-sm text-center" />
@@ -262,9 +267,19 @@ export default function AdminCoppeClient({ cups, users, seasonName }: { cups: Cu
                         <input type="hidden" name="matchId" value={m.id} />
                         <button type="submit" disabled={calcPending} title="Calcola dal fantavoto gia fatto in quella giornata" className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded text-xs">Calcola</button>
                       </form>
-                      <span className="font-medium text-sm flex-1">{m.awayTeam}</span>
+                      {played && result.homeGoals !== null && result.awayGoals !== null && (
+                        <span
+                          className={`text-sm font-bold tabular-nums px-2 py-0.5 rounded ${
+                            result.homePoints === 1 ? "bg-gray-200 text-gray-600" : "bg-green-100 text-green-700"
+                          }`}
+                          title="Risultato calcolato dalle regole di lega (distacco minimo, bonus gol)"
+                        >
+                          {result.homeGoals}-{result.awayGoals}
+                        </span>
+                      )}
+                      <span className={`font-medium text-sm flex-1 ${played && result.awayPoints === 3 ? "text-green-700" : ""}`}>{m.awayTeam}</span>
                     </div>
-                  );
+                  );};
 
                   const canGroup = isGroup && round.matches.length > 0 && round.matches.every((m) => m.roundSlot !== null);
 

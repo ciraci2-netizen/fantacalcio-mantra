@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
+import { getCupRules } from "@/app/lib/leagueSettings";
 import AdminCoppeClient from "./AdminCoppeClient";
 
 export default async function AdminCoppePage() {
@@ -103,11 +104,14 @@ export default async function AdminCoppePage() {
   const usersRes = await db.execute(`SELECT id, teamName, username FROM "User" WHERE isParticipant = 1 ORDER BY teamName ASC`);
   const users = usersRes.rows.map((u) => ({ id: u.id as number, teamName: u.teamName as string, username: u.username as string }));
 
+  const rules = await getCupRules(db, season ? (season.id as number) : null);
+
   return (
     <AdminCoppeClient
       cups={cups}
       users={users}
       seasonName={season ? (season.name as string) : null}
+      rules={rules}
     />
   );
 }
