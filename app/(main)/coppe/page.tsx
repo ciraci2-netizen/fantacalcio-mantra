@@ -345,6 +345,17 @@ function GroupMatches({
 }) {
   if (round.matches.length === 0) return null;
 
+  // Nome squadra per ogni id (serve per calcolare chi riposa in ogni turno
+  // interno: la squadra del girone che quel turno non compare fra i due
+  // team di nessuna partita) - stessa logica di groupMatchesBySlot in
+  // AdminCoppeClient.tsx, qui riusata anche lato pubblico.
+  const teamNames = new Map<number, string>();
+  for (const m of round.matches) {
+    teamNames.set(m.homeUserId, m.homeTeam);
+    teamNames.set(m.awayUserId, m.awayTeam);
+  }
+  const allTeamIds = [...teamNames.keys()];
+
   const bySlot = new Map<number, CupMatch[]>();
   for (const m of round.matches) {
     const slot = m.roundSlot ?? 0;
@@ -353,6 +364,15 @@ function GroupMatches({
   }
   const slots = [...bySlot.entries()].sort((a, b) => a[0] - b[0]);
   const showSlots = round.matches.every((m) => m.roundSlot !== null) && slots.length > 1;
+
+  const restingIn = (slotMatches: CupMatch[]): string[] => {
+    const playingIds = new Set<number>();
+    for (const m of slotMatches) {
+      playingIds.add(m.homeUserId);
+      playingIds.add(m.awayUserId);
+    }
+    return allTeamIds.filter((id) => !playingIds.has(id)).map((id) => teamNames.get(id) as string);
+  };
 
   const renderRow = (m: CupMatch) => {
     const { result, played, homeWins, awayWins } = getMatchResult(m, rules);
@@ -403,12 +423,20 @@ function GroupMatches({
       </div>
       <div className="p-3 space-y-3">
         {showSlots
-          ? slots.map(([slot, matches]) => (
-              <div key={slot}>
-                <p className="text-[11px] font-semibold text-amber-700 mb-1">Turno {slot}</p>
-                <div className="space-y-1">{matches.map(renderRow)}</div>
-              </div>
-            ))
+          ? slots.map(([slot, matches]) => {
+              const resting = restingIn(matches);
+              return (
+                <div key={slot}>
+                  <p className="text-[11px] mb-1">
+                    <span className="font-semibold text-amber-700">Turno {slot}</span>
+                    {resting.length > 0 && (
+                      <span className="text-gray-400"> — riposa: {resting.join(", ")}</span>
+                    )}
+                  </p>
+                  <div className="space-y-1">{matches.map(renderRow)}</div>
+                </div>
+              );
+            })
           : <div className="space-y-1">{round.matches.map(renderRow)}</div>}
       </div>
     </div>
