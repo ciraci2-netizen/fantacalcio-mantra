@@ -367,27 +367,27 @@ function GroupMatches({
         <span className={`flex-1 text-right truncate ${homeWins ? "font-semibold text-green-700" : "text-gray-600"}`}>
           {m.homeTeam}
         </span>
-        <span
-          className={`shrink-0 font-bold tabular-nums px-2 py-0.5 rounded text-xs min-w-[42px] text-center ${
-            !played
-              ? "text-gray-300"
-              : homeWins || awayWins
-              ? "bg-green-100 text-green-700"
-              : "bg-gray-100 text-gray-600"
-          }`}
-          title={
-            played
-              ? result.homeGoals !== null
-                ? `Fantapunti: ${m.homeScore?.toFixed(1)} – ${m.awayScore?.toFixed(1)}`
-                : undefined
-              : undefined
-          }
-        >
-          {played
-            ? result.homeGoals !== null && result.awayGoals !== null
-              ? `${result.homeGoals}-${result.awayGoals}`
-              : `${m.homeScore?.toFixed(1)}-${m.awayScore?.toFixed(1)}`
-            : "vs"}
+        <span className="shrink-0 flex flex-col items-center px-1 min-w-[64px]">
+          <span
+            className={`font-bold tabular-nums px-2 py-0.5 rounded text-xs text-center ${
+              !played
+                ? "text-gray-300"
+                : homeWins || awayWins
+                ? "bg-green-100 text-green-700"
+                : "bg-gray-100 text-gray-600"
+            }`}
+          >
+            {played
+              ? result.homeGoals !== null && result.awayGoals !== null
+                ? `${result.homeGoals}-${result.awayGoals}`
+                : `${m.homeScore?.toFixed(1)}-${m.awayScore?.toFixed(1)}`
+              : "vs"}
+          </span>
+          {played && result.homeGoals !== null && (
+            <span className="text-[10px] text-gray-400 tabular-nums mt-0.5">
+              ({m.homeScore?.toFixed(1)} a {m.awayScore?.toFixed(1)})
+            </span>
+          )}
         </span>
         <span className={`flex-1 truncate ${awayWins ? "font-semibold text-green-700" : "text-gray-600"}`}>
           {m.awayTeam}
