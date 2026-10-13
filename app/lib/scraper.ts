@@ -89,81 +89,93 @@ function parseIconCount(src: string | undefined): number {
  * Estrae i voti dall'HTML già scaricato della pagina /voti/ di fantapiu3.
  * Separata da scrapeVotes() per poter essere testata contro un HTML salvato,
  * senza dover rifare la richiesta di rete ogni volta.
+ *
+ * NB (13/10/2026): fantapiu3 ha rifatto il markup della pagina (prima era
+ * ".layout-content-full" + due ".table.lineups" con righe ".table-row" e
+ * colonne individuate da "data-title" — versione precedente qui sotto, nei
+ * commenti, per riferimento). Da quando è cambiato, ".table.lineups" non
+ * esiste più sulla pagina e lo scraping restituiva silenziosamente 0 voti
+ * ad ogni import ("Nessun voto trovato sul sito"). Il nuovo markup,
+ * verificato live (Giornata 6, 2026/27): ogni squadra di ogni partita è un
+ * ".fp3-team-section" (nome squadra in ".fp3-team-section-name") seguito
+ * immediatamente dal suo ".fp3-votes-scroll" → ".fp3-votes-table" con righe
+ * <tbody><tr> vere, colonne nell'ordine fisso dell'header: Giocatore, Voto,
+ * GS/PI, GF, GSR, AM, ES, RS/RP, AUT, ASS, ADF (10 partite × 2 squadre = 20
+ * tabelle, tutte dentro l'unico ".widget-item" della pagina — verificato
+ * che nessun'altra sezione la riusa). Le colonne evento non hanno più un
+ * "data-title" affidabile: si leggono quindi per posizione (indice di
+ * colonna) invece che per nome.
+ * La cella giocatore ha ora DUE "<p class='table-text'>": il nome e un
+ * secondo paragrafo col minuto di sostituzione (es. "63") quando il
+ * giocatore è stato cambiato — per questo si prende SEMPRE e SOLO il primo
+ * ".table-text" (mai l'intero testo della cella, che includerebbe il
+ * minuto appiccicato al nome, es. "WHITE 63").
+ * La pagina non espone più un'icona di ruolo (P/D/C/A) per riga: il campo
+ * `role` sotto resta vuoto — non è comunque usato per l'abbinamento o per
+ * il calcolo (si usa sempre il ruolo del giocatore già salvato in rosa).
  */
 export function parseVotesFromHtml(html: string): ScrapedVote[] {
   const $ = cheerio.load(html);
 
   const results: ScrapedVote[] = [];
 
-  // Il widget dei voti (c'è un solo ".widget-item" per pagina): al suo
-  // interno, ogni partita è un blocco ".layout-content-full" (intestazione
-  // con le due squadre) seguito da due ".table.lineups" (formazione casa,
-  // poi formazione trasferta). Scopiamo la ricerca a questo widget per non
-  // raccogliere righe di altri componenti della pagina (es. mini-calendario)
-  // che riusano le stesse classi CSS.
   const widget = $(".widget-item").first();
 
-  widget.find(".layout-content-full").each((_i, headerEl) => {
-    const header = $(headerEl);
-    const teamNames = header
-      .find(".team-name .highlight")
-      .map((_j, el) => $(el).text().trim().toUpperCase())
-      .get();
-    if (teamNames.length < 2) return;
+  widget.find(".fp3-votes-table").each((_i, tableEl) => {
+    const table = $(tableEl);
+    const team = table
+      .parent(".fp3-votes-scroll")
+      .prev(".fp3-team-section")
+      .find(".fp3-team-section-name")
+      .text()
+      .trim()
+      .toUpperCase();
 
-    const tables = header.nextAll(".table.lineups").slice(0, 2);
+    table.find("tbody tr").each((_k, rowEl) => {
+      const row = $(rowEl);
+      const cells = row.find("td");
+      if (cells.length < 11) return; // riga inattesa, non un giocatore
 
-    tables.each((tableIdx, tableEl) => {
-      const team = teamNames[tableIdx] ?? "";
+      // Solo il primo ".table-text": il secondo (se presente) è il minuto
+      // di sostituzione, non parte del nome — vedi commento sopra.
+      const name = cells
+        .eq(0)
+        .find(".table-text")
+        .first()
+        .text()
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!name) return;
 
-      $(tableEl)
-        .find(".table-rows .table-row")
-        .each((_k, rowEl) => {
-          const row = $(rowEl);
-          const items = row.find(".table-row-item");
-          if (items.length < 11) return; // riga inattesa, non un giocatore
+      const iconAt = (idx: number): string | undefined => cells.eq(idx).find("img").attr("src");
 
-          const nameCell = items.eq(0);
-          const role = iconFile(nameCell.find("img").attr("src")).toUpperCase();
-          const name = nameCell
-            .find(".table-text")
-            .first()
-            .text()
-            .replace(/\s+/g, " ")
-            .trim();
-          if (!name) return;
+      const vote = parseVoteIcon(iconAt(1));
 
-          const eventIcon = (dataTitle: string): string | undefined =>
-            row.find(`.table-row-item[data-title="${dataTitle}"]`).find("img").attr("src");
+      const goalsConceded = parseIconCount(iconAt(2)); // GS/PI
+      const goalsScored = parseIconCount(iconAt(3)); // GF
+      // Un solo campo firmato per gol fatti (+) / subiti (-): sulla pagina
+      // sono due colonne separate (GF per chi segna, GS/PI per i portieri),
+      // ma non si sovrappongono mai sullo stesso giocatore.
+      const gfGs = goalsScored > 0 ? goalsScored : goalsConceded > 0 ? -goalsConceded : 0;
 
-          const vote = parseVoteIcon(items.eq(1).find("img").attr("src"));
-
-          const goalsConceded = parseIconCount(eventIcon("BONUS/MALUS PORTIERE"));
-          const goalsScored = parseIconCount(eventIcon("GOAL FATTO"));
-          // Un solo campo firmato per gol fatti (+) / subiti (-): sulla pagina
-          // sono due colonne separate (GF per chi segna, GS/PI per i portieri),
-          // ma non si sovrappongono mai sullo stesso giocatore.
-          const gfGs = goalsScored > 0 ? goalsScored : goalsConceded > 0 ? -goalsConceded : 0;
-
-          results.push({
-            name: name.toUpperCase(),
-            team,
-            role,
-            // "Voto F+3" = voto base secondo Fantapiu3 (pre bonus/malus).
-            // fantavoto resta null: è l'app a calcolarlo da vote + eventi,
-            // con le regole/soglie della lega — sommarlo qui raddoppierebbe i bonus.
-            vote,
-            fantavoto: null,
-            gfGs,
-            gsr: parseIconCount(eventIcon("GOAL SU RIGORE")),
-            amm: parseIconCount(eventIcon("AMMONIZIONE")),
-            esp: parseIconCount(eventIcon("ESPULSIONE")),
-            rpRs: parseIconCount(eventIcon("RIGORE")),
-            aut: parseIconCount(eventIcon("AUTOGOAL")),
-            ass: parseIconCount(eventIcon("ASSIST")),
-            adf: parseIconCount(eventIcon("ASSIST DA FERMO")),
-          });
-        });
+      results.push({
+        name: name.toUpperCase(),
+        team,
+        role: "",
+        // "Voto F+3" = voto base secondo Fantapiu3 (pre bonus/malus).
+        // fantavoto resta null: è l'app a calcolarlo da vote + eventi,
+        // con le regole/soglie della lega — sommarlo qui raddoppierebbe i bonus.
+        vote,
+        fantavoto: null,
+        gfGs,
+        gsr: parseIconCount(iconAt(4)),
+        amm: parseIconCount(iconAt(5)),
+        esp: parseIconCount(iconAt(6)),
+        rpRs: parseIconCount(iconAt(7)),
+        aut: parseIconCount(iconAt(8)),
+        ass: parseIconCount(iconAt(9)),
+        adf: parseIconCount(iconAt(10)),
+      });
     });
   });
 
