@@ -65,7 +65,7 @@ function MatchdayCard({
               href={`/calendar/${m.id}`}
               className={`flex items-center px-4 py-3 gap-3 hover:bg-gray-50/80 transition-colors ${
                 isMyMatch
-                  ? "border-l-4 border-blue-500 bg-blue-50/30"
+                  ? "border-l-4 border-green-500 bg-green-50/30"
                   : "border-l-4 border-transparent"
               }`}
             >
@@ -74,7 +74,7 @@ function MatchdayCard({
                 <span
                   className={`text-sm font-semibold truncate ${
                     isMyMatch && m.homeUser.id === currentUserId
-                      ? "text-blue-700"
+                      ? "text-green-700"
                       : played
                       ? homeWon
                         ? "text-gray-800"
@@ -127,7 +127,7 @@ function MatchdayCard({
                 <span
                   className={`text-sm font-semibold truncate ${
                     isMyMatch && m.awayUser.id === currentUserId
-                      ? "text-blue-700"
+                      ? "text-green-700"
                       : played
                       ? awayWon
                         ? "text-gray-800"
@@ -230,7 +230,7 @@ export default function CalendarClient({
                     ? "bg-green-600 text-white shadow-sm"
                     : hasPlayed
                     ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                    : "bg-blue-50 text-blue-600 hover:bg-blue-100"
+                    : "bg-green-50 text-green-700 hover:bg-green-100"
                 }`}
               >
                 G{m.number}

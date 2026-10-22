@@ -66,9 +66,9 @@ export default function LiveScorePreview({
 
   if (loading) {
     return (
-      <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-3 animate-pulse">
-        <div className="w-5 h-5 rounded-full bg-blue-200" />
-        <div className="h-4 w-40 rounded bg-blue-200" />
+      <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center gap-3 animate-pulse">
+        <div className="w-5 h-5 rounded-full bg-green-200" />
+        <div className="h-4 w-40 rounded bg-green-200" />
       </div>
     );
   }
@@ -88,15 +88,15 @@ export default function LiveScorePreview({
       : "text-red-600";
 
   return (
-    <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 space-y-2">
+    <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 space-y-2">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <span className="text-base">⚡</span>
-          <span className="text-sm font-semibold text-blue-800">
+          <span className="text-sm font-semibold text-green-800">
             Punteggio stimato
           </span>
           {!data.isComplete && (
-            <span className="text-xs text-blue-500 animate-pulse">
+            <span className="text-xs text-green-600 animate-pulse">
               • live
             </span>
           )}
@@ -112,23 +112,23 @@ export default function LiveScorePreview({
 
       {/* Progress bar */}
       <div className="space-y-1">
-        <div className="flex items-center justify-between text-xs text-blue-600">
+        <div className="flex items-center justify-between text-xs text-green-700">
           <span>
             {data.votedStarters}/{data.totalStarters} giocatori con voto
             {data.subsUsed > 0 && ` · ${data.subsUsed} sostituz.`}
           </span>
           <span>{pct}%</span>
         </div>
-        <div className="w-full h-1.5 bg-blue-200 rounded-full overflow-hidden">
+        <div className="w-full h-1.5 bg-green-200 rounded-full overflow-hidden">
           <div
-            className="h-full bg-blue-500 rounded-full transition-all duration-700"
+            className="h-full bg-green-500 rounded-full transition-all duration-700"
             style={{ width: `${pct}%` }}
           />
         </div>
       </div>
 
       {lastUpdated && (
-        <p className="text-xs text-blue-400">
+        <p className="text-xs text-green-600">
           Aggiornato alle{" "}
           {lastUpdated.toLocaleTimeString("it-IT", {
             hour: "2-digit",

@@ -54,7 +54,7 @@ export default function StandingsSortClient({
     <button
       onClick={() => toggle(k)}
       className={`flex items-center justify-center gap-0.5 w-full h-full transition-colors hover:text-gray-800 ${
-        sortKey === k ? "text-blue-600 font-bold" : "text-gray-400"
+        sortKey === k ? "text-green-700 font-bold" : "text-gray-400"
       }`}
     >
       {label}
@@ -87,7 +87,7 @@ export default function StandingsSortClient({
             <div
               key={s.userId}
               className={`flex sm:grid sm:grid-cols-[3rem_1fr_5rem_repeat(9,3.5rem)] items-center gap-2 sm:gap-0 px-4 py-3 transition-colors ${
-                isMe ? "border-l-4 border-blue-500 bg-blue-50/40" : "border-l-4 border-transparent hover:bg-gray-50"
+                isMe ? "border-l-4 border-green-500 bg-green-50/40" : "border-l-4 border-transparent hover:bg-gray-50"
               }`}
             >
               <div className="flex items-center justify-center w-8 sm:w-auto">
@@ -96,7 +96,7 @@ export default function StandingsSortClient({
               <div className="flex items-center gap-3 min-w-0 flex-1 sm:flex-none">
                 <TeamLogo logoUrl={s.logoUrl} teamName={s.teamName} size="sm" />
                 <div className="min-w-0">
-                  <p className={`font-semibold text-sm leading-tight truncate ${isMe ? "text-blue-700" : "text-blue-600"}`}>{s.teamName}</p>
+                  <p className={`font-semibold text-sm leading-tight truncate ${isMe ? "text-green-700" : "text-gray-800"}`}>{s.teamName}</p>
                   <p className="text-gray-400 text-xs leading-tight truncate hidden sm:block">{s.username}</p>
                 </div>
               </div>
@@ -113,7 +113,7 @@ export default function StandingsSortClient({
                 <div className="flex items-center justify-center">{s.gf}</div>
                 <div className="flex items-center justify-center">{s.ga}</div>
                 <div className="flex items-center justify-center">{s.gd > 0 ? `+${s.gd}` : s.gd}</div>
-                <div className="flex items-center justify-center font-bold text-blue-600 text-base">{s.points}</div>
+                <div className="flex items-center justify-center font-bold text-green-700 text-base">{s.points}</div>
                 <div className="flex items-center justify-center text-gray-500 text-xs font-medium">{s.totalFantapoints}</div>
               </div>
               <div className="sm:hidden ml-auto flex items-center gap-2">
@@ -128,7 +128,7 @@ export default function StandingsSortClient({
                     <span key={idx} className={`w-4 h-4 rounded text-[9px] flex items-center justify-center ${FORM_STYLES[r]}`}>{r}</span>
                   ))}
                 </div>
-                <span className="font-bold text-blue-600 text-lg">{s.points}</span>
+                <span className="font-bold text-green-700 text-lg">{s.points}</span>
               </div>
             </div>
           );
@@ -137,7 +137,7 @@ export default function StandingsSortClient({
 
       <div className="px-4 py-2 border-t bg-gray-50 text-xs text-gray-400 flex flex-wrap gap-x-4 gap-y-1">
         <span>g=giocate - v=vinte - n=nulle - p=perse - dr=differenza - <strong className="text-gray-500">pt=punti lega</strong> - tot fp=fantapunti totali</span>
-        <span className="text-blue-500">Clicca V, G+, DR, PT per ordinare</span>
+        <span className="text-gray-400">Clicca V, G+, DR, PT per ordinare</span>
       </div>
     </div>
   );

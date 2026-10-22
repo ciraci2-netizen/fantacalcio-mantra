@@ -191,7 +191,7 @@ export default async function DashboardPage() {
     // nell'ordine originale.
     <div className="flex flex-col gap-5">
       {/* ── HERO BANNER ─────────────────────────────────────────── */}
-      <div className="relative bg-gradient-to-br from-slate-900/90 via-blue-900/90 to-blue-800/90 rounded-2xl overflow-hidden shadow-xl">
+      <div className="relative bg-gradient-to-br from-slate-900/90 via-green-900/90 to-green-800/90 rounded-2xl overflow-hidden shadow-xl">
         <div
           className="absolute inset-0 opacity-[0.04]"
           style={{
@@ -204,7 +204,7 @@ export default async function DashboardPage() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
             {/* Identity */}
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-full border-4 border-white/20 overflow-hidden bg-blue-700 flex items-center justify-center text-white text-xl sm:text-2xl font-bold shadow-2xl shrink-0">
+              <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-full border-4 border-white/20 overflow-hidden bg-green-700 flex items-center justify-center text-white text-xl sm:text-2xl font-bold shadow-2xl shrink-0">
                 {logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -219,13 +219,13 @@ export default async function DashboardPage() {
                 )}
               </div>
               <div>
-                <p className="text-blue-300 text-xs font-medium uppercase tracking-widest mb-0.5">
+                <p className="text-green-200 text-xs font-medium uppercase tracking-widest mb-0.5">
                   Fantasy Football PL
                 </p>
                 <h1 className="text-white text-xl sm:text-2xl font-bold leading-tight">
                   {session.teamName}
                 </h1>
-                <p className="text-blue-300 text-sm mt-0.5">@{session.username}</p>
+                <p className="text-green-200 text-sm mt-0.5">@{session.username}</p>
               </div>
             </div>
 
@@ -313,7 +313,7 @@ export default async function DashboardPage() {
                 Risultato finale
               </span>
             ) : currentMatchdayRow ? (
-              <span className="text-xs bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full font-medium">
+              <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-medium">
                 In programma
               </span>
             ) : null}
@@ -329,7 +329,7 @@ export default async function DashboardPage() {
                   <p
                     className={`font-bold text-base truncate ${
                       (nextMatch.homeUserId as number) === session.userId
-                        ? "text-blue-700"
+                        ? "text-green-700"
                         : "text-gray-800"
                     }`}
                   >
@@ -387,7 +387,7 @@ export default async function DashboardPage() {
                   <p
                     className={`font-bold text-base truncate ${
                       (nextMatch.awayUserId as number) === session.userId
-                        ? "text-blue-700"
+                        ? "text-green-700"
                         : "text-gray-800"
                     }`}
                   >
@@ -459,7 +459,7 @@ export default async function DashboardPage() {
               </p>
               <h2 className="font-semibold text-gray-800 mt-0.5">Classifica</h2>
             </div>
-            <Link href="/standings" className="text-xs font-semibold text-blue-600 hover:underline">
+            <Link href="/standings" className="text-xs font-semibold text-green-700 hover:underline">
               Vedi tutto →
             </Link>
           </div>
@@ -476,7 +476,7 @@ export default async function DashboardPage() {
                   key={s.userId}
                   className={`flex items-center gap-3 px-5 py-3 transition-colors ${
                     s.userId === session.userId
-                      ? "bg-blue-50 border-l-4 border-blue-500"
+                      ? "bg-green-50 border-l-4 border-green-500"
                       : "border-l-4 border-transparent hover:bg-gray-50"
                   }`}
                 >
@@ -495,7 +495,7 @@ export default async function DashboardPage() {
                   </span>
                   <span
                     className={`flex-1 font-medium text-sm truncate ${
-                      s.userId === session.userId ? "text-blue-700" : "text-gray-800"
+                      s.userId === session.userId ? "text-green-700" : "text-gray-800"
                     }`}
                   >
                     {s.teamName}
@@ -503,7 +503,7 @@ export default async function DashboardPage() {
                   <span className="text-xs text-gray-400 shrink-0">
                     {s.wins}V {s.draws}P
                   </span>
-                  <span className="font-bold text-sm text-blue-600 shrink-0 w-12 text-right">
+                  <span className="font-bold text-sm text-green-700 shrink-0 w-12 text-right">
                     {s.points} pt
                   </span>
                 </div>
@@ -594,7 +594,7 @@ export default async function DashboardPage() {
               </p>
               <p className="font-semibold text-gray-800">Bacheca di lega</p>
             </div>
-            <Link href="/bacheca" className="text-xs font-semibold text-blue-600 hover:underline">
+            <Link href="/bacheca" className="text-xs font-semibold text-green-700 hover:underline">
               Vedi tutto →
             </Link>
           </div>
@@ -650,7 +650,7 @@ export default async function DashboardPage() {
             </div>
             <Link
               href="/calendar"
-              className="text-xs font-semibold text-blue-600 hover:underline"
+              className="text-xs font-semibold text-green-700 hover:underline"
             >
               Calendario completo →
             </Link>
@@ -675,7 +675,7 @@ export default async function DashboardPage() {
                         href={`/calendar/${m.id as number}`}
                         className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs transition-colors border ${
                           isMyMatch
-                            ? "border-blue-200 bg-blue-50/50 hover:bg-blue-100/50"
+                            ? "border-green-200 bg-green-50/50 hover:bg-green-100/50"
                             : "border-gray-100 hover:bg-gray-50"
                         }`}
                       >
@@ -810,7 +810,7 @@ function QuickAction({
       <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center text-xl sm:text-2xl hover:bg-white/20 transition-colors backdrop-blur-sm">
         {emoji}
         {alert && (
-          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-400 rounded-full border-2 border-blue-900 animate-pulse" />
+          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-400 rounded-full border-2 border-green-900 animate-pulse" />
         )}
       </div>
       <span className="text-white/70 text-xs font-medium text-center leading-tight">
@@ -838,7 +838,7 @@ function HeroStat({
       >
         {value}
       </p>
-      <p className="text-blue-300 text-xs mt-1 leading-tight">{label}</p>
+      <p className="text-green-200 text-xs mt-1 leading-tight">{label}</p>
     </div>
   );
 }

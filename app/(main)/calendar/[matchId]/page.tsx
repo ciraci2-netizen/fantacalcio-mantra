@@ -281,8 +281,8 @@ export default async function MatchDetailPage({
 
       {/* Match scoreboard */}
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className={`px-6 py-5 ${played ? (homeWon || awayWon ? "bg-blue-600" : "bg-slate-600") : "bg-gray-700"}`}>
-          <p className="text-xs text-center text-blue-200 uppercase tracking-widest mb-4 font-medium">
+        <div className={`px-6 py-5 ${played ? (homeWon || awayWon ? "bg-green-700" : "bg-slate-600") : "bg-gray-700"}`}>
+          <p className="text-xs text-center text-green-200 uppercase tracking-widest mb-4 font-medium">
             Giornata {match.matchdayNumber as number}
           </p>
           <div className="flex items-center justify-between gap-2">
@@ -292,7 +292,7 @@ export default async function MatchDetailPage({
               <p className={`text-base font-bold text-center truncate w-full ${homeUserId === session.userId ? "text-yellow-300" : "text-white"}`}>
                 {match.homeTeamName as string}
               </p>
-              <p className="text-blue-200 text-xs">{match.homeUsername as string}</p>
+              <p className="text-green-200 text-xs">{match.homeUsername as string}</p>
             </div>
 
             {/* Score */}
@@ -300,24 +300,24 @@ export default async function MatchDetailPage({
               {played ? (
                 <>
                   <div className="text-4xl font-bold text-white tracking-tight tabular-nums">
-                    <span className={homeWon ? "text-white" : "text-blue-300"}>
+                    <span className={homeWon ? "text-white" : "text-green-300"}>
                       {match.homeGoals !== null
                         ? (match.homeGoals as number)
                         : (match.homeScore as number).toFixed(1)}
                     </span>
-                    <span className="text-blue-300 mx-2 text-2xl">–</span>
-                    <span className={awayWon ? "text-white" : "text-blue-300"}>
+                    <span className="text-green-300 mx-2 text-2xl">–</span>
+                    <span className={awayWon ? "text-white" : "text-green-300"}>
                       {match.awayGoals !== null
                         ? (match.awayGoals as number)
                         : (match.awayScore as number).toFixed(1)}
                     </span>
                   </div>
                   {match.homeGoals !== null && (
-                    <p className="text-xs text-blue-300 mt-1 tabular-nums">
+                    <p className="text-xs text-green-300 mt-1 tabular-nums">
                       {(match.homeScore as number).toFixed(1)} – {(match.awayScore as number).toFixed(1)} pt
                     </p>
                   )}
-                  <p className="text-xs text-blue-200 mt-1">
+                  <p className="text-xs text-green-200 mt-1">
                     {homeWon ? "Vittoria casa" : awayWon ? "Vittoria ospiti" : "Pareggio"}
                   </p>
                   {forfeitValue !== "none" && (
@@ -326,8 +326,8 @@ export default async function MatchDetailPage({
                 </>
               ) : (
                 <>
-                  <span className="text-4xl font-bold text-blue-300">VS</span>
-                  <p className="text-xs text-blue-200 mt-1.5">In programma</p>
+                  <span className="text-4xl font-bold text-green-300">VS</span>
+                  <p className="text-xs text-green-200 mt-1.5">In programma</p>
                 </>
               )}
             </div>
@@ -338,7 +338,7 @@ export default async function MatchDetailPage({
               <p className={`text-base font-bold text-center truncate w-full ${awayUserId === session.userId ? "text-yellow-300" : "text-white"}`}>
                 {match.awayTeamName as string}
               </p>
-              <p className="text-blue-200 text-xs">{match.awayUsername as string}</p>
+              <p className="text-green-200 text-xs">{match.awayUsername as string}</p>
             </div>
           </div>
         </div>
@@ -674,7 +674,7 @@ function SlotRow({
       )}
       <Link
         href={`/giocatore/${slot.playerId}`}
-        className={`text-sm flex-1 truncate hover:text-blue-600 hover:underline transition-colors ${
+        className={`text-sm flex-1 truncate hover:text-green-700 hover:underline transition-colors ${
           subbedIn ? "text-green-800 font-medium" : subbedOut ? "text-red-700" : "text-gray-700"
         }`}
       >
