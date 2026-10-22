@@ -14,6 +14,9 @@ type MatchRow = {
   awayGoals: number | null;
   homeUser: { id: number; teamName: string; logoUrl: string | null };
   awayUser: { id: number; teamName: string; logoUrl: string | null };
+  homeNotSubmitted?: boolean;
+  awayNotSubmitted?: boolean;
+  forfeit?: boolean;
 };
 
 export default async function CalendarPage() {
@@ -56,6 +59,28 @@ export default async function CalendarPage() {
     }
   } catch { /* not yet migrated */ }
 
+  // Badge del calendario: formazioni d'ufficio (non consegnate) e tavolini.
+  // Colonne opzionali: se mancano, nessun badge.
+  const autoLineups = new Set<string>(); // "matchdayId:userId"
+  try {
+    const autoRes = await db.execute({
+      sql: `SELECT l.matchdayId, l.userId FROM "Lineup" l
+            JOIN "Matchday" md ON md.id = l.matchdayId
+            WHERE md.seasonId = ? AND l.isAutomatic = 1`,
+      args: [season.id],
+    });
+    for (const r of autoRes.rows) autoLineups.add(`${r.matchdayId}:${r.userId}`);
+  } catch { /* colonna isAutomatic non presente */ }
+  const forfeitByMatch = new Map<number, boolean>();
+  try {
+    const fRes = await db.execute({
+      sql: `SELECT m.id FROM "Match" m JOIN "Matchday" md ON md.id = m.matchdayId
+            WHERE md.seasonId = ? AND (m.homeForfeit = 1 OR m.awayForfeit = 1)`,
+      args: [season.id],
+    });
+    for (const r of fRes.rows) forfeitByMatch.set(r.id as number, true);
+  } catch { /* colonne tavolino non presenti */ }
+
   const matchdayMap = new Map<number, { id: number; number: number; matches: MatchRow[] }>();
   for (const row of matchesRes.rows) {
     const mdId = row.matchdayId as number;
@@ -71,6 +96,9 @@ export default async function CalendarPage() {
       homePoints: row.homePoints as number | null,
       homeGoals: row.homeGoals !== undefined ? (row.homeGoals as number | null) : null,
       awayGoals: row.awayGoals !== undefined ? (row.awayGoals as number | null) : null,
+      homeNotSubmitted: autoLineups.has(`${mdId}:${homeId}`),
+      awayNotSubmitted: autoLineups.has(`${mdId}:${awayId}`),
+      forfeit: forfeitByMatch.get(row.id as number) ?? false,
       homeUser: { id: homeId, teamName: row.homeTeamName as string, logoUrl: logoMap[homeId] ?? null },
       awayUser: { id: awayId, teamName: row.awayTeamName as string, logoUrl: logoMap[awayId] ?? null },
     });

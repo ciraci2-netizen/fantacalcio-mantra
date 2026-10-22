@@ -12,6 +12,11 @@ type MatchRow = {
   awayGoals: number | null;
   homeUser: { id: number; teamName: string; logoUrl: string | null };
   awayUser: { id: number; teamName: string; logoUrl: string | null };
+  /** Badge: formazione d'ufficio (non consegnata) per casa/ospite */
+  homeNotSubmitted?: boolean;
+  awayNotSubmitted?: boolean;
+  /** Badge: risultato a tavolino */
+  forfeit?: boolean;
 };
 
 type MatchdayData = {
@@ -52,7 +57,18 @@ function MatchdayCard({
         </div>
       )}
       <div className="divide-y">
-        {md.matches.map((m) => {
+        {(() => {
+          // 🔥 alla partita (o alle partite a pari merito) con piu gol della giornata
+          const goalsOf = (x: MatchRow) =>
+            x.homeScore !== null && x.homeGoals !== null && x.awayGoals !== null && !x.forfeit ? x.homeGoals + x.awayGoals : -1;
+          const maxGoals = Math.max(-1, ...md.matches.map(goalsOf));
+          return md.matches.map((m) => {
+          const isTopGoals = maxGoals > 0 && goalsOf(m) === maxGoals;
+          const notSubmittedTeams = [
+            m.homeNotSubmitted ? m.homeUser.teamName : null,
+            m.awayNotSubmitted ? m.awayUser.teamName : null,
+          ].filter(Boolean) as string[];
+          const hasBadges = isTopGoals || m.forfeit || notSubmittedTeams.length > 0;
           const isMyMatch = m.homeUser.id === currentUserId || m.awayUser.id === currentUserId;
           const played = m.homeScore !== null;
           const homeWon = (m.homePoints ?? -1) === 3;
@@ -63,7 +79,7 @@ function MatchdayCard({
             <Link
               key={m.id}
               href={`/calendar/${m.id}`}
-              className={`flex items-center px-4 py-3 gap-3 hover:bg-gray-50/80 transition-colors ${
+              className={`flex flex-wrap items-center px-4 py-3 gap-x-3 gap-y-1.5 hover:bg-gray-50/80 transition-colors ${
                 isMyMatch
                   ? "border-l-4 border-green-500 bg-green-50/30"
                   : "border-l-4 border-transparent"
@@ -138,9 +154,27 @@ function MatchdayCard({
                   {m.awayUser.teamName}
                 </span>
               </div>
+
+              {/* Badge: tavolino, formazione non consegnata, partita con piu gol */}
+              {hasBadges && (
+                <div className="basis-full flex flex-wrap justify-center gap-1.5">
+                  {m.forfeit && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">⚖️ Tavolino</span>
+                  )}
+                  {notSubmittedTeams.map((t) => (
+                    <span key={t} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                      ⚠️ {t}: non consegnata
+                    </span>
+                  ))}
+                  {isTopGoals && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">🔥 Più gol</span>
+                  )}
+                </div>
+              )}
             </Link>
           );
-        })}
+        });
+        })()}
       </div>
     </div>
   );
