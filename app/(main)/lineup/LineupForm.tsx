@@ -24,6 +24,17 @@ interface Props {
     reserves: number[];
   } | null;
   /**
+   * Ultima formazione di una giornata precedente: se presente, il form
+   * mostra il pulsante "Riparti dall'ultima formazione" che la carica
+   * (solo nel form: va comunque salvata).
+   */
+  previousLineup?: {
+    matchdayNumber: number;
+    formation: string;
+    starters: number[];
+    reserves: number[];
+  } | null;
+  /**
    * Admin override: quando presente, il form salva la formazione per conto
    * di un'altra squadra (adminSaveLineup) invece che per l'utente loggato
    * (saveLineup), e resta modificabile anche a giornata bloccata.
@@ -49,6 +60,7 @@ export default function LineupForm({
   isLocked,
   roster,
   existingLineup,
+  previousLineup = null,
   admin,
 }: Props) {
   const [result, formAction, pending] = useActionState(admin ? adminSaveLineup : saveLineup, null);
@@ -116,6 +128,35 @@ export default function LineupForm({
     });
   }
 
+  // Sposta una riserva di una posizione (dir -1 = su, +1 = giu): l'ordine
+  // della panchina decide chi entra per primo nelle sostituzioni.
+  function moveReserve(slot: number, dir: -1 | 1) {
+    setReserves((prev) => {
+      const target = slot + dir;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[slot], next[target]] = [next[target], next[slot]];
+      return next;
+    });
+  }
+
+  // "Riparti dall'ultima formazione": carica nel form modulo, titolari e
+  // riserve della giornata precedente (i giocatori non piu in rosa restano
+  // slot vuoti da completare).
+  const [loadedFromPrevious, setLoadedFromPrevious] = useState<{ matchdayNumber: number; dropped: number } | null>(null);
+  function loadPreviousLineup() {
+    if (!previousLineup) return;
+    const fill = (ids: number[]) =>
+      Array(11)
+        .fill(null)
+        .map((_, i) => inRoster(ids[i]));
+    setFormation(previousLineup.formation);
+    setStarters(fill(previousLineup.starters));
+    setReserves(fill(previousLineup.reserves));
+    const dropped = [...previousLineup.starters, ...previousLineup.reserves].filter((id) => !rosterIds.has(id)).length;
+    setLoadedFromPrevious({ matchdayNumber: previousLineup.matchdayNumber, dropped });
+  }
+
   function getPlayerById(id: number | null): Player | null {
     if (!id) return null;
     return roster.find((p) => p.id === id) ?? null;
@@ -158,6 +199,26 @@ export default function LineupForm({
             : `${droppedCount} giocatori della formazione precedente non sono più nella rosa`}{" "}
           (svincolo, cessione o scambio) ed {droppedCount === 1 ? "è stato" : "sono stati"} rimoss
           {droppedCount === 1 ? "o" : "i"} dagli slot. Completa gli slot rimasti vuoti prima di salvare.
+        </div>
+      )}
+      {previousLineup && (
+        <div className="bg-white rounded-xl border shadow-sm p-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={loadPreviousLineup}
+            className="px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-semibold transition-colors"
+          >
+            ↺ Riparti dall&apos;ultima formazione (G{previousLineup.matchdayNumber})
+          </button>
+          <span className="text-xs text-gray-500 flex-1 min-w-[180px]">
+            {loadedFromPrevious
+              ? `Caricata la formazione della G${loadedFromPrevious.matchdayNumber}${
+                  loadedFromPrevious.dropped > 0
+                    ? ` (${loadedFromPrevious.dropped} giocator${loadedFromPrevious.dropped === 1 ? "e non è" : "i non sono"} più in rosa: completa gli slot vuoti)`
+                    : ""
+                }. Controlla i cambi e premi Salva.`
+              : "Carica modulo, titolari e panchina della giornata precedente: poi cambi solo quello che serve e salvi."}
+          </span>
         </div>
       )}
       <form action={action} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -280,6 +341,7 @@ export default function LineupForm({
             <h2 className="font-semibold text-gray-700 mb-3">
               Riserve (ordine di entrata)
             </h2>
+            <p className="text-xs text-gray-400 -mt-2 mb-3">Usa ▲▼ per cambiare l&apos;ordine: entra per prima la riserva più in alto.</p>
             <div className="space-y-2">
               {reserves.map((id, i) => {
                 const player = getPlayerById(id);
@@ -297,6 +359,26 @@ export default function LineupForm({
                             {player.mantraRole}
                           </span>
                           <span className="flex-1 text-sm font-medium">{player.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => moveReserve(i, -1)}
+                            disabled={i === 0}
+                            title="Sposta su (entra prima)"
+                            aria-label={`Sposta su ${player.name}`}
+                            className="text-gray-400 hover:text-green-700 disabled:opacity-25 disabled:hover:text-gray-400 text-xs px-1"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveReserve(i, 1)}
+                            disabled={i === reserves.length - 1}
+                            title="Sposta giù (entra dopo)"
+                            aria-label={`Sposta giù ${player.name}`}
+                            className="text-gray-400 hover:text-green-700 disabled:opacity-25 disabled:hover:text-gray-400 text-xs px-1"
+                          >
+                            ▼
+                          </button>
                           <button
                             type="button"
                             onClick={() => selectReserve(i, null)}

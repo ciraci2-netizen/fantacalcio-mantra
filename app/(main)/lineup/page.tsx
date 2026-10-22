@@ -161,6 +161,34 @@ export default async function LineupPage() {
     };
   }
 
+  // Ultima formazione delle giornate precedenti (stessa stagione), per il
+  // pulsante "Riparti dall'ultima formazione" nel form.
+  let previousLineupData: { matchdayNumber: number; formation: string; starters: number[]; reserves: number[] } | null = null;
+  try {
+    const prevRes = await db.execute({
+      sql: `SELECT l.id, l.formation, md.number as matchdayNumber
+            FROM "Lineup" l
+            JOIN "Matchday" md ON md.id = l.matchdayId
+            WHERE l.userId = ? AND md.seasonId = ? AND md.number < ?
+            ORDER BY md.number DESC
+            LIMIT 1`,
+      args: [session.userId, season.id, matchday.number],
+    });
+    const prev = prevRes.rows[0];
+    if (prev) {
+      const prevSlots = await db.execute({
+        sql: `SELECT playerId, isStarter FROM "LineupSlot" WHERE lineupId = ? ORDER BY isStarter DESC, position ASC`,
+        args: [prev.id],
+      });
+      previousLineupData = {
+        matchdayNumber: prev.matchdayNumber as number,
+        formation: prev.formation as string,
+        starters: prevSlots.rows.filter((s) => Number(s.isStarter) === 1).map((s) => s.playerId as number),
+        reserves: prevSlots.rows.filter((s) => Number(s.isStarter) === 0).map((s) => s.playerId as number),
+      };
+    }
+  } catch { /* nessuna formazione precedente */ }
+
   const isLocked = Boolean(matchday.isLocked);
 
   return (
@@ -236,6 +264,7 @@ export default async function LineupPage() {
           availability: r.availability as string,
         }))}
         existingLineup={existingLineupData}
+        previousLineup={previousLineupData}
       />
     </div>
   );
