@@ -247,6 +247,44 @@ export const ROLE_MODIFIERS: Record<string, Record<string, number>> = {
   ATT: { ATT: 0, OFF: -1 },
 };
 
+export type BonusItem = { key: string; icon: string; label: string; value: number };
+
+/**
+ * Dettaglio bonus/malus di un giocatore (gol, assist, ammonizioni...), con
+ * gli stessi valori usati per il fantavoto: voto + somma(value) = fantavoto.
+ * Usato per mostrare i bonus nel tabellino tra voto e fantavoto.
+ */
+export function fantavotoBreakdown(
+  voteData: Omit<VoteData, "vote" | "fantavoto">,
+  mantraRole: string,
+  config: ScoringConfig = DEFAULT_SCORING
+): BonusItem[] {
+  const items: BonusItem[] = [];
+  const add = (key: string, icon: string, label: string, count: number, unit: number) => {
+    if (count && unit) items.push({ key, icon, label: count > 1 ? `${label} x${count}` : label, value: count * unit });
+  };
+
+  if (voteData.gfGs > 0) {
+    add("gol", "⚽", "Gol", voteData.gfGs, config.golFatto);
+  } else if (voteData.gfGs < 0) {
+    add("gs", "🥅", "Gol subito", -voteData.gfGs, -Math.abs(config.golSubito));
+  }
+  // gsr = GOAL SU RIGORE: gol segnato su rigore, premiato come un gol normale.
+  add("gsr", "⚽", "Gol su rigore", voteData.gsr, config.golFatto);
+  add("ass", "👟", "Assist", voteData.ass, config.assist);
+  add("adf", "🛡️", "Assist da fermo", voteData.adf, config.adf);
+  add("amm", "🟨", "Ammonizione", voteData.amm, config.ammonizione);
+  add("esp", "🟥", "Espulsione", voteData.esp, config.espulsione);
+  if (mantraRole === "POR") {
+    add("rp", "🧤", "Rigore parato", voteData.rpRs, config.rigoreParato);
+  } else {
+    add("rs", "❌", "Rigore sbagliato", voteData.rpRs, config.rigoreSbagliato);
+  }
+  add("aut", "🙈", "Autogol", voteData.aut, config.autogol);
+
+  return items;
+}
+
 export function calculateFantavoto(
   voteData: VoteData,
   mantraRole: string,
@@ -258,29 +296,7 @@ export function calculateFantavoto(
   if (voteData.vote === null) return voteData.fantavoto;
 
   let score = voteData.vote;
-
-  // Gol fatti o subiti (gfGs)
-  if (voteData.gfGs > 0) {
-    score += voteData.gfGs * config.golFatto;
-  } else if (voteData.gfGs < 0) {
-    // Gol subiti (portieri/difensori)
-    score += voteData.gfGs * Math.abs(config.golSubito);
-  }
-
-  // gsr = GOAL SU RIGORE: gol segnato su rigore, va premiato come un gol normale.
-  score += voteData.gsr * config.golFatto;
-  score += voteData.amm * config.ammonizione;
-  score += voteData.esp * config.espulsione;
-
-  if (mantraRole === "POR") {
-    score += voteData.rpRs * config.rigoreParato;
-  } else {
-    score += voteData.rpRs * config.rigoreSbagliato;
-  }
-
-  score += voteData.aut * config.autogol;
-  score += voteData.ass * config.assist;
-  score += voteData.adf * config.adf;
+  for (const item of fantavotoBreakdown(voteData, mantraRole, config)) score += item.value;
 
   return Math.round(score * 100) / 100;
 }

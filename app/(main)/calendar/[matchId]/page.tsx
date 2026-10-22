@@ -5,7 +5,7 @@ import Link from "next/link";
 import TeamLogo from "@/app/components/TeamLogo";
 import Confetti from "@/app/components/Confetti";
 import { roleBadgeClass } from "@/app/lib/roles";
-import { computeAutoSubstitutions } from "@/app/lib/scoring";
+import { computeAutoSubstitutions, fantavotoBreakdown, type BonusItem } from "@/app/lib/scoring";
 import { setMatchForfeit } from "@/app/actions/forfeit";
 
 const HARD_MAX_SUBSTITUTIONS = 5;
@@ -42,6 +42,7 @@ type PlayerSlot = {
   vote: number | null;
   fantavoto: number | null;
   isStarter: boolean;
+  bonuses: BonusItem[];
 };
 
 // Ricostruisce SOLO quali giocatori sono stati considerati per il
@@ -193,7 +194,8 @@ export default async function MatchDetailPage({
     sql: `SELECT ls.lineupId, l.userId, l.isAutomatic,
                  ls.isStarter, ls.position,
                  p.id as playerId, p.name, p.mantraRole,
-                 pv.vote, pv.fantavoto
+                 pv.vote, pv.fantavoto,
+                 pv.gfGs, pv.gsr, pv.amm, pv.esp, pv.rpRs, pv.aut, pv.ass, pv.adf
           FROM "LineupSlot" ls
           JOIN "Lineup" l ON l.id = ls.lineupId
           JOIN "Player" p ON p.id = ls.playerId
@@ -217,6 +219,23 @@ export default async function MatchDetailPage({
       vote: row.vote as number | null,
       fantavoto: row.fantavoto as number | null,
       isStarter: Boolean(row.isStarter),
+      // Bonus/malus (gol, assist, cartellini...) solo se il giocatore ha voto
+      bonuses:
+        row.vote === null || row.vote === undefined
+          ? []
+          : fantavotoBreakdown(
+              {
+                gfGs: Number(row.gfGs ?? 0),
+                gsr: Number(row.gsr ?? 0),
+                amm: Number(row.amm ?? 0),
+                esp: Number(row.esp ?? 0),
+                rpRs: Number(row.rpRs ?? 0),
+                aut: Number(row.aut ?? 0),
+                ass: Number(row.ass ?? 0),
+                adf: Number(row.adf ?? 0),
+              },
+              row.mantraRole as string
+            ),
     };
     const automatic = Number(row.isAutomatic) === 1;
     if ((row.userId as number) === homeUserId) {
@@ -661,6 +680,23 @@ function SlotRow({
       >
         {slot.name}
       </Link>
+      {slot.vote !== null && slot.bonuses.length > 0 && (
+        <span className="flex flex-wrap justify-end gap-1 shrink min-w-0">
+          {slot.bonuses.map((b) => (
+            <span
+              key={b.key}
+              title={`${b.label}: ${b.value > 0 ? "+" : ""}${b.value}`}
+              className={`text-[11px] leading-none px-1 py-0.5 rounded tabular-nums whitespace-nowrap ${
+                b.value > 0 ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
+              }`}
+            >
+              {b.icon}
+              {b.value > 0 ? "+" : ""}
+              {Number.isInteger(b.value) ? b.value : b.value.toFixed(1)}
+            </span>
+          ))}
+        </span>
+      )}
       {slot.vote !== null && (
         <span className="text-xs text-gray-400 shrink-0 tabular-nums" title="Voto (prima di bonus/malus)">
           v.{slot.vote.toFixed(1)}
