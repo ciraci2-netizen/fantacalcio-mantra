@@ -186,7 +186,10 @@ export default async function DashboardPage() {
     .slice(0, 2);
 
   return (
-    <div className="space-y-5">
+    // flex-col + order: su telefono la scadenza (con lo stato della tua
+    // formazione) sale in cima, prima del banner; da tablet in su resta
+    // nell'ordine originale.
+    <div className="flex flex-col gap-5">
       {/* ── HERO BANNER ─────────────────────────────────────────── */}
       <div className="relative bg-gradient-to-br from-slate-900/90 via-blue-900/90 to-blue-800/90 rounded-2xl overflow-hidden shadow-xl">
         <div
@@ -197,11 +200,11 @@ export default async function DashboardPage() {
           }}
         />
 
-        <div className="relative px-5 sm:px-8 py-7">
+        <div className="relative px-5 sm:px-8 py-5 sm:py-7">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
             {/* Identity */}
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-4 border-white/20 overflow-hidden bg-blue-700 flex items-center justify-center text-white text-xl sm:text-2xl font-bold shadow-2xl shrink-0">
+              <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-full border-4 border-white/20 overflow-hidden bg-blue-700 flex items-center justify-center text-white text-xl sm:text-2xl font-bold shadow-2xl shrink-0">
                 {logoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -226,8 +229,8 @@ export default async function DashboardPage() {
               </div>
             </div>
 
-            {/* Quick actions */}
-            <div className="flex gap-3 sm:ml-auto flex-wrap">
+            {/* Quick actions (su telefono ci pensa la barra in basso) */}
+            <div className="hidden sm:flex gap-3 sm:ml-auto flex-wrap">
               <QuickAction
                 href="/lineup"
                 emoji="📋"
@@ -241,7 +244,7 @@ export default async function DashboardPage() {
           </div>
 
           {/* Stats bar */}
-          <div className="mt-6 pt-5 border-t border-white/10 grid grid-cols-4 gap-2">
+          <div className="mt-4 sm:mt-6 pt-4 sm:pt-5 border-t border-white/10 grid grid-cols-4 gap-2">
             <HeroStat
               value={season ? `#${myPosition > 0 ? myPosition : "—"}` : "—"}
               label="Posizione"
@@ -283,11 +286,13 @@ export default async function DashboardPage() {
 
       {/* ── DEADLINE CHIP ───────────────────────────────────── */}
       {currentMatchdayRow && (
-        <DeadlineChip
-          deadline={deadline}
-          isLocked={isLocked}
-          lineupSubmitted={lineupSubmitted}
-        />
+        <div className="order-first sm:order-none empty:hidden">
+          <DeadlineChip
+            deadline={deadline}
+            isLocked={isLocked}
+            lineupSubmitted={lineupSubmitted}
+          />
+        </div>
       )}
 
       {/* ── GRID: partita + classifica ────────────────────────── */}
@@ -651,8 +656,9 @@ export default async function DashboardPage() {
             </Link>
           </div>
           <div className="divide-y">
-            {recentMatchdays.map(([mdNumber, matches]) => (
-              <div key={mdNumber} className="px-5 py-4">
+            {recentMatchdays.map(([mdNumber, matches], mdIdx) => (
+              // Su telefono solo l'ultima giornata (le altre sono nel Calendario)
+              <div key={mdNumber} className={`px-5 py-4 ${mdIdx > 0 ? "hidden sm:block" : ""}`}>
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
                   Giornata {mdNumber}
                 </p>
@@ -707,7 +713,7 @@ export default async function DashboardPage() {
         <div>
           <p className="font-semibold text-gray-800 text-sm">Notifiche push</p>
           <p className="text-xs text-gray-400 mt-0.5">
-            Ricevi una notifica quando i voti vengono importati
+            Ricevi una notifica quando escono i voti e un promemoria se non hai ancora consegnato la formazione
           </p>
         </div>
         <PushSubscribeButton />
