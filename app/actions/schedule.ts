@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
+import { fillMissingLineups } from "@/app/lib/missingLineups";
 
 export async function createSeason(prevState: string | null, formData: FormData) {
   const session = await getSession();
@@ -370,6 +371,8 @@ export async function lockAndAdvanceMatchday(prevState: string | null, formData:
   const nextNumber = parseInt(formData.get("nextNumber") as string);
 
   const db = getDb();
+  // Formazioni d'ufficio per chi non ha consegnato, poi blocco
+  await fillMissingLineups(db, matchdayId);
   await db.execute({ sql: `UPDATE "Matchday" SET isLocked = 1 WHERE id = ?`, args: [matchdayId] });
   await db.execute({ sql: `UPDATE "Season" SET currentMatchday = ? WHERE id = ?`, args: [nextNumber, seasonId] });
 

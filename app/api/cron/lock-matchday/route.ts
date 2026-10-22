@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/app/lib/db";
 import { revalidatePath } from "next/cache";
+import { fillMissingLineups } from "@/app/lib/missingLineups";
 
 /**
  * Vercel Cron: auto-lock current matchday every Saturday at 11:00 UTC.
@@ -49,6 +50,9 @@ export async function GET(req: NextRequest) {
 
   const currentNumber = matchday.number as number;
   const nextNumber = currentNumber + 1;
+
+  // Formazioni d'ufficio per chi non ha consegnato, poi blocco
+  await fillMissingLineups(db, matchday.id as number);
 
   // Lock current matchday
   await db.execute({

@@ -176,7 +176,7 @@ export default async function MatchDetailPage({
 
   // Get both lineups with player slots + votes in one query
   const slotsRes = await db.execute({
-    sql: `SELECT ls.lineupId, l.userId,
+    sql: `SELECT ls.lineupId, l.userId, l.isAutomatic,
                  ls.isStarter, ls.position,
                  p.id as playerId, p.name, p.mantraRole,
                  pv.vote, pv.fantavoto
@@ -191,6 +191,9 @@ export default async function MatchDetailPage({
 
   const homeSlots: PlayerSlot[] = [];
   const awaySlots: PlayerSlot[] = [];
+  // Formazione d'ufficio = non consegnata (riproposta l'ultima)
+  let homeNotSubmitted = false;
+  let awayNotSubmitted = false;
 
   for (const row of slotsRes.rows) {
     const slot: PlayerSlot = {
@@ -201,8 +204,14 @@ export default async function MatchDetailPage({
       fantavoto: row.fantavoto as number | null,
       isStarter: Boolean(row.isStarter),
     };
-    if ((row.userId as number) === homeUserId) homeSlots.push(slot);
-    else awaySlots.push(slot);
+    const automatic = Number(row.isAutomatic) === 1;
+    if ((row.userId as number) === homeUserId) {
+      homeSlots.push(slot);
+      if (automatic) homeNotSubmitted = true;
+    } else {
+      awaySlots.push(slot);
+      if (automatic) awayNotSubmitted = true;
+    }
   }
 
   // Riserve entrate e titolari usciti per sostituzione automatica (titolare
@@ -418,6 +427,7 @@ export default async function MatchDetailPage({
             won={homeWon}
             subbedInIds={homeSubs.inIds}
             subbedOutIds={homeSubs.outIds}
+            notSubmitted={homeNotSubmitted}
           />
           <LineupCard
             teamName={match.awayTeamName as string}
@@ -428,6 +438,7 @@ export default async function MatchDetailPage({
             won={awayWon}
             subbedInIds={awaySubs.inIds}
             subbedOutIds={awaySubs.outIds}
+            notSubmitted={awayNotSubmitted}
           />
         </div>
       )}
@@ -451,6 +462,7 @@ function LineupCard({
   won,
   subbedInIds,
   subbedOutIds,
+  notSubmitted,
 }: {
   teamName: string;
   slots: PlayerSlot[];
@@ -460,6 +472,7 @@ function LineupCard({
   won: boolean;
   subbedInIds: Set<number>;
   subbedOutIds: Set<number>;
+  notSubmitted: boolean;
 }) {
   const starters = slots.filter((s) => s.isStarter);
   const reserves = slots.filter((s) => !s.isStarter);
@@ -488,6 +501,12 @@ function LineupCard({
           </div>
         )}
       </div>
+
+      {notSubmitted && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-800 text-sm px-4 py-2">
+          ⚠️ <strong>Formazione non consegnata</strong> - schierata d&apos;ufficio l&apos;ultima formazione inviata.
+        </div>
+      )}
 
       <div className="p-4">
         {starters.length > 0 ? (

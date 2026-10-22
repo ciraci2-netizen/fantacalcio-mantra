@@ -27,6 +27,7 @@ export default function HistoryPitchToggle({
   totalScore,
   starters,
   reserves,
+  notSubmitted = false,
 }: {
   lineupId: number;
   matchdayNumber: number;
@@ -34,6 +35,7 @@ export default function HistoryPitchToggle({
   totalScore: number;
   starters: Slot[];
   reserves: Slot[];
+  notSubmitted?: boolean;
 }) {
   const [view, setView] = useState<"lista" | "campo">("lista");
 
@@ -48,7 +50,14 @@ export default function HistoryPitchToggle({
     <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
       {/* Header */}
       <div className="bg-green-700 text-white px-4 py-2.5 flex items-center justify-between">
-        <span className="font-semibold">Giornata {matchdayNumber}</span>
+        <span className="font-semibold">
+          Giornata {matchdayNumber}
+          {notSubmitted && (
+            <span className="ml-2 text-xs bg-amber-400 text-amber-950 px-1.5 py-0.5 rounded" title="Schierata d'ufficio l'ultima formazione inviata">
+              ⚠️ non consegnata
+            </span>
+          )}
+        </span>
         <div className="flex items-center gap-3">
           <span className="text-green-200 text-sm">{formation}</span>
           <span className="text-xl font-bold">{totalScore.toFixed(1)} pt</span>

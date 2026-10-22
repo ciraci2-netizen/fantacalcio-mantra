@@ -15,7 +15,7 @@ export default async function LineupHistoryPage() {
   const db = getDb();
 
   const lineupsRes = await db.execute({
-    sql: `SELECT l.id, l.formation, l.totalScore, md.number as matchdayNumber
+    sql: `SELECT l.id, l.formation, l.totalScore, l.isAutomatic, md.number as matchdayNumber
           FROM "Lineup" l
           JOIN "Matchday" md ON md.id = l.matchdayId
           WHERE l.userId = ? AND l.totalScore IS NOT NULL
@@ -28,6 +28,7 @@ export default async function LineupHistoryPage() {
     formation: r.formation as string,
     totalScore: r.totalScore as number,
     matchdayNumber: r.matchdayNumber as number,
+    notSubmitted: Number(r.isAutomatic) === 1,
   }));
 
   if (lineupMeta.length === 0) {
@@ -137,6 +138,7 @@ export default async function LineupHistoryPage() {
               totalScore={lineup.totalScore}
               starters={starters}
               reserves={reserves}
+              notSubmitted={lineup.notSubmitted}
             />
           );
         })}
