@@ -2,6 +2,7 @@ import { getSession } from "@/app/lib/session";
 import { redirect } from "next/navigation";
 import { getDb } from "@/app/lib/db";
 import VotesAdminClient from "./VotesAdminClient";
+import MatchdayFlow, { type FlowOpenMatchday, type FlowReviewMatchday } from "./MatchdayFlow";
 
 export default async function AdminVotesPage() {
   const session = await getSession();
@@ -95,6 +96,70 @@ export default async function AdminVotesPage() {
     } catch { /* tabella non ancora creata */ }
   }
 
+  // ── Percorso guidato (MatchdayFlow) ─────────────────────────────────
+  // Giornata aperta: quella corrente se non ancora bloccata.
+  const openFlow: FlowOpenMatchday | null =
+    currentMd && !currentMd.isLocked
+      ? {
+          id: currentMd.id as number,
+          number: currentMd.number as number,
+          deadline: (currentMd.deadline as string | null) ?? null,
+          submitted: lineupSubmissions.filter((l) => l.submitted).length,
+          total: lineupSubmissions.length,
+        }
+      : null;
+
+  // Giornata da chiudere: l'ultima bloccata della stagione.
+  let reviewFlow: FlowReviewMatchday | null = null;
+  const lastLocked = [...matchdaysRes.rows].reverse().find((m) => Number(m.isLocked) === 1) ?? null;
+  if (lastLocked) {
+    try {
+      const mdId = lastLocked.id as number;
+      const matchesRes = await db.execute({
+        sql: `SELECT id, homeUserId, awayUserId, homeScore FROM "Match" WHERE matchdayId = ?`,
+        args: [mdId],
+      });
+      const forfeitById = new Map<number, { home: boolean; away: boolean }>();
+      try {
+        const fRes = await db.execute({
+          sql: `SELECT id, homeForfeit, awayForfeit FROM "Match" WHERE matchdayId = ?`,
+          args: [mdId],
+        });
+        for (const r of fRes.rows) {
+          forfeitById.set(r.id as number, { home: Number(r.homeForfeit) === 1, away: Number(r.awayForfeit) === 1 });
+        }
+      } catch { /* colonne tavolino non ancora presenti */ }
+
+      let autoRows: { userId: number; teamName: string }[] = [];
+      try {
+        const autoRes = await db.execute({
+          sql: `SELECT l.userId, u.teamName FROM "Lineup" l JOIN "User" u ON u.id = l.userId
+                WHERE l.matchdayId = ? AND l.isAutomatic = 1 ORDER BY u.teamName ASC`,
+          args: [mdId],
+        });
+        autoRows = autoRes.rows.map((r) => ({ userId: r.userId as number, teamName: r.teamName as string }));
+      } catch { /* colonna isAutomatic non ancora presente */ }
+
+      reviewFlow = {
+        id: mdId,
+        number: lastLocked.number as number,
+        votesImported: Boolean(lastLocked.votesImported),
+        matchesTotal: matchesRes.rows.length,
+        matchesCalculated: matchesRes.rows.filter((m) => m.homeScore !== null).length,
+        notSubmitted: autoRows.map((a) => {
+          const match = matchesRes.rows.find((m) => m.homeUserId === a.userId || m.awayUserId === a.userId);
+          const f = match ? forfeitById.get(match.id as number) : undefined;
+          const isHome = match ? (match.homeUserId as number) === a.userId : false;
+          return {
+            teamName: a.teamName,
+            matchId: match ? (match.id as number) : null,
+            forfeit: f ? (isHome ? f.home : f.away) : false,
+          };
+        }),
+      };
+    } catch { /* lascia il pannello senza la parte "dopo le partite" */ }
+  }
+
   // Tutti i giocatori (per poter segnare disponibilità)
   const allPlayersRes = await db.execute(
     `SELECT id, name, realTeam, mantraRole FROM "Player" ORDER BY mantraRole ASC, name ASC`
@@ -102,6 +167,7 @@ export default async function AdminVotesPage() {
 
   return (
     <VotesAdminClient
+      flowPanel={<MatchdayFlow open={openFlow} review={reviewFlow} />}
       seasonId={season.id as number}
       seasonName={season.name as string}
       currentMatchday={season.currentMatchday as number}

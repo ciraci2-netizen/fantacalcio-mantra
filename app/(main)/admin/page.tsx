@@ -99,7 +99,7 @@ export default async function AdminPage() {
     { href: "/admin/players",  icon: "👤", title: "Giocatori",    desc: `${playerCount} nel database`,             color: "blue"   },
     { href: "/admin/schedule", icon: "📅", title: "Calendario",   desc: season ? `${season.name as string}` : "Nessuna stagione", color: "green" },
     { href: "/admin/lineup",  icon: "🛠️", title: "Formazioni",   desc: "Inserimento/modifica manuale",            color: "lime"   },
-    { href: "/admin/votes",    icon: "📊", title: "Voti",         desc: `${votesImportedCount} giornate importate`, color: "amber" },
+    { href: "/admin/votes",    icon: "🧭", title: "Gestione giornata", desc: `Scadenza, voti, calcolo, tavolini · ${votesImportedCount} importate`, color: "amber" },
     { href: "/admin/coppe",    icon: "🏆", title: "Coppe",        desc: "Turni eliminatori",                       color: "yellow" },
     { href: "/admin/mercato",  icon: "🔄", title: "Mercato",      desc: "Apri/chiudi mercati",                     color: "teal"   },
     { href: "/admin/roster",   icon: "📋", title: "Rose",         desc: "Assegna giocatori",                       color: "cyan"   },
@@ -220,6 +220,10 @@ export default async function AdminPage() {
         <div className="bg-white rounded-2xl border shadow-sm p-5">
           <h2 className="font-semibold text-gray-700 mb-3 text-sm uppercase tracking-wide">Azioni rapide — G{matchday.number}</h2>
           <div className="flex flex-wrap gap-3">
+            <Link href="/admin/votes"
+              className="flex items-center gap-2 px-4 py-2.5 bg-green-700 hover:bg-green-800 text-white rounded-xl text-sm font-semibold transition-colors">
+              🧭 Gestione giornata
+            </Link>
             <QuickImportButton matchdayId={matchday.id} matchdayNumber={matchday.number} />
             <Link href="/admin/schedule"
               className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors">

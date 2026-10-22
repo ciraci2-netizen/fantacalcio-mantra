@@ -61,6 +61,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string; icon: string
 };
 
 export default function VotesAdminClient({
+  flowPanel,
   seasonId,
   seasonName,
   currentMatchday,
@@ -72,6 +73,8 @@ export default function VotesAdminClient({
   playerStatuses,
   allPlayers,
 }: {
+  /** Percorso guidato della giornata (MatchdayFlow), reso lato server */
+  flowPanel?: React.ReactNode;
   seasonId: number;
   seasonName: string;
   currentMatchday: number;
@@ -154,62 +157,10 @@ export default function VotesAdminClient({
         Stagione: <strong>{seasonName}</strong> — Fonte: Fantapiu3.com Premier League
       </p>
 
-      {/* -- Fix una tantum: gol su rigore scorati come rigore sbagliato -- */}
-      <div className="bg-white rounded-xl border shadow-sm p-5 space-y-3">
-        <h2 className="font-semibold text-gray-700">
-          Correggi voti: gol su rigore
-        </h2>
-        <p className="text-gray-500 text-sm">
-          Fix una tantum per un bug gia risolto nel calcolo (i gol segnati su rigore davano -3 invece di +3).
-          Questo controlla/corregge i voti <strong>gia importati in passato</strong> con la formula sbagliata.
-          I nuovi import sono gia corretti automaticamente.
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <form action={gsrDryRunAction}>
-            <button
-              type="submit"
-              disabled={gsrDryRunPending}
-              className="bg-gray-600 hover:bg-gray-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
-            >
-              {gsrDryRunPending ? "Controllo..." : "Controlla (nessuna modifica)"}
-            </button>
-          </form>
-          {gsrApplyArmed && (
-            <form action={gsrApplyAction}>
-              <button
-                type="submit"
-                disabled={gsrApplyPending}
-                className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
-              >
-                {gsrApplyPending ? "Applico..." : "Applica la correzione ora"}
-              </button>
-            </form>
-          )}
-        </div>
-        {gsrDryRunResult && (
-          <div className="px-4 py-3 rounded-lg text-sm bg-amber-50 border border-amber-200 text-amber-800 whitespace-pre-wrap">
-            {gsrDryRunResult}
-            {gsrDryRunResult.startsWith("DRYRUN") && !gsrApplyArmed && (
-              <div className="mt-3">
-                <button
-                  type="button"
-                  onClick={() => setGsrApplyArmed(true)}
-                  className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
-                >
-                  Mostra pulsante &quot;Applica&quot; (modifica i punteggi gia calcolati)
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-        {gsrApplyResult && (
-          <div className="px-4 py-3 rounded-lg text-sm bg-green-50 border border-green-200 text-green-700 whitespace-pre-wrap">
-            {gsrApplyResult}
-          </div>
-        )}
-      </div>
+      {flowPanel}
+
       {/* ── Formazioni inviate ─────────────────────────────── */}
-      <div className="bg-white rounded-xl border shadow-sm p-5">
+      <div id="formazioni" className="bg-white rounded-xl border shadow-sm p-5 scroll-mt-20">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="font-semibold text-gray-700">
             Formazioni G{currentMatchday} — {submitted}/{lineupSubmissions.length} inviate
@@ -278,7 +229,7 @@ export default function VotesAdminClient({
 
       {/* ── Scadenza consegna formazioni ─────────────────── */}
       {currentMatchdayId && (
-        <div className="bg-white rounded-xl border shadow-sm p-5 space-y-4">
+        <div id="scadenza" className="bg-white rounded-xl border shadow-sm p-5 space-y-4 scroll-mt-20">
           <h2 className="font-semibold text-gray-700">⏰ Scadenza consegna G{currentMatchday}</h2>
 
           {/* Preview timer come lo vedono i giocatori */}
@@ -402,7 +353,7 @@ export default function VotesAdminClient({
       )}
 
       {/* ── Import voti ────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border shadow-sm p-5">
+      <div id="import" className="bg-white rounded-xl border shadow-sm p-5 scroll-mt-20">
         <h2 className="font-semibold text-gray-700 mb-4">Seleziona giornata</h2>
         <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-10 gap-2 mb-4">
           {matchdays.map((md) => (
@@ -617,17 +568,65 @@ export default function VotesAdminClient({
         </div>
       )}
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-        <strong>Flusso giornata:</strong>
-        <ol className="mt-2 space-y-1 list-decimal list-inside">
-          <li>Segna giocatori infortunati/squalificati nel pannello Disponibilità</li>
-          <li>Verifica che le formazioni siano state inviate</li>
-          <li>Seleziona la giornata e clicca <strong>Importa voti</strong></li>
-          <li>Se qualche voto manca o è sbagliato, correggilo in <strong>Voti importati</strong> qui sopra</li>
-          <li>Clicca <strong>Calcola punteggi</strong> — auto-genera formazioni mancanti + applica soglie gol</li>
-          <li>Clicca <strong>Blocca G{currentMatchday}</strong> per passare alla giornata successiva</li>
-        </ol>
+      {/* ── Strumenti avanzati (raramente usati) ───────────── */}
+      <details className="bg-white rounded-xl border shadow-sm">
+        <summary className="cursor-pointer select-none px-5 py-3 font-semibold text-gray-600 text-sm">
+          🧰 Strumenti avanzati (correzioni una tantum)
+        </summary>
+      <div className="p-5 pt-0 space-y-3">
+        <h2 className="font-semibold text-gray-700">
+          Correggi voti: gol su rigore
+        </h2>
+        <p className="text-gray-500 text-sm">
+          Fix una tantum per un bug gia risolto nel calcolo (i gol segnati su rigore davano -3 invece di +3).
+          Questo controlla/corregge i voti <strong>gia importati in passato</strong> con la formula sbagliata.
+          I nuovi import sono gia corretti automaticamente.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <form action={gsrDryRunAction}>
+            <button
+              type="submit"
+              disabled={gsrDryRunPending}
+              className="bg-gray-600 hover:bg-gray-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            >
+              {gsrDryRunPending ? "Controllo..." : "Controlla (nessuna modifica)"}
+            </button>
+          </form>
+          {gsrApplyArmed && (
+            <form action={gsrApplyAction}>
+              <button
+                type="submit"
+                disabled={gsrApplyPending}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-medium"
+              >
+                {gsrApplyPending ? "Applico..." : "Applica la correzione ora"}
+              </button>
+            </form>
+          )}
+        </div>
+        {gsrDryRunResult && (
+          <div className="px-4 py-3 rounded-lg text-sm bg-amber-50 border border-amber-200 text-amber-800 whitespace-pre-wrap">
+            {gsrDryRunResult}
+            {gsrDryRunResult.startsWith("DRYRUN") && !gsrApplyArmed && (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => setGsrApplyArmed(true)}
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+                >
+                  Mostra pulsante &quot;Applica&quot; (modifica i punteggi gia calcolati)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {gsrApplyResult && (
+          <div className="px-4 py-3 rounded-lg text-sm bg-green-50 border border-green-200 text-green-700 whitespace-pre-wrap">
+            {gsrApplyResult}
+          </div>
+        )}
       </div>
+      </details>
     </div>
   );
 }
