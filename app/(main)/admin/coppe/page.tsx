@@ -4,6 +4,7 @@ import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { getCupRules } from "@/app/lib/leagueSettings";
 import AdminCoppeClient from "./AdminCoppeClient";
+import { loadCupForfeits } from "@/app/lib/cupForfeits";
 
 export default async function AdminCoppePage() {
   const session = await getSession();
@@ -76,6 +77,8 @@ export default async function AdminCoppePage() {
             );
           } catch { /* tabella non ancora migrata */ }
 
+          const forfeits = await loadCupForfeits(round.id as number);
+
           return {
             id: round.id as number,
             name: round.name as string,
@@ -93,6 +96,8 @@ export default async function AdminCoppePage() {
               homeUserId: m.homeUserId as number,
               awayUserId: m.awayUserId as number,
               roundSlot: (m.roundSlot as number | null | undefined) ?? null,
+              homeForfeit: forfeits[m.id as number]?.homeForfeit ?? false,
+              awayForfeit: forfeits[m.id as number]?.awayForfeit ?? false,
             })),
           };
         })

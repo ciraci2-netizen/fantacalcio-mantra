@@ -1,11 +1,11 @@
 "use client";
 
 import { useActionState } from "react";
-import { createCup, createCupRound, createCupGroup, createCupMatch, setCupMatchScore, calculateCupMatchScore, setCupRoundSchedule, setSlotSchedule, deleteCup, deleteCupRound } from "@/app/actions/cups";
+import { createCup, createCupRound, createCupGroup, createCupMatch, setCupMatchScore, calculateCupMatchScore, setCupMatchForfeit, setCupRoundSchedule, setSlotSchedule, deleteCup, deleteCupRound } from "@/app/actions/cups";
 import { computeGroupStandings, computeCupMatchResult } from "@/app/lib/cupStandings";
 import { DEFAULT_CUP_RULES, type CupRules } from "@/app/lib/leagueSettings";
 
-type Match = { id: number; homeScore: number | null; awayScore: number | null; homeTeam: string; awayTeam: string; homeUserId: number; awayUserId: number; roundSlot: number | null };
+type Match = { id: number; homeScore: number | null; awayScore: number | null; homeTeam: string; awayTeam: string; homeUserId: number; awayUserId: number; roundSlot: number | null; homeForfeit?: boolean; awayForfeit?: boolean };
 type SlotSchedule = { matchdayNumber: number | null; playDate: string | null };
 type Round = { id: number; name: string; number: number; type: "eliminazione" | "girone"; matchdayNumber: number | null; playDate: string | null; slotSchedule: Record<number, SlotSchedule>; matches: Match[] };
 type Cup = { id: number; name: string; rounds: Round[] };
@@ -54,6 +54,7 @@ export default function AdminCoppeClient({ cups, users, seasonName, rules }: { c
   const [matchState, matchAction, matchPending] = useActionState(createCupMatch, null);
   const [scoreState, scoreAction, scorePending] = useActionState(setCupMatchScore, null);
   const [calcState, calcAction, calcPending] = useActionState(calculateCupMatchScore, null);
+  const [forfeitState, forfeitAction, forfeitPending] = useActionState(setCupMatchForfeit, null);
   const [scheduleState, scheduleAction, schedulePending] = useActionState(setCupRoundSchedule, null);
   const [slotScheduleState, slotScheduleAction, slotSchedulePending] = useActionState(setSlotSchedule, null);
   const [deleteState, deleteAction] = useActionState(deleteCup, null);
@@ -83,6 +84,7 @@ export default function AdminCoppeClient({ cups, users, seasonName, rules }: { c
       {scheduleState?.error && <p className="text-red-600 text-sm">{scheduleState.error}</p>}
       {slotScheduleState?.error && <p className="text-red-600 text-sm">{slotScheduleState.error}</p>}
       {calcState?.error && <p className="text-red-600 text-sm">{calcState.error}</p>}
+      {forfeitState?.error && <p className="text-red-600 text-sm">{forfeitState.error}</p>}
 
       {/* Cups list */}
       {cups.map((cup) => (
@@ -246,7 +248,8 @@ export default function AdminCoppeClient({ cups, users, seasonName, rules }: { c
                     di questa funzione) restano in un elenco unico */}
                 {(() => {
                   const renderMatch = (m: Match) => {
-                    const result = computeCupMatchResult(m.homeScore, m.awayScore, cupRules);
+                    const result = computeCupMatchResult(m.homeScore, m.awayScore, cupRules, m);
+                    const forfeitValue = m.homeForfeit && m.awayForfeit ? "both" : m.homeForfeit ? "home" : m.awayForfeit ? "away" : "none";
                     const played = result.homePoints !== null;
                     return (
                     // La key include il punteggio: dopo "Calcola" (o dopo un
@@ -254,7 +257,7 @@ export default function AdminCoppeClient({ cups, users, seasonName, rules }: { c
                     // ma un <input> non controllato non lo mostrerebbe da
                     // solo - la key diversa forza React a ricreare i campi
                     // con il nuovo valore.
-                    <div key={`${m.id}:${m.homeScore}:${m.awayScore}`} className="flex flex-wrap items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
+                    <div key={`${m.id}:${m.homeScore}:${m.awayScore}:${forfeitValue}`} className="flex flex-wrap items-center gap-3 bg-gray-50 rounded-lg px-3 py-2">
                       <span className={`font-medium text-sm flex-1 text-right ${played && result.homePoints === 3 ? "text-green-700" : ""}`}>{m.homeTeam}</span>
                       <form action={scoreAction} className="flex items-center gap-1">
                         <input type="hidden" name="matchId" value={m.id} />
@@ -278,6 +281,17 @@ export default function AdminCoppeClient({ cups, users, seasonName, rules }: { c
                         </span>
                       )}
                       <span className={`font-medium text-sm flex-1 ${played && result.awayPoints === 3 ? "text-green-700" : ""}`}>{m.awayTeam}</span>
+                      <form action={forfeitAction} className="w-full flex flex-wrap items-center justify-center gap-1 text-xs">
+                        <input type="hidden" name="matchId" value={m.id} />
+                        <span className="text-gray-500">⚖️ Tavolino:</span>
+                        <select name="forfeit" defaultValue={forfeitValue} className="border rounded px-1 py-0.5 text-xs">
+                          <option value="none">Nessuno</option>
+                          <option value="home">0-3: perde {m.homeTeam}</option>
+                          <option value="away">3-0: perde {m.awayTeam}</option>
+                          <option value="both">Entrambe: 0-0, zero punti</option>
+                        </select>
+                        <button type="submit" disabled={forfeitPending} className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded">Salva</button>
+                      </form>
                     </div>
                   );};
 

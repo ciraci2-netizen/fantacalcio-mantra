@@ -164,6 +164,8 @@ export async function runMigrations() {
   // Sconfitta a tavolino decisa dall'admin (vedi app/actions/forfeit.ts)
   try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "homeForfeit" INTEGER NOT NULL DEFAULT 0`); } catch { /* già presente */ }
   try { await db.execute(`ALTER TABLE "Match" ADD COLUMN "awayForfeit" INTEGER NOT NULL DEFAULT 0`); } catch { /* già presente */ }
+  try { await db.execute(`ALTER TABLE "CupMatch" ADD COLUMN "homeForfeit" INTEGER NOT NULL DEFAULT 0`); } catch { /* già presente */ }
+  try { await db.execute(`ALTER TABLE "CupMatch" ADD COLUMN "awayForfeit" INTEGER NOT NULL DEFAULT 0`); } catch { /* già presente */ }
 
   // isParticipant: distingue "squadra reale in gara" da isAdmin (permesso).
   // Permette a un account di essere ALLO STESSO TEMPO admin e presidente di

@@ -380,6 +380,34 @@ export async function setCupMatchScore(prevState: unknown, formData: FormData) {
   }
 }
 
+// Admin: sconfitta 3-0 a tavolino su una partita di coppa.
+// forfeit: "none" | "home" (perde la prima squadra 0-3) | "away" (perde la
+// seconda 3-0) | "both" (0-0, zero punti a entrambe). Il risultato delle
+// coppe si ricalcola sempre al volo (computeCupMatchResult), quindi vale
+// subito, prima o dopo aver inserito/calcolato i fantapunti.
+export async function setCupMatchForfeit(prevState: unknown, formData: FormData) {
+  try {
+    await requireAdmin();
+    const db = getDb();
+    const matchId = Number(formData.get("matchId"));
+    const value = formData.get("forfeit") as string;
+    if (!matchId || !["none", "home", "away", "both"].includes(value)) return { error: "Valore non valido." };
+
+    try { await db.execute(`ALTER TABLE "CupMatch" ADD COLUMN "homeForfeit" INTEGER NOT NULL DEFAULT 0`); } catch { /* già presente */ }
+    try { await db.execute(`ALTER TABLE "CupMatch" ADD COLUMN "awayForfeit" INTEGER NOT NULL DEFAULT 0`); } catch { /* già presente */ }
+
+    await db.execute({
+      sql: `UPDATE "CupMatch" SET homeForfeit = ?, awayForfeit = ? WHERE id = ?`,
+      args: [value === "home" || value === "both" ? 1 : 0, value === "away" || value === "both" ? 1 : 0, matchId],
+    });
+    revalidatePath("/coppe");
+    revalidatePath("/admin/coppe");
+    return { success: true };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
 export async function deleteCup(prevState: unknown, formData: FormData) {
   try {
     await requireAdmin();

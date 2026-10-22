@@ -20,7 +20,12 @@ export type CupGroupMatch = {
   awayTeam: string;
   homeScore: number | null;
   awayScore: number | null;
+  // Sconfitta a tavolino decisa dall'admin (vedi setCupMatchForfeit)
+  homeForfeit?: boolean;
+  awayForfeit?: boolean;
 };
+
+export type CupForfeit = { homeForfeit?: boolean; awayForfeit?: boolean };
 
 export type CupMatchResult = {
   homeGoals: number | null;
@@ -37,8 +42,17 @@ export type CupMatchResult = {
 export function computeCupMatchResult(
   homeScore: number | null,
   awayScore: number | null,
-  rules: CupRules = DEFAULT_CUP_RULES
+  rules: CupRules = DEFAULT_CUP_RULES,
+  forfeit?: CupForfeit
 ): CupMatchResult {
+  // Tavolino: vale anche se i fantapunti non sono ancora stati inseriti.
+  // I fantapunti restano quelli fatti, cambiano solo gol e punti.
+  if (forfeit?.homeForfeit && forfeit?.awayForfeit) {
+    return { homeGoals: 0, awayGoals: 0, homePoints: 0, awayPoints: 0 };
+  }
+  if (forfeit?.homeForfeit) return { homeGoals: 0, awayGoals: 3, homePoints: 0, awayPoints: 3 };
+  if (forfeit?.awayForfeit) return { homeGoals: 3, awayGoals: 0, homePoints: 3, awayPoints: 0 };
+
   if (homeScore === null || awayScore === null) {
     return { homeGoals: null, awayGoals: null, homePoints: null, awayPoints: null };
   }
@@ -86,22 +100,27 @@ export function computeGroupStandings(matches: CupGroupMatch[], rules: CupRules 
     const home = ensure(m.homeUserId, m.homeTeam);
     const away = ensure(m.awayUserId, m.awayTeam);
 
-    if (m.homeScore === null || m.awayScore === null) continue;
+    const forfeit = m.homeForfeit || m.awayForfeit;
+    if (!forfeit && (m.homeScore === null || m.awayScore === null)) continue;
 
     home.played += 1;
     away.played += 1;
-    home.scoreFor += m.homeScore;
-    home.scoreAgainst += m.awayScore;
-    away.scoreFor += m.awayScore;
-    away.scoreAgainst += m.homeScore;
+    home.scoreFor += m.homeScore ?? 0;
+    home.scoreAgainst += m.awayScore ?? 0;
+    away.scoreFor += m.awayScore ?? 0;
+    away.scoreAgainst += m.homeScore ?? 0;
 
     // Vittoria/pareggio/sconfitta decisi dalle STESSE regole di lega
     // (distacco minimo, bonus gol per fascia) usate per il campionato -
     // mai un confronto diretto dei due punteggi, che ignorerebbe queste
     // regole e potrebbe mostrare una vittoria con un distacco che in
     // campionato sarebbe stato un pareggio.
-    const result = computeCupMatchResult(m.homeScore, m.awayScore, rules);
-    if (result.homePoints === 3) {
+    const result = computeCupMatchResult(m.homeScore, m.awayScore, rules, m);
+    if (result.homePoints === 0 && result.awayPoints === 0) {
+      // Tavolino a entrambe: sconfitta per tutte e due, zero punti
+      home.losses += 1;
+      away.losses += 1;
+    } else if (result.homePoints === 3) {
       home.wins += 1;
       home.points += 3;
       away.losses += 1;

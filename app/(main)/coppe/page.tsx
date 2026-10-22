@@ -3,6 +3,7 @@ import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { computeGroupStandings, computeCupMatchResult, type CupMatchResult } from "@/app/lib/cupStandings";
 import { getCupRules, type CupRules } from "@/app/lib/leagueSettings";
+import { loadCupForfeits } from "@/app/lib/cupForfeits";
 
 export const metadata: Metadata = { title: "Coppe" };
 
@@ -15,6 +16,8 @@ type CupMatch = {
   homeUserId: number;
   awayUserId: number;
   roundSlot: number | null;
+  homeForfeit?: boolean;
+  awayForfeit?: boolean;
 };
 
 type CupRound = {
@@ -110,6 +113,8 @@ export default async function CoppePage() {
               args: [round.id],
             });
           }
+          const forfeits = await loadCupForfeits(round.id as number);
+
           return {
             id: round.id as number,
             name: round.name as string,
@@ -126,6 +131,8 @@ export default async function CoppePage() {
               homeUserId: m.homeUserId as number,
               awayUserId: m.awayUserId as number,
               roundSlot: (m.roundSlot as number | null | undefined) ?? null,
+              homeForfeit: forfeits[m.id as number]?.homeForfeit ?? false,
+              awayForfeit: forfeits[m.id as number]?.awayForfeit ?? false,
             })),
           };
         })
@@ -242,7 +249,7 @@ function formatSchedule(round: CupRound): string | null {
 // minimo per vincere, bonus gol per fascia) invece che dal confronto diretto
 // dei due punteggi - vedi computeCupMatchResult in app/lib/cupStandings.ts.
 function getMatchResult(m: CupMatch, rules: CupRules): { result: CupMatchResult; played: boolean; homeWins: boolean; awayWins: boolean; draw: boolean } {
-  const result = computeCupMatchResult(m.homeScore, m.awayScore, rules);
+  const result = computeCupMatchResult(m.homeScore, m.awayScore, rules, m);
   const played = result.homePoints !== null;
   const homeWins = played && result.homePoints === 3;
   const awayWins = played && result.awayPoints === 3;
@@ -290,7 +297,7 @@ function MatchCard({
           <span className={`font-bold ${homeWins ? "text-green-700" : played ? "text-gray-700" : "text-gray-300"}`}>
             {!played ? "–" : result.homeGoals !== null ? result.homeGoals : m.homeScore?.toFixed(1)}
           </span>
-          {played && result.homeGoals !== null && (
+          {played && result.homeGoals !== null && m.homeScore !== null && (
             <span className={`text-xs tabular-nums ${homeWins ? "text-green-600" : "text-gray-400"}`}>
               ({m.homeScore?.toFixed(1)})
             </span>
@@ -320,13 +327,18 @@ function MatchCard({
           <span className={`font-bold ${awayWins ? "text-green-700" : played ? "text-gray-700" : "text-gray-300"}`}>
             {!played ? "–" : result.awayGoals !== null ? result.awayGoals : m.awayScore?.toFixed(1)}
           </span>
-          {played && result.awayGoals !== null && (
+          {played && result.awayGoals !== null && m.awayScore !== null && (
             <span className={`text-xs tabular-nums ${awayWins ? "text-green-600" : "text-gray-400"}`}>
               ({m.awayScore?.toFixed(1)})
             </span>
           )}
         </span>
       </div>
+      {(m.homeForfeit || m.awayForfeit) && (
+        <div className="px-3 py-1 text-[11px] font-semibold text-amber-800 bg-amber-50 border-t border-amber-200">
+          ⚖️ Risultato a tavolino
+        </div>
+      )}
     </div>
   );
 }
@@ -403,7 +415,9 @@ function GroupMatches({
                 : `${m.homeScore?.toFixed(1)}-${m.awayScore?.toFixed(1)}`
               : "vs"}
           </span>
-          {played && result.homeGoals !== null && (
+          {m.homeForfeit || m.awayForfeit ? (
+            <span className="text-[10px] font-semibold text-amber-700 mt-0.5">⚖️ tavolino</span>
+          ) : played && result.homeGoals !== null && (
             <span className="text-[10px] text-gray-400 tabular-nums mt-0.5">
               ({m.homeScore?.toFixed(1)} a {m.awayScore?.toFixed(1)})
             </span>
