@@ -354,6 +354,23 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
     args: [matchdayId],
   });
 
+  // Sconfitte a tavolino decise dall'admin (vedi setMatchForfeit in
+  // app/actions/forfeit.ts). Colonne opzionali: se non ancora migrate,
+  // nessun tavolino.
+  const forfeitByMatch = new Map<number, { home: boolean; away: boolean }>();
+  try {
+    const fRes = await db.execute({
+      sql: `SELECT id, homeForfeit, awayForfeit FROM "Match" WHERE matchdayId = ?`,
+      args: [matchdayId],
+    });
+    for (const r of fRes.rows) {
+      forfeitByMatch.set(r.id as number, {
+        home: Number(r.homeForfeit) === 1,
+        away: Number(r.awayForfeit) === 1,
+      });
+    }
+  } catch { /* colonne tavolino non ancora presenti */ }
+
   for (const match of matchesRes.rows) {
     const homeRes = await db.execute({
       sql: `SELECT totalScore FROM "Lineup" WHERE userId = ? AND matchdayId = ?`,
@@ -396,13 +413,24 @@ export async function calculateScoresCore(matchdayId: number): Promise<void> {
     // computeMatchOutcome in app/lib/scoring.ts per la spiegazione completa
     // (distacco minimo per vincere, bonus gol per fascia, soglia fissa 1 gol
     // per la squadra di casa).
-    const { homeGoals, awayGoals, homePoints, awayPoints } = computeMatchOutcome(
+    let { homeGoals, awayGoals, homePoints, awayPoints } = computeMatchOutcome(
       homeScore,
       awayScore,
       homeAdvantage,
       minWinMargin,
       scoreConversion
-    );
+    ) as { homeGoals: number | null; awayGoals: number | null; homePoints: number; awayPoints: number };
+
+    // Tavolino: il risultato (gol e punti classifica) viene sostituito,
+    // i fantapunti (homeScore/awayScore) restano quelli realmente fatti.
+    const forfeit = forfeitByMatch.get(match.id as number);
+    if (forfeit?.home && forfeit?.away) {
+      homeGoals = 0; awayGoals = 0; homePoints = 0; awayPoints = 0;
+    } else if (forfeit?.home) {
+      homeGoals = 0; awayGoals = 3; homePoints = 0; awayPoints = 3;
+    } else if (forfeit?.away) {
+      homeGoals = 3; awayGoals = 0; homePoints = 3; awayPoints = 0;
+    }
 
     await db.execute({
       sql: `UPDATE "Match" SET homeScore = ?, awayScore = ?, homePoints = ?, awayPoints = ?, homeGoals = ?, awayGoals = ?,

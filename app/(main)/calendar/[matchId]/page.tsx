@@ -6,6 +6,7 @@ import TeamLogo from "@/app/components/TeamLogo";
 import Confetti from "@/app/components/Confetti";
 import { roleBadgeClass } from "@/app/lib/roles";
 import { computeAutoSubstitutions } from "@/app/lib/scoring";
+import { setMatchForfeit } from "@/app/actions/forfeit";
 
 const HARD_MAX_SUBSTITUTIONS = 5;
 
@@ -128,6 +129,19 @@ export default async function MatchDetailPage({
   const homeUserId = match.homeUserId as number;
   const awayUserId = match.awayUserId as number;
   const matchdayId = match.matchdayId as number;
+
+  // Sconfitta a tavolino decisa dall'admin (colonne opzionali)
+  let homeForfeit = false;
+  let awayForfeit = false;
+  try {
+    const fRes = await db.execute({
+      sql: `SELECT homeForfeit, awayForfeit FROM "Match" WHERE id = ?`,
+      args: [id],
+    });
+    homeForfeit = Number(fRes.rows[0]?.homeForfeit) === 1;
+    awayForfeit = Number(fRes.rows[0]?.awayForfeit) === 1;
+  } catch { /* colonne tavolino non ancora presenti */ }
+  const forfeitValue = homeForfeit && awayForfeit ? "both" : homeForfeit ? "home" : awayForfeit ? "away" : "none";
 
   // Vantaggio campo configurato per la stagione (mostrato nel tabellino sotto,
   // se diverso da zero) - vedi calculateScoresCore in app/lib/voteImporter.ts,
@@ -287,6 +301,9 @@ export default async function MatchDetailPage({
                   <p className="text-xs text-blue-200 mt-1">
                     {homeWon ? "Vittoria casa" : awayWon ? "Vittoria ospiti" : "Pareggio"}
                   </p>
+                  {forfeitValue !== "none" && (
+                    <p className="text-xs font-semibold text-amber-300 mt-1">⚖️ Risultato a tavolino</p>
+                  )}
                 </>
               ) : (
                 <>
@@ -307,6 +324,38 @@ export default async function MatchDetailPage({
           </div>
         </div>
       </div>
+
+      {/* Tavolino: decisione admin */}
+      {forfeitValue !== "none" && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-4 py-3 text-sm">
+          ⚖️ <strong>Risultato a tavolino</strong> -{" "}
+          {forfeitValue === "both"
+            ? "nessuna delle due squadre ha consegnato: 0-0, zero punti a entrambe."
+            : `${forfeitValue === "home" ? (match.homeTeamName as string) : (match.awayTeamName as string)} perde 3-0 a tavolino per mancata consegna della formazione.`}{" "}
+          I fantapunti restano quelli realmente fatti.
+        </div>
+      )}
+
+      {session.isAdmin && (
+        <form action={setMatchForfeit} className="bg-white rounded-xl shadow-sm border px-4 py-3 flex flex-wrap items-center gap-2 text-sm">
+          <input type="hidden" name="matchId" value={id} />
+          <span className="font-semibold text-gray-700">⚖️ Admin - tavolino:</span>
+          <select name="forfeit" defaultValue={forfeitValue} className="border rounded px-2 py-1">
+            <option value="none">Nessuno (risultato normale)</option>
+            <option value="home">0-3: perde {match.homeTeamName as string}</option>
+            <option value="away">3-0: perde {match.awayTeamName as string}</option>
+            <option value="both">Entrambe: 0-0, zero punti</option>
+          </select>
+          <button type="submit" className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded">
+            Salva
+          </button>
+          <span className="text-xs text-gray-400 w-full">
+            {played
+              ? "Partita gia calcolata: salvando, la giornata viene ricalcolata subito."
+              : "Verra applicato quando calcoli la giornata."}
+          </span>
+        </form>
+      )}
 
       {/* Modificatore difensivo */}
       {played && (match.homeDefenseMalus != null || match.awayDefenseMalus != null) && (
