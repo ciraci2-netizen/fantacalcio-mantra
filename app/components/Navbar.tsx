@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/app/actions/auth";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import ThemeToggle from "./ThemeToggle";
+import { HOME_LINK, RULES_LINK, ADMIN_LINK, NAV_GROUPS, allSections, isLinkActive, type NavLink } from "./navConfig";
 
 interface NavbarProps {
   username: string;
@@ -14,21 +15,18 @@ interface NavbarProps {
   latestResultsMatchday?: number;
 }
 
-const BASE_LINKS = [
-  { href: "/dashboard",   label: "Dashboard",   icon: "🏠" },
-  { href: "/team",        label: "Rosa",        icon: "👥" },
-  { href: "/lineup",      label: "Formazione",  icon: "📋" },
-  { href: "/standings",   label: "Classifica",  icon: "🏆", badge: true },
-  { href: "/calendar",    label: "Calendario",  icon: "📅" },
-  { href: "/squadre",     label: "Squadre",     icon: "🔍" },
-  { href: "/stats",       label: "Statistiche", icon: "📊" },
-  { href: "/coppe",       label: "Coppe",       icon: "🏅" },
-  { href: "/svincolati",  label: "Svincolati",  icon: "🆓" },
-  { href: "/mercato",     label: "Mercato",     icon: "🔄" },
-  { href: "/asta",        label: "Buste",       icon: "\u{1F528}" },
-  { href: "/scambi",      label: "Scambi",      icon: "🤝" },
-  { href: "/regolamento", label: "Regolamento", icon: "📖" },
-];
+function TopLink({ l, path }: { l: NavLink; path: string }) {
+  return (
+    <Link
+      href={l.href}
+      className={`relative px-2.5 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap ${
+        isLinkActive(path, l.href) ? "bg-white text-green-700" : "hover:bg-green-600 text-white"
+      }`}
+    >
+      {l.label}
+    </Link>
+  );
+}
 
 const SEEN_KEY = "ipa-last-seen-matchday";
 
@@ -63,9 +61,30 @@ export default function Navbar({
     }
   }, [path, latestResultsMatchday]);
 
-  const links = isAdmin
-    ? [...BASE_LINKS, { href: "/admin", label: "Admin", icon: "⚙️" }]
-    : BASE_LINKS;
+  // Tendina aperta nella barra desktop (una alla volta). Si chiude cambiando
+  // pagina, cliccando fuori o premendo Esc.
+  const [openGroupOnPath, setOpenGroupOnPath] = useState<{ label: string; path: string } | null>(null);
+  const openGroup = openGroupOnPath && openGroupOnPath.path === path ? openGroupOnPath.label : null;
+  const desktopNavRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!openGroup) return;
+    const onClick = (e: MouseEvent) => {
+      if (desktopNavRef.current && !desktopNavRef.current.contains(e.target as Node)) setOpenGroupOnPath(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenGroupOnPath(null);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openGroup]);
+
+  const sections = allSections(isAdmin);
+  const showBadgeFor = (l: NavLink) => Boolean(l.badge && hasNewResults);
 
   const initials = teamName.slice(0, 2).toUpperCase();
 
@@ -93,7 +112,7 @@ export default function Navbar({
   };
 
   return (
-    <nav className="bg-green-700 text-white shadow-md relative z-50 overflow-x-hidden">
+    <nav className="bg-green-700 text-white shadow-md relative z-50">
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
         {/* Logo */}
         <Link href="/dashboard" className="flex items-center gap-2 shrink-0 group">
@@ -110,27 +129,57 @@ export default function Navbar({
           </div>
         </Link>
 
-        {/* Desktop links — min-w-0 + overflow-hidden prevents any scrollbar */}
-        <div className="hidden xl:flex items-center gap-0 flex-1 min-w-0 justify-center overflow-hidden">
-          {links.map((l) => {
-            const showBadge = "badge" in l && l.badge && hasNewResults;
+        {/* Desktop: voci singole + gruppi a tendina */}
+        <div ref={desktopNavRef} className="hidden xl:flex items-center gap-1 flex-1 min-w-0 justify-center">
+          <TopLink l={HOME_LINK} path={path} />
+          {NAV_GROUPS.map((g) => {
+            const groupActive = g.links.some((l) => isLinkActive(path, l.href));
+            const groupBadge = g.links.some(showBadgeFor);
+            const isOpen = openGroup === g.label;
             return (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={`relative px-1.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${
-                  path === l.href
-                    ? "bg-white text-green-700"
-                    : "hover:bg-green-600 text-white"
-                }`}
-              >
-                {l.label}
-                {showBadge && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              <div key={g.label} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setOpenGroupOnPath(isOpen ? null : { label: g.label, path })}
+                  aria-expanded={isOpen}
+                  aria-haspopup="menu"
+                  className={`relative flex items-center gap-1 px-2.5 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap ${
+                    groupActive ? "bg-white text-green-700" : isOpen ? "bg-green-600 text-white" : "hover:bg-green-600 text-white"
+                  }`}
+                >
+                  {g.label}
+                  <span className={`text-[10px] transition-transform ${isOpen ? "rotate-180" : ""}`}>▼</span>
+                  {groupBadge && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                  )}
+                </button>
+                {isOpen && (
+                  <div role="menu" className="absolute left-0 top-full mt-1 min-w-[200px] bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-[120]">
+                    {g.links.map((l) => {
+                      const active = isLinkActive(path, l.href);
+                      return (
+                        <Link
+                          key={l.href}
+                          href={l.href}
+                          role="menuitem"
+                          onClick={() => setOpenGroupOnPath(null)}
+                          className={`flex items-center gap-2.5 px-3 py-2 text-sm transition-colors ${
+                            active ? "bg-green-50 text-green-800 font-semibold" : "text-gray-700 hover:bg-gray-50"
+                          }`}
+                        >
+                          <span className="w-5 text-center">{l.icon}</span>
+                          {l.label}
+                          {showBadgeFor(l) && <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+                        </Link>
+                      );
+                    })}
+                  </div>
                 )}
-              </Link>
+              </div>
             );
           })}
+          <TopLink l={RULES_LINK} path={path} />
+          {isAdmin && <TopLink l={ADMIN_LINK} path={path} />}
         </div>
 
         {/* Right: theme toggle + avatar + user info (hidden at xl, shown at 2xl) + logout */}
@@ -167,40 +216,34 @@ export default function Navbar({
       {/* Mobile / tablet drawer */}
       {open && (
         <div className="xl:hidden bg-green-800 border-t border-green-600">
-          <div className="px-3 py-2 space-y-0.5">
-            {links.map((l) => {
-              const showBadge = "badge" in l && l.badge && hasNewResults;
-              return (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  onClick={() => setOpen(false)}
-                  className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    path === l.href
-                      ? "bg-white text-green-800"
-                      : "hover:bg-green-700 text-white"
-                  }`}
-                >
-                  <span className="text-base w-6 text-center">{l.icon}</span>
-                  {l.label}
-                  {showBadge && (
-                    <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                  )}
-                </Link>
-              );
-            })}
-            <Link
-              href="/profile"
-              onClick={() => setOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                path === "/profile"
-                  ? "bg-white text-green-800"
-                  : "hover:bg-green-700 text-white"
-              }`}
-            >
-              <span className="text-base w-6 text-center">👤</span>
-              Profilo
-            </Link>
+          <div className="px-3 py-2 space-y-2">
+            {sections.map((section) => (
+              <div key={section.title}>
+                <p className="px-3 pt-1 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-green-300">
+                  {section.title}
+                </p>
+                <div className="space-y-0.5">
+                  {section.links.map((l) => (
+                    <Link
+                      key={l.href}
+                      href={l.href}
+                      onClick={() => setOpen(false)}
+                      className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                        isLinkActive(path, l.href)
+                          ? "bg-white text-green-800"
+                          : "hover:bg-green-700 text-white"
+                      }`}
+                    >
+                      <span className="text-base w-6 text-center">{l.icon}</span>
+                      {l.label}
+                      {showBadgeFor(l) && (
+                        <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
           <div className="px-4 py-3 border-t border-green-600 flex items-center justify-between">
             <div className="flex items-center gap-2">
