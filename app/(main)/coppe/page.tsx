@@ -193,8 +193,19 @@ export default async function CoppePage() {
                   </div>
                 )}
 
-                {/* Turni a eliminazione diretta: bracket a colonne */}
-                {knockoutRounds.length > 0 && (
+                {/* Turni a eliminazione diretta: tabellone torneo */}
+                {knockoutRounds.length > 0 && canShowBracket(knockoutRounds) && (
+                  <KnockoutBracket
+                    rounds={knockoutRounds}
+                    groupNames={groupRounds.map((r) => r.name)}
+                    currentUserId={session.userId}
+                    rules={rules}
+                  />
+                )}
+
+                {/* Partite aggiunte a mano (senza posizione nel tabellone):
+                    vecchia vista a colonne */}
+                {knockoutRounds.length > 0 && !canShowBracket(knockoutRounds) && (
                   <div className="overflow-x-auto">
                     <div className="flex min-w-max p-5 gap-0">
                       {knockoutRounds.map((round, roundIdx) => {
@@ -258,6 +269,249 @@ export default async function CoppePage() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tabellone torneo: una colonna per turno (quarti, semifinale, finale) piu' la
+// coppa per il vincitore, unite da linee. I turni non ancora creati o non
+// ancora sorteggiati compaiono comunque, con "Vincente Q1" ecc. (o il nome
+// della squadra, appena la sfida precedente ha un vincitore).
+// ---------------------------------------------------------------------------
+
+/** Il tabellone serve solo se le partite hanno la posizione (bracketPos). */
+function canShowBracket(rounds: CupRound[]): boolean {
+  return rounds.every((r) => r.matches.length === 0 || r.matches.some((m) => m.bracketPos !== null));
+}
+
+type Slot = { id: number | null; name: string; placeholder: boolean };
+
+type BracketCell =
+  | { kind: "tie"; tie: KnockoutTie; label: string }
+  | { kind: "planned"; pos: number; label: string; team1: Slot; team2: Slot; twoLegs: boolean; winnerId: null };
+
+type BracketColumn = {
+  title: string;
+  round: CupRound | null;
+  cells: BracketCell[];
+};
+
+function defaultRoundName(tieCount: number): string {
+  if (tieCount === 1) return "Finale";
+  if (tieCount === 2) return "Semifinale";
+  if (tieCount === 4) return "Quarti di finale";
+  if (tieCount === 8) return "Ottavi di finale";
+  return `Turno a ${tieCount * 2}`;
+}
+
+function shortTieLabel(pos: number, tieCount: number): string {
+  if (tieCount === 1) return "F";
+  if (tieCount === 2) return `SF${pos}`;
+  if (tieCount === 4) return `Q${pos}`;
+  return `S${pos}`;
+}
+
+// Quarti incrociati, come crossedQuarterFinals in app/lib/cupKnockout.ts:
+// Q1 1A-4B, Q2 2B-3A, Q3 2A-3B, Q4 1B-4A.
+const CROSSED_QF: [number, number, number, number][] = [
+  [1, 0, 4, 1],
+  [2, 1, 3, 0],
+  [2, 0, 3, 1],
+  [1, 1, 4, 0],
+];
+
+function cellWinner(c: BracketCell): Slot | null {
+  if (c.kind !== "tie" || c.tie.winnerId === null) return null;
+  const t = c.tie;
+  return { id: t.winnerId, name: t.winnerId === t.team1Id ? t.team1 : t.team2, placeholder: false };
+}
+
+function buildBracket(rounds: CupRound[], groupNames: string[], rules: CupRules): BracketColumn[] {
+  const firstTies = rounds[0].matches.length > 0 ? computeKnockoutTies(rounds[0].matches, rules) : [];
+  // Numero di sfide del primo turno (potenza di 2): dalle partite, o 4 se
+  // il turno non e' ancora sorteggiato.
+  let size = firstTies.length > 0 ? Math.max(...firstTies.map((t) => t.pos), firstTies.length) : 4;
+  size = 2 ** Math.ceil(Math.log2(Math.max(1, size)));
+
+  const columns: BracketColumn[] = [];
+  for (let level = 0, count = size; count >= 1; level++, count = count / 2) {
+    const round = rounds[level] ?? null;
+    const ties = round && round.matches.length > 0 ? computeKnockoutTies(round.matches, rules) : [];
+    const prev = columns[level - 1];
+    const cells: BracketCell[] = [];
+    for (let pos = 1; pos <= count; pos++) {
+      const label = tieLabel(pos, count);
+      const tie = ties.find((t) => t.pos === pos);
+      if (tie) {
+        cells.push({ kind: "tie", tie, label });
+        continue;
+      }
+      let team1: Slot, team2: Slot;
+      if (prev) {
+        const prevCount = count * 2;
+        const from = (p: number): Slot =>
+          cellWinner(prev.cells[p - 1]) ?? { id: null, name: `Vincente ${shortTieLabel(p, prevCount)}`, placeholder: true };
+        team1 = from(2 * pos - 1);
+        team2 = from(2 * pos);
+      } else if (count === 4 && groupNames.length === 2) {
+        const [p1, g1, p2, g2] = CROSSED_QF[pos - 1];
+        team1 = { id: null, name: `${p1}° ${groupNames[g1]}`, placeholder: true };
+        team2 = { id: null, name: `${p2}° ${groupNames[g2]}`, placeholder: true };
+      } else {
+        team1 = { id: null, name: "Da definire", placeholder: true };
+        team2 = { id: null, name: "Da definire", placeholder: true };
+      }
+      cells.push({ kind: "planned", pos, label, team1, team2, twoLegs: count > 1, winnerId: null });
+    }
+    columns.push({ title: round?.name ?? defaultRoundName(count), round, cells });
+  }
+  return columns;
+}
+
+function KnockoutBracket({
+  rounds,
+  groupNames,
+  currentUserId,
+  rules,
+}: {
+  rounds: CupRound[];
+  groupNames: string[];
+  currentUserId: number;
+  rules: CupRules;
+}) {
+  const columns = buildBracket(rounds, groupNames, rules);
+  const final = columns[columns.length - 1].cells[0];
+  const champion = final ? cellWinner(final) : null;
+  const line = "border-gray-300";
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="flex min-w-max items-stretch p-5">
+        {columns.map((col, ci) => {
+          const isFirst = ci === 0;
+          const schedule = col.round ? formatSchedule(col.round) : null;
+          return (
+            <div key={ci} className="flex w-72 flex-col">
+              <div className="mx-4 mb-2 flex h-12 flex-col justify-center border-b pb-2 text-center">
+                <div className="text-xs font-bold uppercase tracking-wider text-gray-400">{col.title}</div>
+                <div className="mt-0.5 text-[10px] text-gray-400">
+                  {schedule ?? (col.cells.length === 1 ? "Partita secca" : "Andata e ritorno")}
+                </div>
+              </div>
+              <div className="flex flex-1 flex-col">
+                {col.cells.map((cell, i) => {
+                  const topOfPair = i % 2 === 0;
+                  return (
+                    <div key={i} className="relative flex flex-1 items-center px-4 py-2">
+                      {/* linea in entrata dal turno precedente */}
+                      {!isFirst && <div className={`absolute left-0 top-1/2 w-4 border-t-2 ${line}`} />}
+                      {/* linea in uscita verso il turno successivo (anche la
+                          finale, verso la coppa) */}
+                      <div className={`absolute right-0 top-1/2 w-4 border-t-2 ${line}`} />
+                      {col.cells.length > 1 && (
+                        <div
+                          className={`absolute right-0 border-r-2 ${line} ${topOfPair ? "top-1/2 bottom-0" : "top-0 bottom-1/2"}`}
+                        />
+                      )}
+                      <div className="w-full">
+                        {cell.kind === "tie" ? (
+                          <TieCard
+                            tie={cell.tie}
+                            label={cell.label}
+                            slotMatchdays={col.round?.slotMatchdays ?? {}}
+                            currentUserId={currentUserId}
+                            rules={rules}
+                          />
+                        ) : (
+                          <PlannedTieCard
+                            cell={cell}
+                            slotMatchdays={col.round?.slotMatchdays ?? {}}
+                            currentUserId={currentUserId}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Vincitore */}
+        <div className="flex w-52 flex-col">
+          <div className="mx-4 mb-2 flex h-12 flex-col justify-center border-b pb-2 text-center">
+            <div className="text-xs font-bold uppercase tracking-wider text-gray-400">Vincitore</div>
+          </div>
+          <div className="relative flex flex-1 items-center px-4 py-2">
+            <div className={`absolute left-0 top-1/2 w-4 border-t-2 ${line}`} />
+            <div
+              className={`w-full rounded-xl border-2 p-4 text-center ${
+                champion ? "border-yellow-400 bg-yellow-50" : "border-dashed border-gray-200 bg-white"
+              }`}
+            >
+              <div className="text-3xl">{"🏆"}</div>
+              <div
+                className={`mt-1 truncate text-sm font-bold ${
+                  champion ? (champion.id === currentUserId ? "text-green-700" : "text-yellow-800") : "text-gray-300"
+                }`}
+              >
+                {champion ? champion.name : "?"}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Sfida non ancora sorteggiata: squadre previste (o "Vincente Q1") e quando
+// si gioca, se il turno ha gia' le giornate.
+function PlannedTieCard({
+  cell,
+  slotMatchdays,
+  currentUserId,
+}: {
+  cell: Extract<BracketCell, { kind: "planned" }>;
+  slotMatchdays: Record<number, number | null>;
+  currentUserId: number;
+}) {
+  const isMine = cell.team1.id === currentUserId || cell.team2.id === currentUserId;
+  const row = (s: Slot) => (
+    <div className="flex items-center justify-between bg-white px-3 py-2">
+      <span
+        className={`max-w-[180px] truncate ${
+          s.placeholder ? "italic text-gray-400" : s.id === currentUserId ? "font-medium text-green-700" : "font-medium text-gray-700"
+        }`}
+      >
+        {s.name}
+      </span>
+      <span className="ml-2 font-bold text-gray-300">–</span>
+    </div>
+  );
+  const legs = cell.twoLegs ? [1, 2] : [1];
+  return (
+    <div
+      className={`overflow-hidden rounded-xl border border-dashed text-sm ${isMine ? "border-green-300" : "border-gray-300"}`}
+    >
+      <div className="border-b bg-gray-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+        {cell.label}
+      </div>
+      <div className="border-b">{row(cell.team1)}</div>
+      {row(cell.team2)}
+      <div className="space-y-0.5 border-t bg-gray-50 px-3 py-1.5">
+        {legs.map((slot) => {
+          const md = slotMatchdays[slot];
+          return (
+            <div key={slot} className="text-[11px] text-gray-400">
+              {cell.twoLegs ? (slot === 1 ? "Andata" : "Ritorno") : "Partita secca"}
+              {md != null && <span> · G{md}</span>}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
