@@ -3,7 +3,8 @@ import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { computeGroupStandings, computeCupMatchResult, type CupMatchResult } from "@/app/lib/cupStandings";
 import { getCupRules, type CupRules } from "@/app/lib/leagueSettings";
-import { loadCupForfeits } from "@/app/lib/cupForfeits";
+import { loadCupForfeits, loadCupBracketPos } from "@/app/lib/cupForfeits";
+import { computeKnockoutTies, tieLabel, type KnockoutTie } from "@/app/lib/cupKnockout";
 
 export const metadata: Metadata = { title: "Coppe" };
 
@@ -16,6 +17,7 @@ type CupMatch = {
   homeUserId: number;
   awayUserId: number;
   roundSlot: number | null;
+  bracketPos: number | null;
   homeForfeit?: boolean;
   awayForfeit?: boolean;
 };
@@ -27,6 +29,7 @@ type CupRound = {
   type: "eliminazione" | "girone";
   matchdayNumber: number | null;
   playDate: string | null;
+  slotMatchdays: Record<number, number | null>;
   matches: CupMatch[];
 };
 
@@ -114,6 +117,18 @@ export default async function CoppePage() {
             });
           }
           const forfeits = await loadCupForfeits(round.id as number);
+          const bracketPos = await loadCupBracketPos(round.id as number);
+          // Giornata di andata/ritorno (o dei turni interni dei gironi)
+          let slotMatchdays: Record<number, number | null> = {};
+          try {
+            const slotsRes = await db.execute({
+              sql: `SELECT slot, matchdayNumber FROM "CupRoundSlot" WHERE cupRoundId = ?`,
+              args: [round.id],
+            });
+            slotMatchdays = Object.fromEntries(
+              slotsRes.rows.map((r) => [r.slot as number, (r.matchdayNumber as number | null) ?? null])
+            );
+          } catch { /* tabella non ancora migrata */ }
 
           return {
             id: round.id as number,
@@ -122,6 +137,7 @@ export default async function CoppePage() {
             type: ((round.type as string | undefined) ?? "eliminazione") as "eliminazione" | "girone",
             matchdayNumber: (round.matchdayNumber as number | null | undefined) ?? null,
             playDate: (round.playDate as string | null | undefined) ?? null,
+            slotMatchdays,
             matches: matchesRes.rows.map((m) => ({
               id: m.id as number,
               homeScore: m.homeScore as number | null,
@@ -133,6 +149,7 @@ export default async function CoppePage() {
               roundSlot: (m.roundSlot as number | null | undefined) ?? null,
               homeForfeit: forfeits[m.id as number]?.homeForfeit ?? false,
               awayForfeit: forfeits[m.id as number]?.awayForfeit ?? false,
+              bracketPos: bracketPos[m.id as number] ?? null,
             })),
           };
         })
@@ -185,7 +202,7 @@ export default async function CoppePage() {
                         return (
                           <div key={round.id} className="flex items-stretch">
                             {/* Round column */}
-                            <div className="w-60">
+                            <div className="w-72">
                               <div className="text-xs font-bold uppercase text-gray-400 tracking-wider mb-4 text-center px-2 pb-2 border-b">
                                 {round.name}
                                 {formatSchedule(round) && (
@@ -197,6 +214,20 @@ export default async function CoppePage() {
                               <div className="flex flex-col justify-around h-full gap-4">
                                 {round.matches.length === 0 ? (
                                   <p className="text-gray-300 text-sm text-center py-4">{"\u2013"}</p>
+                                ) : round.matches.some((m) => m.bracketPos !== null) ? (
+                                  (() => {
+                                    const ties = computeKnockoutTies(round.matches, rules);
+                                    return ties.map((t) => (
+                                      <TieCard
+                                        key={t.pos}
+                                        tie={t}
+                                        label={tieLabel(t.pos, ties.length)}
+                                        slotMatchdays={round.slotMatchdays}
+                                        currentUserId={session.userId}
+                                        rules={rules}
+                                      />
+                                    ));
+                                  })()
                                 ) : (
                                   round.matches.map((m) => (
                                     <MatchCard
@@ -235,7 +266,12 @@ export default async function CoppePage() {
 // e/o data, solo informativa (nessun calcolo automatico dal punteggio).
 function formatSchedule(round: CupRound): string | null {
   const parts: string[] = [];
-  if (round.matchdayNumber !== null) parts.push(`Giornata ${round.matchdayNumber}`);
+  const isBracket = round.type !== "girone" && round.matches.some((m) => m.bracketPos !== null);
+  const legSlots = [...new Set(round.matches.map((m) => m.roundSlot ?? 1))].sort((a, b) => a - b);
+  if (isBracket && legSlots.some((s) => round.slotMatchdays[s] != null)) {
+    const mds = legSlots.map((s) => round.slotMatchdays[s]).filter((n): n is number => n != null);
+    parts.push(mds.length > 1 ? `Giornate ${mds.join(" e ")}` : `Giornata ${mds[0]}`);
+  } else if (round.matchdayNumber !== null) parts.push(`Giornata ${round.matchdayNumber}`);
   if (round.playDate) {
     const d = new Date(round.playDate);
     if (!isNaN(d.getTime())) {
@@ -255,6 +291,77 @@ function getMatchResult(m: CupMatch, rules: CupRules): { result: CupMatchResult;
   const awayWins = played && result.awayPoints === 3;
   const draw = played && result.homePoints === 1;
   return { result, played, homeWins, awayWins, draw };
+}
+
+// Sfida del tabellone: andata e ritorno (o partita secca), risultato
+// complessivo e chi passa il turno.
+function TieCard({
+  tie: t,
+  label,
+  slotMatchdays,
+  currentUserId,
+  rules,
+}: {
+  tie: KnockoutTie;
+  label: string;
+  slotMatchdays: Record<number, number | null>;
+  currentUserId: number;
+  rules: CupRules;
+}) {
+  const isMine = t.team1Id === currentUserId || t.team2Id === currentUserId;
+  const anyPlayed = t.legs.some((l) => l.homeScore !== null || l.homeForfeit || l.awayForfeit);
+  const row = (id: number, name: string, goals: number) => {
+    const won = t.winnerId === id;
+    const lost = t.winnerId !== null && !won;
+    return (
+      <div className={`flex items-center justify-between px-3 py-2 ${won ? "bg-green-50" : lost ? "bg-red-50" : "bg-white"}`}>
+        <span className={`font-medium truncate max-w-[150px] ${id === currentUserId ? "text-green-700" : won ? "text-green-800" : "text-gray-700"}`}>
+          {won && "🏆 "}
+          {name}
+        </span>
+        <span className={`font-bold tabular-nums ml-2 ${won ? "text-green-700" : anyPlayed ? "text-gray-700" : "text-gray-300"}`}>
+          {anyPlayed ? goals : "–"}
+        </span>
+      </div>
+    );
+  };
+  return (
+    <div className={`rounded-xl border overflow-hidden text-sm shadow-sm ${isMine ? "border-green-300 shadow-green-100" : "border-gray-200"}`}>
+      <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 bg-gray-50 border-b">{label}</div>
+      <div className="border-b">{row(t.team1Id, t.team1, t.team1Goals)}</div>
+      {row(t.team2Id, t.team2, t.team2Goals)}
+      <div className="px-3 py-1.5 border-t bg-gray-50 space-y-0.5">
+        {t.legs.map((l) => {
+          const r = computeCupMatchResult(l.homeScore, l.awayScore, rules, l);
+          const played = r.homeGoals !== null && r.awayGoals !== null;
+          const md = slotMatchdays[l.roundSlot ?? 1];
+          const legName = t.twoLegs ? ((l.roundSlot ?? 1) === 1 ? "Andata" : "Ritorno") : "Partita";
+          return (
+            <div key={l.id} className="flex justify-between gap-2 text-[11px] text-gray-500">
+              <span>
+                {legName}
+                {md != null && <span className="text-gray-400"> · G{md}</span>}
+              </span>
+              <span
+                className="tabular-nums truncate text-right"
+                title={played && l.homeScore !== null ? `${l.homeScore.toFixed(1)} a ${l.awayScore?.toFixed(1)}` : undefined}
+              >
+                {played ? `${l.homeTeam} ${r.homeGoals}-${r.awayGoals} ${l.awayTeam}` : `${l.homeTeam} – ${l.awayTeam}`}
+                {(l.homeForfeit || l.awayForfeit) && " ⚖️"}
+              </span>
+            </div>
+          );
+        })}
+        {t.winnerId !== null && t.decidedBy !== "gol" && (
+          <div className="text-[11px] text-green-700">
+            {t.decidedBy === "fantapunti"
+              ? `Passa per fantapunti (${t.team1Score.toFixed(1)} a ${t.team2Score.toFixed(1)})`
+              : "Passa la testa di serie"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function MatchCard({

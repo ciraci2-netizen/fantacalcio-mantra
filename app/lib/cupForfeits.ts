@@ -23,3 +23,20 @@ export async function loadCupForfeits(cupRoundId: number): Promise<CupForfeitMap
     return {};
   }
 }
+
+/**
+ * Posizione nel tabellone a eliminazione diretta (CupMatch.bracketPos) delle
+ * partite di un turno, per id partita. Colonna opzionale: se non ancora
+ * creata, nessuna posizione (vedi app/lib/cupKnockout.ts).
+ */
+export async function loadCupBracketPos(cupRoundId: number): Promise<Record<number, number | null>> {
+  try {
+    const res = await getDb().execute({
+      sql: `SELECT id, bracketPos FROM "CupMatch" WHERE cupRoundId = ?`,
+      args: [cupRoundId],
+    });
+    return Object.fromEntries(res.rows.map((r) => [r.id as number, (r.bracketPos as number | null) ?? null]));
+  } catch {
+    return {};
+  }
+}

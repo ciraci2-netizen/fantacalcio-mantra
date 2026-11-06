@@ -262,6 +262,8 @@ export async function runMigrations() {
   // squadre sono dispari). Solo per raggruppare le partite nella UI - il
   // punteggio resta sempre inserito a mano.
   try { await db.execute(`ALTER TABLE "CupMatch" ADD COLUMN "roundSlot" INTEGER`); } catch { /* gia presente */ }
+  // Posizione nel tabellone a eliminazione diretta (vedi app/lib/cupKnockout.ts)
+  try { await db.execute(`ALTER TABLE "CupMatch" ADD COLUMN "bracketPos" INTEGER`); } catch { /* gia presente */ }
 
   // Giornata di campionato e/o data per ciascun turno interno di un girone
   // (Turno 1, Turno 2, ...) - a differenza del campo su CupRound (un'unica

@@ -1,11 +1,12 @@
 "use client";
 
 import { useActionState } from "react";
-import { createCup, createCupRound, createCupGroup, createCupMatch, setCupMatchScore, calculateCupMatchScore, setCupMatchForfeit, setCupRoundSchedule, setSlotSchedule, deleteCup, deleteCupRound } from "@/app/actions/cups";
+import { createCup, createCupRound, createCupGroup, createCupMatch, setCupMatchScore, calculateCupMatchScore, setCupMatchForfeit, setCupRoundSchedule, setSlotSchedule, deleteCup, deleteCupRound, generateKnockoutRound } from "@/app/actions/cups";
+import { computeKnockoutTies, tieLabel } from "@/app/lib/cupKnockout";
 import { computeGroupStandings, computeCupMatchResult } from "@/app/lib/cupStandings";
 import { DEFAULT_CUP_RULES, type CupRules } from "@/app/lib/leagueSettings";
 
-type Match = { id: number; homeScore: number | null; awayScore: number | null; homeTeam: string; awayTeam: string; homeUserId: number; awayUserId: number; roundSlot: number | null; homeForfeit?: boolean; awayForfeit?: boolean };
+type Match = { id: number; homeScore: number | null; awayScore: number | null; homeTeam: string; awayTeam: string; homeUserId: number; awayUserId: number; roundSlot: number | null; bracketPos?: number | null; homeForfeit?: boolean; awayForfeit?: boolean };
 type SlotSchedule = { matchdayNumber: number | null; playDate: string | null };
 type Round = { id: number; name: string; number: number; type: "eliminazione" | "girone"; matchdayNumber: number | null; playDate: string | null; slotSchedule: Record<number, SlotSchedule>; matches: Match[] };
 type Cup = { id: number; name: string; rounds: Round[] };
@@ -59,6 +60,7 @@ export default function AdminCoppeClient({ cups, users, seasonName, rules }: { c
   const [slotScheduleState, slotScheduleAction, slotSchedulePending] = useActionState(setSlotSchedule, null);
   const [deleteState, deleteAction] = useActionState(deleteCup, null);
   const [deleteRoundState, deleteRoundAction] = useActionState(deleteCupRound, null);
+  const [genState, genAction, genPending] = useActionState(generateKnockoutRound, null);
 
   return (
     <div className="space-y-6">
@@ -85,6 +87,8 @@ export default function AdminCoppeClient({ cups, users, seasonName, rules }: { c
       {slotScheduleState?.error && <p className="text-red-600 text-sm">{slotScheduleState.error}</p>}
       {calcState?.error && <p className="text-red-600 text-sm">{calcState.error}</p>}
       {forfeitState?.error && <p className="text-red-600 text-sm">{forfeitState.error}</p>}
+      {genState?.error && <p className="text-red-600 text-sm">{genState.error}</p>}
+      {genState?.success && <p className="text-green-600 text-sm">Accoppiamenti generati.</p>}
 
       {/* Cups list */}
       {cups.map((cup) => (
@@ -100,7 +104,7 @@ export default function AdminCoppeClient({ cups, users, seasonName, rules }: { c
           {/* Add round (eliminazione diretta: si aggiungono le partite a mano) */}
           <div className="p-4 border-b">
             <h3 className="text-sm font-medium text-gray-600 mb-2">Aggiungi turno a eliminazione diretta</h3>
-            <p className="text-xs text-gray-400 mb-2">Per quarti, semifinale, finale {"\u2014"} le partite si aggiungono a mano una alla volta scegliendo le due squadre.</p>
+            <p className="text-xs text-gray-400 mb-2">Crea in ordine Quarti di finale, Semifinale, Finale, poi premi {"\u201c"}Genera accoppiamenti{"\u201d"} in ogni turno: quarti incrociati dai gironi (1A-4B, 2B-3A, 2A-3B, 1B-4A), poi le vincenti. Quarti e semifinale andata e ritorno, finale secca. Le partite si possono anche aggiungere a mano.</p>
             <form action={roundAction} className="flex flex-wrap gap-3 items-end">
               <input type="hidden" name="cupId" value={cup.id} />
               <div className="flex-1 min-w-[160px]">
@@ -186,6 +190,60 @@ export default function AdminCoppeClient({ cups, users, seasonName, rules }: { c
                     <button type="submit" disabled={schedulePending} className="px-2.5 py-1 bg-gray-600 hover:bg-gray-700 disabled:opacity-60 text-white rounded text-xs">Salva</button>
                   </form>
                 )}
+
+                {/* Tabellone a eliminazione diretta: genera accoppiamenti e
+                    giornata di andata/ritorno */}
+                {!isGroup && (() => {
+                  const ties = computeKnockoutTies(round.matches.map((m) => ({ ...m, bracketPos: m.bracketPos ?? null })), cupRules);
+                  const hasResults = round.matches.some((m) => m.homeScore !== null || m.homeForfeit || m.awayForfeit);
+                  const legSlots = ties.length === 0 ? [] : ties.some((t) => t.twoLegs) ? [1, 2] : [1];
+                  return (
+                    <div className="mb-3 space-y-2">
+                      {!hasResults && (
+                        <form action={genAction} onSubmit={(e) => { if (round.matches.length > 0 && !confirm("Rigenerare gli accoppiamenti di questo turno? Le partite attuali verranno sostituite.")) e.preventDefault(); }}>
+                          <input type="hidden" name="cupRoundId" value={round.id} />
+                          <button type="submit" disabled={genPending} className="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 disabled:opacity-60 text-white rounded-lg text-sm font-medium">
+                            {round.matches.length > 0 ? "Rigenera accoppiamenti" : "Genera accoppiamenti"}
+                          </button>
+                        </form>
+                      )}
+                      {legSlots.length > 0 && (
+                        <div className="flex flex-wrap gap-3">
+                          {legSlots.map((slot) => (
+                            <form key={slot} action={slotScheduleAction} className="flex items-center gap-1.5 bg-gray-50 rounded-lg px-2 py-1">
+                              <input type="hidden" name="cupRoundId" value={round.id} />
+                              <input type="hidden" name="slot" value={slot} />
+                              <span className="text-xs font-semibold text-amber-700">{legSlots.length === 1 ? "Partita secca" : slot === 1 ? "Andata" : "Ritorno"}</span>
+                              <input type="number" name="matchdayNumber" min="1" defaultValue={round.slotSchedule[slot]?.matchdayNumber ?? ""} placeholder="Giornata" className="w-20 border rounded px-1.5 py-0.5 text-xs focus:ring-2 focus:ring-green-500 focus:outline-none" />
+                              <button type="submit" disabled={slotSchedulePending} className="px-2 py-0.5 bg-gray-500 hover:bg-gray-600 disabled:opacity-60 text-white rounded text-xs">Salva</button>
+                            </form>
+                          ))}
+                        </div>
+                      )}
+                      {ties.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {ties.map((t) => (
+                            <div key={t.pos} className="border rounded-lg px-3 py-2 text-sm">
+                              <div className="text-[11px] font-semibold text-gray-400 uppercase">{tieLabel(t.pos, ties.length)}</div>
+                              <div className="flex justify-between gap-2">
+                                <span className={t.winnerId === t.team1Id ? "font-semibold text-green-700" : "text-gray-700"}>{t.team1}</span>
+                                <span className="tabular-nums text-gray-500">{t.legs.some((l) => l.homeScore !== null || l.homeForfeit || l.awayForfeit) ? `${t.team1Goals}-${t.team2Goals}` : "vs"}</span>
+                                <span className={t.winnerId === t.team2Id ? "font-semibold text-green-700" : "text-gray-700"}>{t.team2}</span>
+                              </div>
+                              {t.winnerId !== null && (
+                                <div className="text-[11px] text-green-700 mt-0.5">
+                                  {"\u2713"} Passa {t.winnerId === t.team1Id ? t.team1 : t.team2}
+                                  {t.decidedBy === "fantapunti" && ` (fantapunti ${t.team1Score.toFixed(1)} a ${t.team2Score.toFixed(1)})`}
+                                  {t.decidedBy === "testa di serie" && " (testa di serie)"}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Classifica (solo gironi) */}
                 {isGroup && standings.length > 0 && (
@@ -296,6 +354,29 @@ export default function AdminCoppeClient({ cups, users, seasonName, rules }: { c
                   );};
 
                   const canGroup = isGroup && round.matches.length > 0 && round.matches.every((m) => m.roundSlot !== null);
+
+                  const isBracket = !isGroup && round.matches.some((m) => m.bracketPos != null);
+                  if (isBracket) {
+                    const slots = [...new Set(round.matches.map((m) => m.roundSlot ?? 1))].sort((a, b) => a - b);
+                    return (
+                      <div className="space-y-4">
+                        {slots.map((slot) => (
+                          <div key={slot}>
+                            <div className="text-xs font-semibold text-amber-700 mb-1.5">
+                              {slots.length === 1 ? "Partite" : slot === 1 ? "Andata" : "Ritorno"}
+                              {round.slotSchedule[slot]?.matchdayNumber != null && <span className="font-normal text-gray-400"> {"\u2014"} Giornata {round.slotSchedule[slot]?.matchdayNumber}</span>}
+                            </div>
+                            <div className="space-y-2">
+                              {round.matches
+                                .filter((m) => (m.roundSlot ?? 1) === slot)
+                                .sort((a, b) => (a.bracketPos ?? 0) - (b.bracketPos ?? 0))
+                                .map(renderMatch)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }
 
                   if (!canGroup) {
                     return <div className="space-y-2">{round.matches.map(renderMatch)}</div>;

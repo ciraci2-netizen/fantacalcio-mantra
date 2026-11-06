@@ -5,6 +5,16 @@ import { getDb } from "@/app/lib/db";
 import { getSession } from "@/app/lib/session";
 import { generateRoundRobinSchedule } from "@/app/lib/cupSchedule";
 import { calculateDefenseModifier } from "@/app/lib/scoring";
+import { computeGroupStandings, type CupGroupMatch } from "@/app/lib/cupStandings";
+import { getCupRules } from "@/app/lib/leagueSettings";
+import {
+  computeKnockoutTies,
+  crossedQuarterFinals,
+  nextRoundTies,
+  seedsFromGroups,
+  type KnockoutLeg,
+  type PlannedTie,
+} from "@/app/lib/cupKnockout";
 
 async function requireAdmin() {
   const session = await getSession();
@@ -421,6 +431,175 @@ export async function deleteCup(prevState: unknown, formData: FormData) {
     await db.execute({ sql: `DELETE FROM "Cup" WHERE id = ?`, args: [cupId] });
     revalidatePath("/coppe");
     revalidatePath("/admin/coppe");
+    return { success: true };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+// Partite di un turno di coppa nel formato usato da classifiche e tabellone
+// (con tavolini e posizione nel tabellone, se le colonne esistono).
+async function loadRoundLegs(db: ReturnType<typeof getDb>, cupRoundId: number): Promise<KnockoutLeg[]> {
+  let res;
+  try {
+    res = await db.execute({
+      sql: `SELECT cm.id, cm.homeUserId, cm.awayUserId, cm.homeScore, cm.awayScore, cm.roundSlot, cm.bracketPos,
+                   cm.homeForfeit, cm.awayForfeit, hu.teamName as homeTeam, au.teamName as awayTeam
+            FROM "CupMatch" cm
+            JOIN "User" hu ON hu.id = cm.homeUserId
+            JOIN "User" au ON au.id = cm.awayUserId
+            WHERE cm.cupRoundId = ?`,
+      args: [cupRoundId],
+    });
+  } catch {
+    res = await db.execute({
+      sql: `SELECT cm.id, cm.homeUserId, cm.awayUserId, cm.homeScore, cm.awayScore, cm.roundSlot,
+                   hu.teamName as homeTeam, au.teamName as awayTeam
+            FROM "CupMatch" cm
+            JOIN "User" hu ON hu.id = cm.homeUserId
+            JOIN "User" au ON au.id = cm.awayUserId
+            WHERE cm.cupRoundId = ?`,
+      args: [cupRoundId],
+    });
+  }
+  return res.rows.map((m) => ({
+    id: m.id as number,
+    homeUserId: m.homeUserId as number,
+    awayUserId: m.awayUserId as number,
+    homeTeam: m.homeTeam as string,
+    awayTeam: m.awayTeam as string,
+    homeScore: (m.homeScore as number | null) ?? null,
+    awayScore: (m.awayScore as number | null) ?? null,
+    roundSlot: (m.roundSlot as number | null | undefined) ?? null,
+    bracketPos: (m.bracketPos as number | null | undefined) ?? null,
+    homeForfeit: Number(m.homeForfeit) === 1,
+    awayForfeit: Number(m.awayForfeit) === 1,
+  }));
+}
+
+// Genera in automatico gli accoppiamenti di un turno a eliminazione diretta:
+//  - primo turno a eliminazione (quarti): incrociati dalle classifiche dei
+//    due gironi (1A-4B, 2B-3A, 2A-3B, 1B-4A), servono i gironi conclusi;
+//  - turni successivi (semifinale, finale): vincenti delle sfide del turno
+//    precedente (1 contro 2, 3 contro 4), serve il turno precedente concluso.
+// Quarti e semifinale sono andata e ritorno (roundSlot 1 e 2), la finale e'
+// partita secca. Se il turno ha una giornata impostata e andata/ritorno no,
+// andata = quella giornata, ritorno = la successiva (modificabili dopo).
+// Se il turno ha gia' partite senza risultati vengono rigenerate; se ci
+// sono gia' risultati, non tocca niente.
+export async function generateKnockoutRound(prevState: unknown, formData: FormData) {
+  try {
+    await requireAdmin();
+    const db = getDb();
+    const cupRoundId = Number(formData.get("cupRoundId"));
+
+    try { await db.execute(`ALTER TABLE "CupMatch" ADD COLUMN "bracketPos" INTEGER`); } catch { /* gia presente */ }
+
+    const roundRes = await db.execute({
+      sql: `SELECT id, cupId, number, type, matchdayNumber FROM "CupRound" WHERE id = ?`,
+      args: [cupRoundId],
+    });
+    const round = roundRes.rows[0];
+    if (!round) return { error: "Turno non trovato." };
+    if (round.type === "girone") return { error: "Questo e' un girone, non un turno a eliminazione diretta." };
+    const cupId = round.cupId as number;
+
+    const cupRes = await db.execute({ sql: `SELECT seasonId FROM "Cup" WHERE id = ?`, args: [cupId] });
+    const rules = await getCupRules(db, (cupRes.rows[0]?.seasonId as number | undefined) ?? null);
+
+    const existing = await loadRoundLegs(db, cupRoundId);
+    if (existing.some((m) => m.homeScore !== null || m.awayScore !== null || m.homeForfeit || m.awayForfeit)) {
+      return { error: "Questo turno ha gia' dei risultati: per rigenerarlo elimina prima il turno e ricrealo." };
+    }
+
+    const allRounds = await db.execute({
+      sql: `SELECT id, number, type FROM "CupRound" WHERE cupId = ? ORDER BY number ASC`,
+      args: [cupId],
+    });
+
+    // Classifiche dei gironi: servono per i quarti e per le teste di serie.
+    const groupRounds = allRounds.rows.filter((r) => r.type === "girone");
+    const groupStandings = [];
+    let groupsIncomplete = false;
+    for (const g of groupRounds) {
+      const legs = await loadRoundLegs(db, g.id as number);
+      if (legs.some((m) => !m.homeForfeit && !m.awayForfeit && (m.homeScore === null || m.awayScore === null))) {
+        groupsIncomplete = true;
+      }
+      groupStandings.push(computeGroupStandings(legs as CupGroupMatch[], rules));
+    }
+    const seeds = seedsFromGroups(groupStandings);
+
+    // Turno a eliminazione precedente con un tabellone generato.
+    const prevKnockouts = allRounds.rows.filter(
+      (r) => r.type !== "girone" && (r.number as number) < (round.number as number)
+    );
+    let prevTies = null;
+    for (const r of [...prevKnockouts].reverse()) {
+      const legs = await loadRoundLegs(db, r.id as number);
+      const ties = computeKnockoutTies(legs, rules);
+      if (ties.length > 0) {
+        prevTies = ties;
+        break;
+      }
+    }
+
+    let planned: PlannedTie[];
+    if (prevTies) {
+      const next = nextRoundTies(prevTies, seeds);
+      if ("error" in next) return { error: next.error };
+      planned = next;
+    } else {
+      if (groupStandings.length !== 2) {
+        return { error: `Per i quarti incrociati servono esattamente 2 gironi (ne trovo ${groupStandings.length}).` };
+      }
+      if (groupStandings.some((s) => s.length < 4)) return { error: "Ogni girone deve avere almeno 4 squadre." };
+      if (groupsIncomplete) {
+        return { error: "I gironi non sono ancora conclusi: inserisci o calcola tutti i risultati, poi riprova." };
+      }
+      planned = crossedQuarterFinals(groupStandings[0], groupStandings[1]);
+    }
+
+    const twoLegs = planned.length > 1; // finale secca
+
+    await db.execute({ sql: `DELETE FROM "CupMatch" WHERE cupRoundId = ?`, args: [cupRoundId] });
+    for (const t of planned) {
+      if (twoLegs) {
+        // Andata in casa della squadra peggio piazzata, ritorno dalla testa di serie.
+        await db.execute({
+          sql: `INSERT INTO "CupMatch" (cupRoundId, homeUserId, awayUserId, roundSlot, bracketPos) VALUES (?, ?, ?, 1, ?)`,
+          args: [cupRoundId, t.team2Id, t.team1Id, t.pos],
+        });
+        await db.execute({
+          sql: `INSERT INTO "CupMatch" (cupRoundId, homeUserId, awayUserId, roundSlot, bracketPos) VALUES (?, ?, ?, 2, ?)`,
+          args: [cupRoundId, t.team1Id, t.team2Id, t.pos],
+        });
+      } else {
+        await db.execute({
+          sql: `INSERT INTO "CupMatch" (cupRoundId, homeUserId, awayUserId, roundSlot, bracketPos) VALUES (?, ?, ?, 1, ?)`,
+          args: [cupRoundId, t.team1Id, t.team2Id, t.pos],
+        });
+      }
+    }
+
+    // Giornate di andata/ritorno di default dalla giornata del turno.
+    const md = (round.matchdayNumber as number | null | undefined) ?? null;
+    if (md !== null) {
+      const slots = twoLegs ? [1, 2] : [1];
+      for (const slot of slots) {
+        try {
+          await db.execute({
+            sql: `INSERT INTO "CupRoundSlot" (cupRoundId, slot, matchdayNumber) VALUES (?, ?, ?)
+                  ON CONFLICT(cupRoundId, slot) DO NOTHING`,
+            args: [cupRoundId, slot, md + slot - 1],
+          });
+        } catch { /* tabella non ancora migrata */ }
+      }
+    }
+
+    revalidatePath("/coppe");
+    revalidatePath("/admin/coppe");
+    revalidatePath("/lineup");
     return { success: true };
   } catch (e) {
     return { error: (e as Error).message };
